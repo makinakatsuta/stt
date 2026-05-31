@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サウンドテーブルテニス (STT) オンライン</title>
+  <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- 
+    スクリーンリーダー用の音声アナウンス専用領域 (aria-live)。
+    ゲームの状態変化（得点、サーブ権、反則など）をテキストとして書き込み、
+    スクリーンリーダーに最優先で読み上げさせます (assertive)。
+  -->
+  <div id="sr-announcer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+
+  <div class="app-container">
+    <header class="game-header">
+      <h1>SOUND TABLE TENNIS <span class="accent">ONLINE</span></h1>
+      <p class="subtitle">音で狙い、音で打ち返す。共生するバーチャルスポーツ。</p>
+    </header>
+
+    <main class="game-main">
+      <!-- 1. ウェルカム / オーディオ有効化画面 (Web Audio APIの自動再生ブロック解除用) -->
+      <section id="screen-welcome" class="game-card fade-in" aria-labelledby="welcome-title">
+        <h2 id="welcome-title">ようこそ、サウンドテーブルテニスへ</h2>
+        <p class="description">
+          このゲームは、音が左右・前後に移動する立体音響（Web Audio API）を頼りにプレイする卓球ゲームです。<br>
+          ヘッドホンまたはイヤホンの使用を強く推奨します。
+        </p>
+        <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
+          <span class="btn-text">オーディオを有効にして開始する</span>
+          <span class="btn-subtext">Enter または スペースキー</span>
+        </button>
+      </section>
+
+      <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->
+      <section id="screen-menu" class="game-card hidden" aria-labelledby="menu-title">
+        <h2 id="menu-title">ゲームモード選択</h2>
+        <div class="menu-grid">
+          <button id="btn-mode-cpu" class="btn btn-menu">
+            <span class="menu-icon">🤖</span>
+            <span class="menu-title">CPU対戦 (練習モード)</span>
+            <span class="menu-desc">CPUを相手に、守備と返球の練習をします。</span>
+          </button>
+          <button id="btn-mode-online" class="btn btn-menu">
+            <span class="menu-icon">🌐</span>
+            <span class="menu-title">オンライン対戦</span>
+            <span class="menu-desc">ネット越しに他のプレイヤーとリアルタイムで対戦します。</span>
+          </button>
+        </div>
+        <button id="btn-show-help" class="btn btn-secondary">操作方法とルール説明を見る</button>
+      </section>
+
+      <!-- 2.5 難易度選択画面 (CPU対戦選択時に表示) -->
+      <section id="screen-difficulty" class="game-card hidden" aria-labelledby="difficulty-title">
+        <h2 id="difficulty-title">CPUの難易度を選択</h2>
+        <div class="difficulty-grid">
+          <button id="btn-diff-easy" class="btn btn-menu btn-diff">
+            <span class="menu-icon">🐣</span>
+            <span class="menu-title">簡単 (Easy)</span>
+            <span class="menu-desc">CPUの移動速度が遅く、初心者向けの練習モードです。</span>
+          </button>
+          <button id="btn-diff-normal" class="btn btn-menu btn-diff">
+            <span class="menu-icon">⚔️</span>
+            <span class="menu-title">普通 (Normal)</span>
+            <span class="menu-desc">公式ルールに近い標準的なCPUの強さです。</span>
+          </button>
+          <button id="btn-diff-hard" class="btn btn-menu btn-diff">
+            <span class="menu-icon">🔥</span>
+            <span class="menu-title">難しい (Hard)</span>
+            <span class="menu-desc">CPUの動きが非常に素早く、本格的な対戦を楽しめます。</span>
+          </button>
+        </div>
+        <button id="btn-difficulty-back" class="btn btn-secondary">メニューに戻る</button>
+      </section>
+
+      <!-- 3. オンライン接続・ロビー画面 -->
+      <section id="screen-lobby" class="game-card hidden" aria-labelledby="lobby-title">
+        <h2 id="lobby-title">オンラインロビー</h2>
+        <div class="lobby-form">
+          <div class="input-group">
+            <label id="lbl-room-id" for="input-room-id">ルームID (対戦相手と同じIDを入力してください。空白のまま「ルームに入る」を押すと自動で共通ロビーに入ります。)</label>
+            <input type="text" id="input-room-id" placeholder="例: maki" aria-labelledby="lbl-room-id" autocomplete="off">
+          </div>
+          <button id="btn-join-room" class="btn btn-primary">ルームに入る / 対戦開始</button>
+          <div class="lobby-hint">
+            💡 <strong>別のパソコンと対戦する場合</strong>:<br>
+            片方のPCで `stt.exe` を起動し、そのPCのIPアドレス（例: `192.168.1.15`）を確認します。もう一方のPCのブラウザから `http://[親機のIP]:8080` にアクセスしてください。
+          </div>
+          <button id="btn-lobby-back" class="btn btn-secondary">メインメニューへ戻る</button>
+        </div>
+      </section>
+
+      <!-- 4. マッチング・対戦待ち受け画面 -->
+      <section id="screen-waiting" class="game-card hidden" aria-labelledby="waiting-title">
+        <h2 id="waiting-title">対戦相手を待っています...</h2>
+        <div class="spinner-container">
+          <div class="spinner" aria-hidden="true"></div>
+          <p id="txt-waiting-status" class="pulse-text">ルームID: <span id="lbl-current-room" class="highlight">-</span> で接続を待機中</p>
+        </div>
+        <button id="btn-cancel-matching" class="btn btn-danger">マッチングをキャンセル</button>
+      </section>
+
+      <!-- 5. ゲームプレイ画面 -->
+      <section id="screen-play" class="game-card hidden" aria-labelledby="play-title">
+        <h2 id="play-title" class="sr-only">ゲームプレイ画面</h2>
+        
+        <!-- スコアボード -->
+        <div class="scoreboard" role="timer" aria-label="スコアと試合状況">
+          <div class="score-panel player-1">
+            <div class="score-name" id="name-p1">Player 1 (自分)</div>
+            <div class="score-val" id="score-p1">0</div>
+          </div>
+          <div class="score-divider">:</div>
+          <div class="score-panel player-2">
+            <div class="score-name" id="name-p2">Player 2 (相手)</div>
+            <div class="score-val" id="score-p2">0</div>
+          </div>
+        </div>
+
+        <!-- 審判のテキストコール表示 (ビジュアル補助用) -->
+        <div class="referee-call" id="referee-message" aria-live="polite">
+          「プレー」
+        </div>
+
+        <!-- ゲームの状態や操作指示を表示する領域 -->
+        <div id="play-instructions" class="play-instructions">
+          左右矢印キーでラケット移動。スペースキーでアクション。
+        </div>
+
+        <!-- 3Dゲーム画面 (Canvas) -->
+        <div class="canvas-container" id="canvas-container" tabindex="0" role="application" aria-label="サウンドテーブルテニス コート。キーボードの左右矢印でラケットを操作します。">
+          <canvas id="game-canvas" width="800" height="500"></canvas>
+        </div>
+
+        <div class="play-controls">
+          <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
+        </div>
+      </section>
+
+      <!-- 6. ヘルプ・ルール説明画面 -->
+      <section id="screen-help" class="game-card hidden" aria-labelledby="help-title">
+        <h2 id="help-title">操作方法と公式ルール</h2>
+        <div class="help-content">
+          <h3>🎮 操作キー</h3>
+          <ul>
+            <li><strong>左矢印キー (←) または Aキー</strong>: ラケットを左に移動</li>
+            <li><strong>右矢印キー (→) または Dキー</strong>: ラケットを右に移動</li>
+            <li><strong>スペースキー (Space)</strong>: アクションの決定 (サーブの構え、レシーブの返事「はい」、サーブ打球)</li>
+            <li><strong>エスケープキー (Esc)</strong>: プレイの中断</li>
+          </ul>
+
+          <h3>🏓 サウンドテーブルテニス (STT) とは？</h3>
+          <p>視覚障害者向けの卓球で、ボールの中に金属球が4個入っており、転がると「シャラシャラ」と音が鳴ります。ネットの下（テーブル面から4.2cmの隙間）を通してボールを交互に転がし合い、得点を競います。</p>
+
+          <h3>📜 試合のルール・流れ</h3>
+          <ol>
+            <li><strong>審判の「プレー」宣告</strong>でスタートします。</li>
+            <li><strong>サーブの準備</strong>: サーバーはボールを静止させ、準備ができたらスペースキーを押して<strong>「いきます」</strong>と発声します（10秒以内）。</li>
+            <li><strong>レシーブの返事</strong>: レシーバーは<strong>「いきます」</strong>の後、スペースキーを押して<strong>「はい」</strong>と返答します（5秒以内）。</li>
+            <li><strong>サーブ</strong>: レシーバーが<strong>「はい」</strong>と答えてから、サーバーは5秒以内にスペースキーでサーブを打ちます。</li>
+            <li><strong>ラリー</strong>: 交互に打ち合います。ボールが自分の「守備ライン（サイド手前60cm）」を越えたら打球可能です。</li>
+            <li><strong>得点判定</strong>: 打球が相手の守備コート内で「停止」するか、エンドフレーム（奥の壁）の内側面に触れて「セーフ（アウトにならずコート内に留まる）」になれば得点になります。</li>
+          </ol>
+        </div>
+        <button id="btn-close-help" class="btn btn-secondary">メニューに戻る</button>
+      </section>
+    </main>
+
+    <footer class="game-footer">
+      <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
+    </footer>
+  </div>
+
+  <!-- ゲームのコアロジックスクリプトのインポート -->
+  <script src="app.js"></script>
+</body>
+</html>

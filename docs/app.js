@@ -608,6 +608,9 @@ class GameEngine {
     this.net.onDisconnect = () => this.handleNetworkDisconnect();
     this.net.onError = () => this.handleNetworkError();
 
+    // オンライン対戦時の遅延によるフライング得点防止用のタイマー
+    this.pendingScoreTimeout = null;
+
     // イベントリスナーのバインド
     this.setupEventListeners();
   }
@@ -854,11 +857,19 @@ class GameEngine {
       this.ball.active = true;
       this.state = STATE_RALLY;
       
+      document.getElementById('play-instructions').textContent = "ラリー中！ボールが近づいたらスペースキーで打ち返してください！";
+
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playHitSound(this.ball.x);
     } 
     else if (payload.actionType === 'ball_hit') {
+      // 保留中の得点判定があればキャンセル
+      if (this.pendingScoreTimeout) {
+        clearTimeout(this.pendingScoreTimeout);
+        this.pendingScoreTimeout = null;
+      }
+
       // 相手の打球同期
       this.ball.x = payload.x;
       this.ball.y = payload.y;
@@ -1039,6 +1050,8 @@ class GameEngine {
                 this.state = STATE_RALLY;
                 this.ball.active = true;
                 
+                document.getElementById('play-instructions').textContent = "ラリー中！ボールが近づいたらスペースキーで打ち返してください！";
+
                 // 相手から自分へ (Yをプラス方向へ)
                 // 難易度に応じてサーブの速度や角度を調整
                 let speedMultiplier = 1.0;
@@ -1062,6 +1075,8 @@ class GameEngine {
         this.state = STATE_RALLY;
         this.ball.active = true;
         
+        document.getElementById('play-instructions').textContent = "ラリー中！ボールが近づいたらスペースキーで打ち返してください！";
+
         // サーブの初速度設定 (相手方向へ)
         if (this.serverRole === 1) {
           // 自分から相手へ (Yをマイナス方向へ)
@@ -1090,20 +1105,27 @@ class GameEngine {
       }
     }
     else if (this.state === STATE_RALLY) {
-      // 4. ラリー中のスペースキータイミング入力 (スマッシュ)
-      // ボールが自分のラケットの近くにある場合のみ効果を発揮
+      // 4. ラリー中のスペースキー入力による打ち返し
       const paddle = this.role === 1 ? this.p1 : this.p2;
-      const isNearPaddle = Math.abs(this.ball.y - paddle.y) < 30 && 
-                           this.ball.x >= paddle.x && 
-                           this.ball.x <= paddle.x + PADDLE_WIDTH;
+      const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
+      const isIncoming = (this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0);
+      const isNearPaddle = Math.abs(this.ball.y - defenseY) < 30; // 守備ライン付近30px
+      const hitPaddle = this.ball.x >= paddle.x && this.ball.x <= paddle.x + PADDLE_WIDTH;
                            
-      if (isNearPaddle && ((this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0))) {
-        // スマッシュ成功！速度を加速させる
-        this.ball.vy = -this.ball.vy * 1.3;
-        this.ball.vx = ((this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2)) * 5; // 打つ場所で角度変化
+      if (isIncoming && isNearPaddle && hitPaddle) {
+        // 打ち返し成功！
+        this.ball.y = defenseY; // 位置補正
+        const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
+        this.ball.vx = relativeHitPos * 4.0;
+        
+        if (this.role === 1) {
+          this.ball.vy = -Math.abs(this.ball.vy) * 1.05; // 上方向（-Y）へ打ち返す
+        } else {
+          this.ball.vy = Math.abs(this.ball.vy) * 1.05;  // 下方向（+Y）へ打ち返す
+        }
         
         sounds.playHitSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'smash');
+        this.addRipple(this.ball.x, this.ball.y, 'hit');
         
         if (this.mode === 'online') {
           this.net.send('action', { 
@@ -1294,10 +1316,41 @@ class GameEngine {
                 });
               }
             } else if (evt.type === 'score') {
-              if (evt.reason === 'stop') {
-                sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+              if (this.mode === 'online') {
+                if (this.role === 1) {
+                  // ホスト(Player1)が得点を決定する
+                  if (evt.winner === 2) {
+                    // 自分がミスした場合は即座に判定
+                    if (evt.reason === 'stop') {
+                      sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                    }
+                    this.awardPointTo(evt.winner, evt.reason);
+                  } else {
+                    // 相手がミスした場合は、遅延パケット到着を考慮して300ms保留する
+                    if (this.pendingScoreTimeout) clearTimeout(this.pendingScoreTimeout);
+                    this.pendingScoreTimeout = setTimeout(() => {
+                      if (this.state === STATE_RALLY) { // まだラリー中であれば確定
+                        if (evt.reason === 'stop') {
+                          sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                        }
+                        this.awardPointTo(evt.winner, evt.reason);
+                      }
+                      this.pendingScoreTimeout = null;
+                    }, 300); // 300msのバッファ
+                  }
+                } else {
+                  // クライアント(Player2)はホストからの得点同期メッセージを待つため、ローカルのscoreイベントは無視する
+                  if (evt.reason === 'stop') {
+                    sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                  }
+                }
+              } else {
+                // CPU戦などは即座に判定
+                if (evt.reason === 'stop') {
+                  sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                }
+                this.awardPointTo(evt.winner, evt.reason);
               }
-              this.awardPointTo(evt.winner, evt.reason);
             }
           });
         }
@@ -1398,52 +1451,36 @@ class GameEngine {
 
       // --- プレイヤー1 (手前自分 Y=400〜500) の衝突/打ち返し判定 ---
       if (this.ball.vy > 0 && this.ball.y >= Y_DEFENSE_P1 && this.ball.y <= Y_DEFENSE_P1 + 25) {
-        // 自分が打ち返せるタイミング
-        const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-        if (hitPaddle) {
-          // ボールのY座標を補正
-          this.ball.y = Y_DEFENSE_P1;
-          // 反射計算: 当たったラケットの位置（中央か端か）でXの反射角を変化させる
-          const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-          this.ball.vx = relativeHitPos * 4.0;
-          this.ball.vy = -Math.abs(this.ball.vy) * 1.05; // 打ち返してわずかに加速
-          
-          sounds.playHitSound(this.ball.x);
-          this.addRipple(this.ball.x, this.ball.y, 'hit');
-          
-          // オンライン対戦時は相手に打球位置を送信
-          if (this.mode === 'online' && this.role === 1) {
-            this.net.send('action', { 
-              actionType: 'ball_hit', 
-              x: this.ball.x, 
-              y: this.ball.y, 
-              vx: this.ball.vx, 
-              vy: this.ball.vy 
-            });
+        // P1がCPUの場合のみ自動で打ち返す（人間プレイヤーの場合はSpaceキー入力でのみ打ち返せる）
+        const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
+        if (isP1Cpu) {
+          const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
+          if (hitPaddle) {
+            this.ball.y = Y_DEFENSE_P1;
+            const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
+            this.ball.vx = relativeHitPos * 4.0;
+            this.ball.vy = -Math.abs(this.ball.vy) * 1.05;
+            
+            sounds.playHitSound(this.ball.x);
+            this.addRipple(this.ball.x, this.ball.y, 'hit');
           }
         }
       }
 
       // --- プレイヤー2 (奥相手 Y=100〜0) の衝突/打ち返し判定 ---
       if (this.ball.vy < 0 && this.ball.y <= Y_DEFENSE_P2 && this.ball.y >= Y_DEFENSE_P2 - 25) {
-        const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-        if (hitPaddle) {
-          this.ball.y = Y_DEFENSE_P2;
-          const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-          this.ball.vx = relativeHitPos * 4.0;
-          this.ball.vy = Math.abs(this.ball.vy) * 1.05;
-          
-          sounds.playHitSound(this.ball.x);
-          this.addRipple(this.ball.x, this.ball.y, 'hit');
-          
-          if (this.mode === 'online' && this.role === 2) {
-            this.net.send('action', { 
-              actionType: 'ball_hit', 
-              x: this.ball.x, 
-              y: this.ball.y, 
-              vx: this.ball.vx, 
-              vy: this.ball.vy 
-            });
+        // P2がCPUの場合のみ自動で打ち返す（人間プレイヤーの場合はSpaceキー入力でのみ打ち返せる）
+        const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
+        if (isP2Cpu) {
+          const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
+          if (hitPaddle) {
+            this.ball.y = Y_DEFENSE_P2;
+            const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
+            this.ball.vx = relativeHitPos * 4.0;
+            this.ball.vy = Math.abs(this.ball.vy) * 1.05;
+            
+            sounds.playHitSound(this.ball.x);
+            this.addRipple(this.ball.x, this.ball.y, 'hit');
           }
         }
       }

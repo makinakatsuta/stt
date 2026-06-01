@@ -170,41 +170,47 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 		// --- Player 1 (Bottom/Self) Paddle hit ---
 		if ballVy > 0 && ballY >= YDefenseP1 && ballY <= YDefenseP1+25 {
-			hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
-			if hitPaddle {
-				ballY = YDefenseP1
-				relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-				ballVx = relativeHitPos * 4.0
-				ballVy = -math.Abs(ballVy) * 1.05
+			isP1Cpu := (mode == "cpu" && role == 2)
+			if isP1Cpu {
+				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
+				if hitPaddle {
+					ballY = YDefenseP1
+					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
+					ballVx = relativeHitPos * 4.0
+					ballVy = -math.Abs(ballVy) * 1.05
 
-				events = append(events, map[string]interface{}{
-					"type":   "ball_hit",
-					"player": 1,
-					"x":      ballX,
-					"y":      ballY,
-					"vx":     ballVx,
-					"vy":     ballVy,
-				})
+					events = append(events, map[string]interface{}{
+						"type":   "ball_hit",
+						"player": 1,
+						"x":      ballX,
+						"y":      ballY,
+						"vx":     ballVx,
+						"vy":     ballVy,
+					})
+				}
 			}
 		}
 
 		// --- Player 2 (Top/Opponent) Paddle hit ---
 		if ballVy < 0 && ballY <= YDefenseP2 && ballY >= YDefenseP2-25 {
-			hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
-			if hitPaddle {
-				ballY = YDefenseP2
-				relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-				ballVx = relativeHitPos * 4.0
-				ballVy = math.Abs(ballVy) * 1.05
+			isP2Cpu := (mode == "cpu" && role == 1)
+			if isP2Cpu {
+				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
+				if hitPaddle {
+					ballY = YDefenseP2
+					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
+					ballVx = relativeHitPos * 4.0
+					ballVy = math.Abs(ballVy) * 1.05
 
-				events = append(events, map[string]interface{}{
-					"type":   "ball_hit",
-					"player": 2,
-					"x":      ballX,
-					"y":      ballY,
-					"vx":     ballVx,
-					"vy":     ballVy,
-				})
+					events = append(events, map[string]interface{}{
+						"type":   "ball_hit",
+						"player": 2,
+						"x":      ballX,
+						"y":      ballY,
+						"vx":     ballVx,
+						"vy":     ballVy,
+					})
+				}
 			}
 		}
 

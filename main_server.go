@@ -327,8 +327,8 @@ func openBrowser(url string) {
 }
 
 func main() {
-	// 静的ファイルの配信設定 (public ディレクトリ以下をルートとしてサーブ)
-	fs := http.FileServer(http.Dir("./public"))
+	// 静的ファイルの配信設定 (docs ディレクトリ以下をルートとしてサーブ)
+	fs := http.FileServer(http.Dir("./docs"))
 	http.Handle("/", fs)
 
 	// WebSocket エンドポイントの登録

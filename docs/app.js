@@ -178,21 +178,30 @@ class SoundSystem {
     
     this.panner.setPosition(panValue, 0, depthValue);
     
+    // ボールの移動方向（vyの正負）に基づくドップラー効果（ピッチ変化）の適用
+    // 自分に近づく（vy > 0）場合は周波数を少し上げ、遠ざかる（vy < 0）場合は周波数を下げる
+    const dopplerFactor = 1.0 + (vy * 0.025); // 約 -20% 〜 +20% のピッチシフト
+    
     // ボールの転がり速度に応じて、カラカラ音とゴロゴロ音の振動数を動的に変化させる (リアルな物理モデリング)
     if (this.rattleLFO && this.lowOsc) {
-      // 速度が速いほど中の金属球の回転衝突が増える (速度0〜15に対して周波数6〜28.5Hz)
-      const rattleFreq = 6 + (speed * 1.5);
+      // 速度が速いほど中の金属球の回転衝突が増え、さらにドップラー効果を適用
+      const rattleFreq = (6 + (speed * 1.5)) * dopplerFactor;
       this.rattleLFO.frequency.setTargetAtTime(rattleFreq, this.ctx.currentTime, 0.1);
       
-      // 速度が速いほどテーブルの振動ピッチが上がる (速度0〜15に対して周波数120〜180Hz)
-      const lowFreq = 120 + (speed * 4);
+      // 速度が速いほどテーブルの振動ピッチが上がり、さらにドップラー効果を適用
+      const lowFreq = (120 + (speed * 4)) * dopplerFactor;
       this.lowOsc.frequency.setTargetAtTime(lowFreq, this.ctx.currentTime, 0.1);
     }
     
     // 2. 奥行き（Y座標）に応じたローパスフィルターの設定
-    // 自分側 (Y=500) に近づくほどクリア (高周波数)、相手側 (Y=0) に遠ざかるほどこもる (低周波数)
-    // 近づいたときに高音を完全開放(12000Hz)し、遠ざかったときは徹底的にこもらせる(500Hz)
-    const targetFreq = 500 + (11500 * (1 - yRatio)); 
+    // 自分側 (Y=500) に近づくほどクリア (高周波数・フィルターが開く)、相手側 (Y=0) に遠ざかるほどこもる (低周波数・フィルターが閉じる)
+    // さらに、近づいてくる球は警告としてよりシャープに（高音強調）、遠ざかる球はマイルドに聞こえる非対称化を施します
+    let targetFreq = 500 + (11500 * (1 - yRatio)); 
+    if (vy > 0) {
+      targetFreq = Math.min(12000, targetFreq * 1.15); // 近づく球：高域を少し開放してはっきり聴かせる
+    } else if (vy < 0) {
+      targetFreq = Math.max(500, targetFreq * 0.85);  // 遠ざかる球：高域を抑えて遠隔感を強調
+    }
     this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
     
     // 3. ボールの速度と距離に応じた音量設定
@@ -212,16 +221,28 @@ class SoundSystem {
   /**
    * 打球音 (木製ラケットの「コン」という乾いた音) を合成します。
    * @param {number} x 衝突したX座標 (パン用)
+   * @param {number} y 衝突したY座標 (奥行き用)
    */
-  playHitSound(x) {
+  playHitSound(x, y) {
     if (!this.ctx || this.isMuted) return;
+    
+    if (y === undefined) y = CANVAS_HEIGHT / 2;
     
     // ToDo.md 4.5 に準拠し、PannerNode を用いた 3D 立体音響定位
     const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const yRatio = 1 - (y / CANVAS_HEIGHT); // 0 (自分側) 〜 1 (相手側)
+    const depthVal = -5.0 + (4.5 * (1 - yRatio)); 
+    
     const panner = this.ctx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'none';
-    panner.setPosition(panVal, 0, -1);
+    panner.setPosition(panVal, 0, depthVal);
+    
+    // 奥行きに応じた音質のこもり具合（ローパスフィルター）を設定
+    const distanceFilter = this.ctx.createBiquadFilter();
+    distanceFilter.type = 'lowpass';
+    const targetFreq = 1000 + (11000 * (1 - yRatio)); // 遠くはこもり（1000Hz）、近くはクリア（12000Hz）
+    distanceFilter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
     
     // 1. オシレーター（打球音の本体: 木の共鳴）
     const osc = this.ctx.createOscillator();
@@ -256,17 +277,18 @@ class SoundSystem {
     shellGain.gain.setValueAtTime(0.25, this.ctx.currentTime);
     shellGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.03); // 30msで急速消音
     
-    // 接続
+    // 接続 (distanceFilter 経由で奥行きフィルタリング)
     osc.connect(gain);
-    gain.connect(panner);
+    gain.connect(distanceFilter);
     
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
-    noiseGain.connect(panner);
+    noiseGain.connect(distanceFilter);
     
     shellOsc.connect(shellGain);
-    shellGain.connect(panner);
+    shellGain.connect(distanceFilter);
     
+    distanceFilter.connect(panner);
     panner.connect(this.ctx.destination);
     
     osc.start();
@@ -281,16 +303,28 @@ class SoundSystem {
   /**
    * フレーム衝突音 (サイド/エンドフレームに当たった時の「カツ」という高い音)
    * @param {number} x 衝突したX座標 (パン用)
+   * @param {number} y 衝突したY座標 (奥行き用)
    */
-  playFrameSound(x) {
+  playFrameSound(x, y) {
     if (!this.ctx || this.isMuted) return;
+    
+    if (y === undefined) y = CANVAS_HEIGHT / 2;
     
     // ToDo.md 4.5 に準拠し、PannerNode を用いた 3D 立体音響定位
     const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const yRatio = 1 - (y / CANVAS_HEIGHT); // 0 (自分側) 〜 1 (相手側)
+    const depthVal = -5.0 + (4.5 * (1 - yRatio)); 
+    
     const panner = this.ctx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'none';
-    panner.setPosition(panVal, 0, -1);
+    panner.setPosition(panVal, 0, depthVal);
+    
+    // 奥行き減衰用フィルター
+    const distanceFilter = this.ctx.createBiquadFilter();
+    distanceFilter.type = 'lowpass';
+    const targetFreq = 1000 + (11000 * (1 - yRatio));
+    distanceFilter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
     
     // 木製フレーム（エンド/サイド）に球体が当たった際のソリッドで高めの「カツ」音
     const osc = this.ctx.createOscillator();
@@ -316,12 +350,13 @@ class SoundSystem {
     frameNoiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.015);
     
     osc.connect(gain);
-    gain.connect(panner);
+    gain.connect(distanceFilter);
     
     frameNoise.connect(frameNoiseFilter);
     frameNoiseFilter.connect(frameNoiseGain);
-    frameNoiseGain.connect(panner);
+    frameNoiseGain.connect(distanceFilter);
     
+    distanceFilter.connect(panner);
     panner.connect(this.ctx.destination);
     
     osc.start();
@@ -334,16 +369,28 @@ class SoundSystem {
   /**
    * ネット衝突音 (布に当たった時の「ポス」というこもった音)
    * @param {number} x 衝突したX座標
+   * @param {number} y 衝突したY座標
    */
-  playNetSound(x) {
+  playNetSound(x, y) {
     if (!this.ctx || this.isMuted) return;
+    
+    if (y === undefined) y = Y_NET;
     
     // ToDo.md 4.5 に準拠し、PannerNode を用いた 3D 立体音響定位
     const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const yRatio = 1 - (y / CANVAS_HEIGHT); // 0 (自分側) 〜 1 (相手側)
+    const depthVal = -5.0 + (4.5 * (1 - yRatio)); 
+    
     const panner = this.ctx.createPanner();
     panner.panningModel = 'HRTF';
     panner.distanceModel = 'none';
-    panner.setPosition(panVal, 0, -1);
+    panner.setPosition(panVal, 0, depthVal);
+    
+    // 奥行き減衰用フィルター
+    const distanceFilter = this.ctx.createBiquadFilter();
+    distanceFilter.type = 'lowpass';
+    const targetFreq = 1000 + (11000 * (1 - yRatio));
+    distanceFilter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
     
     // ネット衝突音：布製ネットへの衝突による鈍い吸収音「ポス」
     const bufferSource = this.ctx.createBufferSource();
@@ -369,11 +416,12 @@ class SoundSystem {
     
     bufferSource.connect(filter);
     filter.connect(gain);
-    gain.connect(panner);
+    gain.connect(distanceFilter);
     
     netThud.connect(netThudGain);
-    netThudGain.connect(panner);
+    netThudGain.connect(distanceFilter);
     
+    distanceFilter.connect(panner);
     panner.connect(this.ctx.destination);
     
     bufferSource.start();
@@ -922,7 +970,7 @@ class GameEngine {
       
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
-      sounds.playHitSound(this.ball.x);
+      sounds.playHitSound(this.ball.x, this.ball.y);
     } 
     else if (payload.actionType === 'ball_hit') {
       // 相手の打球同期
@@ -932,7 +980,7 @@ class GameEngine {
       this.ball.vy = payload.vy;
       
       // 衝突音と波紋
-      sounds.playHitSound(this.ball.x);
+      sounds.playHitSound(this.ball.x, this.ball.y);
       this.addRipple(this.ball.x, this.ball.y, 'hit');
     }
     else if (payload.actionType === 'point') {
@@ -1114,7 +1162,7 @@ class GameEngine {
                 this.ball.vx = (2.0 + Math.random() * 2.0) * speedMultiplier;
                 this.ball.vy = 5.5 * speedMultiplier;
                 
-                sounds.playHitSound(this.ball.x);
+                sounds.playHitSound(this.ball.x, this.ball.y);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
             }, 1200 + Math.random() * 800); // 1.2〜2.0秒後にサーブ
@@ -1140,7 +1188,7 @@ class GameEngine {
           this.ball.vy = 6.0;
         }
         
-        sounds.playHitSound(this.ball.x);
+        sounds.playHitSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
         
         if (this.mode === 'online') {
@@ -1168,7 +1216,7 @@ class GameEngine {
         this.ball.vy = -this.ball.vy * 1.3;
         this.ball.vx = ((this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2)) * 5; // 打つ場所で角度変化
         
-        sounds.playHitSound(this.ball.x);
+        sounds.playHitSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'smash');
         
         if (this.mode === 'online') {
@@ -1341,13 +1389,13 @@ class GameEngine {
         if (result.events && result.events.length > 0) {
           result.events.forEach(evt => {
             if (evt.type === 'wall_hit') {
-              sounds.playFrameSound(evt.x);
+              sounds.playFrameSound(evt.x, evt.y);
               this.addRipple(evt.x, evt.y, 'wall');
             } else if (evt.type === 'net_hit') {
-              sounds.playNetSound(evt.x);
+              sounds.playNetSound(evt.x, evt.y);
               this.addRipple(evt.x, evt.y, 'net');
             } else if (evt.type === 'ball_hit') {
-              sounds.playHitSound(evt.x);
+              sounds.playHitSound(evt.x, evt.y);
               this.addRipple(evt.x, evt.y, 'hit');
               
               if (this.mode === 'online' && this.role === evt.player) {
@@ -1438,12 +1486,12 @@ class GameEngine {
       if (this.ball.x - BALL_RADIUS <= 0) {
         this.ball.x = BALL_RADIUS;
         this.ball.vx = -this.ball.vx * 0.85; // 反発係数
-        sounds.playFrameSound(this.ball.x);
+        sounds.playFrameSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'wall');
       } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
         this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
         this.ball.vx = -this.ball.vx * 0.85;
-        sounds.playFrameSound(this.ball.x);
+        sounds.playFrameSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'wall');
       }
 
@@ -1454,7 +1502,7 @@ class GameEngine {
       if (wasAboveNet !== isBelowNet && Math.abs(this.ball.vx) > 8) {
         // 速度が速すぎて「ネットの下を通らず、浮き上がってネットに当たった」想定の処理
         if (Math.random() < 0.25) {
-          sounds.playNetSound(this.ball.x);
+          sounds.playNetSound(this.ball.x, this.ball.y);
           this.addRipple(this.ball.x, this.ball.y, 'net');
           this.ball.vy = -this.ball.vy * 0.3; // 弱く跳ね返る
           this.ball.vx *= 0.5;
@@ -1474,7 +1522,7 @@ class GameEngine {
           this.ball.vx = relativeHitPos * 4.0;
           this.ball.vy = -Math.abs(this.ball.vy) * 1.05; // 打ち返してわずかに加速
           
-          sounds.playHitSound(this.ball.x);
+          sounds.playHitSound(this.ball.x, this.ball.y);
           this.addRipple(this.ball.x, this.ball.y, 'hit');
           
           // オンライン対戦時は相手に打球位置を送信
@@ -1499,7 +1547,7 @@ class GameEngine {
           this.ball.vx = relativeHitPos * 4.0;
           this.ball.vy = Math.abs(this.ball.vy) * 1.05;
           
-          sounds.playHitSound(this.ball.x);
+          sounds.playHitSound(this.ball.x, this.ball.y);
           this.addRipple(this.ball.x, this.ball.y, 'hit');
           
           if (this.mode === 'online' && this.role === 2) {

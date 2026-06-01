@@ -1,0 +1,11 @@
+# 実行ファイル
+stt.exe
+*.exe
+
+# 公式ルールブック
+STT_rulebook_all.html
+
+# システム生成ファイルおよびキャッシュ
+.antigravitycli/
+.DS_Store
+Thumbs.db

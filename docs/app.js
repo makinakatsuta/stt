@@ -598,7 +598,12 @@ class GameEngine {
     this.timerInterval = null;
 
     // キー入力状態
-    this.keys = {};
+    this.keys = {
+      ArrowLeft: false,
+      ArrowRight: false,
+      KeyA: false,
+      KeyD: false
+    };
     
     // 描画演出用のエフェクト配列 (波紋など)
     this.ripples = [];
@@ -1258,8 +1263,9 @@ class GameEngine {
    * ゲームの物理アップデート (1フレームごとの処理)。
    */
   updatePhysics() {
-    // Go WebAssembly版の物理演算がロードされている場合はそれを使用
-    if (typeof window.updatePhysicsWasm === 'function') {
+    try {
+      // Go WebAssembly版の物理演算がロードされている場合はそれを使用
+      if (typeof window.updatePhysicsWasm === 'function') {
       const result = window.updatePhysicsWasm(
         this.ball,
         this.p1,
@@ -1520,6 +1526,13 @@ class GameEngine {
 
     // 4. 公式ルールにおける時間制限 (オーバータイム) のチェック
     this.checkTimeouts();
+    } catch (err) {
+      console.error("Error in updatePhysics:", err);
+      const instructions = document.getElementById('play-instructions');
+      if (instructions) {
+        instructions.textContent = "エラー発生: " + err.message;
+      }
+    }
   }
 
   /**

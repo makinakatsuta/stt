@@ -32,6 +32,14 @@ func main() {
 	select {}
 }
 
+func getBoolSafe(v js.Value, key string) bool {
+	val := v.Get(key)
+	if val.Type() == js.TypeBoolean {
+		return val.Bool()
+	}
+	return false
+}
+
 func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	if len(args) < 9 {
 		return nil
@@ -62,26 +70,26 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	// 1. Player paddle movement (Keys)
 	paddleSpeed := 7.0
 	if role == 1 {
-		if jsKeys.Get("ArrowLeft").Bool() || jsKeys.Get("KeyA").Bool() {
+		if getBoolSafe(jsKeys, "ArrowLeft") || getBoolSafe(jsKeys, "KeyA") {
 			p1X -= paddleSpeed
 			if p1X < 0 {
 				p1X = 0
 			}
 		}
-		if jsKeys.Get("ArrowRight").Bool() || jsKeys.Get("KeyD").Bool() {
+		if getBoolSafe(jsKeys, "ArrowRight") || getBoolSafe(jsKeys, "KeyD") {
 			p1X += paddleSpeed
 			if p1X > CanvasWidth-PaddleWidth {
 				p1X = CanvasWidth - PaddleWidth
 			}
 		}
 	} else if role == 2 {
-		if jsKeys.Get("ArrowLeft").Bool() || jsKeys.Get("KeyA").Bool() {
+		if getBoolSafe(jsKeys, "ArrowLeft") || getBoolSafe(jsKeys, "KeyA") {
 			p2X -= paddleSpeed
 			if p2X < 0 {
 				p2X = 0
 			}
 		}
-		if jsKeys.Get("ArrowRight").Bool() || jsKeys.Get("KeyD").Bool() {
+		if getBoolSafe(jsKeys, "ArrowRight") || getBoolSafe(jsKeys, "KeyD") {
 			p2X += paddleSpeed
 			if p2X > CanvasWidth-PaddleWidth {
 				p2X = CanvasWidth - PaddleWidth

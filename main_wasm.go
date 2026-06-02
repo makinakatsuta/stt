@@ -70,26 +70,26 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	// 1. Player paddle movement (Keys)
 	paddleSpeed := 7.0
 	if role == 1 {
-		if getBoolSafe(jsKeys, "ArrowLeft") || getBoolSafe(jsKeys, "KeyA") {
+		if getBoolSafe(jsKeys, "ArrowLeft") {
 			p1X -= paddleSpeed
 			if p1X < 0 {
 				p1X = 0
 			}
 		}
-		if getBoolSafe(jsKeys, "ArrowRight") || getBoolSafe(jsKeys, "KeyD") {
+		if getBoolSafe(jsKeys, "ArrowRight") {
 			p1X += paddleSpeed
 			if p1X > CanvasWidth-PaddleWidth {
 				p1X = CanvasWidth - PaddleWidth
 			}
 		}
 	} else if role == 2 {
-		if getBoolSafe(jsKeys, "ArrowLeft") || getBoolSafe(jsKeys, "KeyA") {
+		if getBoolSafe(jsKeys, "ArrowLeft") {
 			p2X -= paddleSpeed
 			if p2X < 0 {
 				p2X = 0
 			}
 		}
-		if getBoolSafe(jsKeys, "ArrowRight") || getBoolSafe(jsKeys, "KeyD") {
+		if getBoolSafe(jsKeys, "ArrowRight") {
 			p2X += paddleSpeed
 			if p2X > CanvasWidth-PaddleWidth {
 				p2X = CanvasWidth - PaddleWidth

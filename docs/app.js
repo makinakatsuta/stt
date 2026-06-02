@@ -183,6 +183,49 @@ class SoundSystem {
     this.ballRollGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.05);
   }
 
+
+  /**
+   * プレイヤーが移動したときの足音（シューズの床摩擦音「キュッ」）を合成します。
+   * @param {number} x プレイヤーのX座標 (パン用)
+   */
+  playFootstepSound(x) {
+    if (!this.ctx || this.isMuted) return;
+    
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    
+    // ホワイトノイズソース
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    
+    // バンドパスフィルターで周波数帯を絞る (シューズの摩擦音らしい帯域)
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2500, this.ctx.currentTime);
+    filter.Q.setValueAtTime(3.0, this.ctx.currentTime); // Q値を高くして摩擦音的な響きにする
+    
+    const gain = this.ctx.createGain();
+    // 非常に短い「キュッ」という音のエンベロープ
+    gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.12, this.ctx.currentTime + 0.01); // 素早い立ち上がり
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08); // 素早い減衰 (80ms)
+    
+    if (panner) {
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+    }
+    
+    noise.start();
+    noise.stop(this.ctx.currentTime + 0.1);
+  }
+
   /**
    * 打球音 (木製ラケットの「コン」という乾いた音) を合成します。
    * @param {number} x 衝突したX座標 (パン用)
@@ -195,34 +238,48 @@ class SoundSystem {
     const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
     if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
     
-    // 1. オシレーター（打球音の本体）
+    // 1. オシレーター（打球音の本体 - 基本波）
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
-    osc.type = 'triangle'; // 三角波
-    // 周波数を少し高めから開始して通りを良くし、打球感をはっきりさせる
-    osc.frequency.setValueAtTime(450, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.08);
+    osc.type = 'sine'; // 澄んだ「コン」という響きを作るサイン波
+    // 周波数を550Hzから180Hzへスウィープさせて打球感を作る
+    osc.frequency.setValueAtTime(550, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(180, this.ctx.currentTime + 0.09);
     
-    gain.gain.setValueAtTime(0.7, this.ctx.currentTime); // 最大ゲインを以前の0.7に戻す
-    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(1.0, this.ctx.currentTime); // 最大ゲインを1.0に増加 (以前は0.7)
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.16); // 減衰時間を0.16秒に伸ばし、余韻をはっきりさせる
     
-    // 2. ノイズ (打球時の瞬間的なアタック「パシッ」というアタック成分を追加)
+    // 2. 2次倍音オシレーター（打球の「カツッ」という硬い質感と明瞭さを加える）
+    const osc2 = this.ctx.createOscillator();
+    const gain2 = this.ctx.createGain();
+    
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(1100, this.ctx.currentTime); // メインの約2倍の周波数
+    osc2.frequency.exponentialRampToValueAtTime(360, this.ctx.currentTime + 0.07);
+    
+    gain2.gain.setValueAtTime(0.25, this.ctx.currentTime); // メイン音にブレンド
+    gain2.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08); // 早めに減衰させて打球のアタック感のみを強調
+    
+    // 3. アタックノイズ (打球時の瞬間的な木製アタック音)
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
     
     const noiseFilter = this.ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.setValueAtTime(1800, this.ctx.currentTime); // 1.8kHzでアタックを強調
+    noiseFilter.frequency.setValueAtTime(1800, this.ctx.currentTime);
     
     const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-    noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.02); // 20msで急速消音
+    noiseGain.gain.setValueAtTime(0.55, this.ctx.currentTime); // ゲインを0.55に強化 (以前は0.4)
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.03); // 30msで消音
     
     // 接続
     if (panner) {
       osc.connect(gain);
       gain.connect(panner);
+      
+      osc2.connect(gain2);
+      gain2.connect(panner);
       
       noise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
@@ -233,15 +290,21 @@ class SoundSystem {
       osc.connect(gain);
       gain.connect(this.ctx.destination);
       
+      osc2.connect(gain2);
+      gain2.connect(this.ctx.destination);
+      
       noise.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
       noiseGain.connect(this.ctx.destination);
     }
     
     osc.start();
+    osc2.start();
     noise.start();
-    osc.stop(this.ctx.currentTime + 0.15);
-    noise.stop(this.ctx.currentTime + 0.03);
+    
+    osc.stop(this.ctx.currentTime + 0.20);
+    osc2.stop(this.ctx.currentTime + 0.10);
+    noise.stop(this.ctx.currentTime + 0.04);
   }
 
   /**
@@ -600,10 +663,10 @@ class GameEngine {
     // キー入力状態
     this.keys = {
       ArrowLeft: false,
-      ArrowRight: false,
-      KeyA: false,
-      KeyD: false
+      ArrowRight: false
     };
+    this.lastFootstepTime = 0;
+    this.lastMyPaddleX = 350;
     
     // 描画演出用のエフェクト配列 (波紋など)
     this.ripples = [];
@@ -616,6 +679,15 @@ class GameEngine {
     // オンライン対戦時の遅延によるフライング得点防止用のタイマー
     this.pendingScoreTimeout = null;
 
+    // モバイル・アクセシビリティ対応用変数
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window) 
+      || (navigator.maxTouchPoints > 0);
+    this.useTilt = false;
+    this.tiltCalibrationAngle = 0;
+    this.currentRawTilt = 0;
+    this.handleOrientationBound = null;
+
     // イベントリスナーのバインド
     this.setupEventListeners();
   }
@@ -624,9 +696,66 @@ class GameEngine {
    * HTML上の各種ボタンにイベントをバインドします。
    */
   setupEventListeners() {
+    // モバイル用設定パネルの表示制御とARIALabel初期化
+    if (this.isMobile) {
+      const panel = document.getElementById('mobile-settings-panel');
+      if (panel) panel.classList.remove('hidden');
+    }
+    this.updateCanvasAriaLabel();
+
+    // チルト切り替えチェックボックスの変更監視
+    const useTiltCheckbox = document.getElementById('chk-use-tilt');
+    if (useTiltCheckbox) {
+      useTiltCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          this.requestDeviceOrientationPermission();
+        } else {
+          this.useTilt = false;
+          // キー状態のクリア
+          this.keys['ArrowLeft'] = false;
+          this.keys['ArrowRight'] = false;
+          this.keys['KeyA'] = false;
+          this.keys['KeyD'] = false;
+          document.getElementById('btn-calibrate-tilt').classList.add('hidden');
+          this.updateCanvasAriaLabel();
+        }
+      });
+    }
+
+    // チルト調整ボタンのクリック
+    const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+    if (btnCalibrate) {
+      btnCalibrate.addEventListener('click', () => {
+        this.calibrateTilt();
+        narrator.speak("チルトの中心位置を調整しました。");
+      });
+    }
+
+    // ゲーム画面タップによるアクション (スマホ・アクセシビリティ対応)
+    const canvasContainer = document.getElementById('canvas-container');
+    if (canvasContainer) {
+      canvasContainer.addEventListener('click', (e) => {
+        // プレイ中のステートでのみタップでアクションを実行
+        const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+        if (activeStates.includes(this.state)) {
+          if (e.target.id === 'game-canvas' || e.target.id === 'canvas-container') {
+            e.preventDefault();
+            this.handleActionInput();
+          }
+        }
+      });
+    }
+
     // 1. オーディオ有効化ボタン
     document.getElementById('btn-enable-audio').addEventListener('click', () => {
       sounds.init();
+      
+      const useTiltCheckbox = document.getElementById('chk-use-tilt');
+      const useTilt = useTiltCheckbox ? useTiltCheckbox.checked : false;
+      if (this.isMobile && useTilt) {
+        this.requestDeviceOrientationPermission();
+      }
+
       this.changeScreen('menu');
       narrator.speak("サウンドテーブルテニスへようこそ。モードを選択してください。");
     });
@@ -758,6 +887,16 @@ class GameEngine {
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     narrator.stop();
     this.changeScreen('menu');
+    
+    // チルト調整ボタンを非表示化、キーのクリア
+    const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+    if (btnCalibrate) btnCalibrate.classList.add('hidden');
+    this.keys['ArrowLeft'] = false;
+    this.keys['ArrowRight'] = false;
+    this.keys['KeyA'] = false;
+    this.keys['KeyD'] = false;
+    this.updateCanvasAriaLabel();
+
     narrator.speak("ゲームを終了し、メニューに戻りました。");
   }
 
@@ -910,6 +1049,20 @@ class GameEngine {
     
     // UIの切り替え
     this.changeScreen('play');
+
+    // モバイルのチルト自動調整および調整ボタンの表示制御
+    if (this.isMobile && this.useTilt) {
+      setTimeout(() => {
+        this.calibrateTilt();
+      }, 500); // 手の傾きが安定するまで少し待って自動調整
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.remove('hidden');
+    } else {
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.add('hidden');
+    }
+    this.updateCanvasAriaLabel();
+
     this.updateScoreboard();
     
     // プレイヤーの名前設定
@@ -1283,6 +1436,17 @@ class GameEngine {
         this.p1.x = result.p1.x;
         this.p2.x = result.p2.x;
 
+        // 自分（プレイヤー）のラケットの移動音（足音）の処理
+        const myPaddleX = this.role === 1 ? this.p1.x : this.p2.x;
+        if (Math.abs(myPaddleX - this.lastMyPaddleX) > 0.01) {
+          const now = Date.now();
+          if (now - this.lastFootstepTime > 250) { // 250ms 間隔
+            sounds.playFootstepSound(myPaddleX);
+            this.lastFootstepTime = now;
+          }
+        }
+        this.lastMyPaddleX = myPaddleX;
+
         // パドル位置の同期 (オンライン対戦用)
         const paddle = this.role === 1 ? this.p1 : this.p2;
         this.syncPaddlePosition(paddle.x);
@@ -1631,6 +1795,20 @@ class GameEngine {
   draw() {
     const ctx = this.ctx;
     
+    // 矢印の頭を描画するヘルパー関数
+    const drawArrowhead = (x, y, angle) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-3, -6);
+      ctx.lineTo(3, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    };
+    
     // 1. 背景のクリア (濃いグレー・漆黒)
     ctx.fillStyle = '#05070a';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -1677,6 +1855,171 @@ class GameEngine {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.fillRect(10, Y_NET + 2, CANVAS_WIDTH - 20, 4);
 
+    // ==========================================================================
+    // 見える人向けの寸法ガイド描画 (ネオン半透明)
+    // ==========================================================================
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.2)';
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
+    ctx.font = '10px "Outfit", "Noto Sans JP", sans-serif';
+    ctx.lineWidth = 1;
+    
+    // 1. 全長 274cm (左端の寸法線)
+    ctx.beginPath();
+    ctx.moveTo(15, 10);
+    ctx.lineTo(32, 10);
+    ctx.moveTo(15, CANVAS_HEIGHT - 10);
+    ctx.lineTo(32, CANVAS_HEIGHT - 10);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(24, 15);
+    ctx.lineTo(24, CANVAS_HEIGHT - 15);
+    ctx.stroke();
+    drawArrowhead(24, 15, -Math.PI / 2);
+    drawArrowhead(24, CANVAS_HEIGHT - 15, Math.PI / 2);
+    
+    ctx.save();
+    ctx.translate(19, CANVAS_HEIGHT / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('全長 274 cm', 0, 0);
+    ctx.restore();
+
+    // 2. 幅 152.5cm (下端の寸法線)
+    ctx.beginPath();
+    ctx.moveTo(10, CANVAS_HEIGHT - 15);
+    ctx.lineTo(10, CANVAS_HEIGHT - 32);
+    ctx.moveTo(CANVAS_WIDTH - 10, CANVAS_HEIGHT - 15);
+    ctx.lineTo(CANVAS_WIDTH - 10, CANVAS_HEIGHT - 32);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(15, CANVAS_HEIGHT - 24);
+    ctx.lineTo(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 24);
+    ctx.stroke();
+    drawArrowhead(15, CANVAS_HEIGHT - 24, Math.PI);
+    drawArrowhead(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 24, 0);
+    
+    ctx.textAlign = 'center';
+    ctx.fillText('幅 152.5 cm', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 28);
+
+    // 3. サイドフレーム 60cm (右端・手前側の寸法線)
+    ctx.strokeStyle = 'rgba(255, 0, 127, 0.2)';
+    ctx.fillStyle = 'rgba(255, 0, 127, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_WIDTH - 15, Y_DEFENSE_P1);
+    ctx.lineTo(CANVAS_WIDTH - 32, Y_DEFENSE_P1);
+    ctx.moveTo(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 10);
+    ctx.lineTo(CANVAS_WIDTH - 32, CANVAS_HEIGHT - 10);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_WIDTH - 24, Y_DEFENSE_P1 + 5);
+    ctx.lineTo(CANVAS_WIDTH - 24, CANVAS_HEIGHT - 15);
+    ctx.stroke();
+    drawArrowhead(CANVAS_WIDTH - 24, Y_DEFENSE_P1 + 5, -Math.PI / 2);
+    drawArrowhead(CANVAS_WIDTH - 24, CANVAS_HEIGHT - 15, Math.PI / 2);
+    
+    ctx.save();
+    ctx.translate(CANVAS_WIDTH - 19, Y_DEFENSE_P1 + 45);
+    ctx.rotate(Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('フレーム 60 cm', 0, 0);
+    ctx.restore();
+
+    // 4. ネット断面規格図 (右側空きスペース Y=140〜225, X=635〜760)
+    // プレイに支障がない隅っこに配置
+    const viewX = CANVAS_WIDTH - 155;
+    const viewY = 140;
+    const viewW = 125;
+    const viewH = 85;
+    
+    // 背景・外枠
+    ctx.fillStyle = 'rgba(10, 13, 20, 0.85)';
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.fillRect(viewX, viewY, viewW, viewH);
+    ctx.strokeRect(viewX, viewY, viewW, viewH);
+    
+    // 図解タイトル
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.font = 'bold 8.5px "Outfit", "Noto Sans JP", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ネット断面 (側観)', viewX + viewW / 2, viewY + 12);
+    
+    // テーブル面 (横線)
+    const tblY = viewY + 65;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.moveTo(viewX + 8, tblY);
+    ctx.lineTo(viewX + viewW - 8, tblY);
+    ctx.stroke();
+    
+    // ネットの支柱と布ネット
+    const netGap = 13;   // スケール換算の隙間
+    const netH = 32;     // ネットの高さ
+    const netTopY = tblY - netGap - netH;
+    const netBottomY = tblY - netGap;
+    const netX = viewX + viewW / 2;
+    
+    // ネット (半透明の青)
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
+    ctx.fillRect(netX - 2.5, netTopY, 5, netH);
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+    ctx.strokeRect(netX - 2.5, netTopY, 5, netH);
+    
+    // ネット支柱
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(netX - 0.8, netTopY - 3, 1.6, netH + netGap + 3);
+    
+    // ボールが隙間を通過する点線軌跡
+    ctx.strokeStyle = 'rgba(57, 255, 20, 0.4)';
+    ctx.setLineDash([2, 1.5]);
+    ctx.beginPath();
+    ctx.moveTo(viewX + 15, tblY - 6);
+    ctx.lineTo(viewX + viewW - 15, tblY - 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // ボール (ネオングリーン)
+    ctx.fillStyle = '#39ff14';
+    ctx.beginPath();
+    ctx.arc(netX - 20, tblY - 6, 4.5, 0, Math.PI * 2);
+    ctx.arc(netX, tblY - 6, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 寸法引出線 (オレンジ/黄)
+    ctx.strokeStyle = 'rgba(255, 170, 0, 0.6)';
+    ctx.fillStyle = 'rgba(255, 170, 0, 0.85)';
+    ctx.font = '7.5px "Outfit", "Noto Sans JP", sans-serif';
+    
+    // ネット下の隙間 4.2cm
+    ctx.beginPath();
+    ctx.moveTo(netX + 12, tblY);
+    ctx.lineTo(netX + 12, netBottomY);
+    ctx.stroke();
+    drawArrowhead(netX + 12, tblY, Math.PI / 2);
+    drawArrowhead(netX + 12, netBottomY, -Math.PI / 2);
+    
+    ctx.textAlign = 'left';
+    ctx.fillText('隙間 4.2cm', netX + 18, tblY - 3);
+    
+    // ネットの高さ 15.25cm
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.5)';
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(netX - 12, tblY);
+    ctx.lineTo(netX - 12, netTopY);
+    ctx.stroke();
+    drawArrowhead(netX - 12, tblY, Math.PI / 2);
+    drawArrowhead(netX - 12, netTopY, -Math.PI / 2);
+    
+    ctx.textAlign = 'right';
+    ctx.fillText('高 15.25cm', netX - 18, netTopY + 12);
+    
+    ctx.restore(); // 寸法ガイド描画のスタイルの復元
+
     // 4. 音の波紋エフェクトの描画・更新
     ctx.lineWidth = 3;
     for (let i = this.ripples.length - 1; i >= 0; i--) {
@@ -1722,6 +2065,114 @@ class GameEngine {
       ctx.fill();
       
       ctx.shadowBlur = 0; // シャドウリセット
+    }
+  }
+
+  // ==========================================================================
+  // 11. モバイル・アクセシビリティ（チルト操作等）の処理
+  // ==========================================================================
+
+  requestDeviceOrientationPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(permissionState => {
+          if (permissionState === 'granted') {
+            this.enableTiltControl();
+          } else {
+            console.log("DeviceOrientation permission denied.");
+            const chk = document.getElementById('chk-use-tilt');
+            if (chk) chk.checked = false;
+            this.useTilt = false;
+            narrator.speak("センサーのアクセス許可が得られなかったため、チルト操作は無効化されました。Bluetoothキーボードをお使いください。");
+          }
+        })
+        .catch(err => {
+          console.error("DeviceOrientation permission error:", err);
+          const chk = document.getElementById('chk-use-tilt');
+          if (chk) chk.checked = false;
+          this.useTilt = false;
+        });
+    } else {
+      if ('ondeviceorientation' in window || 'DeviceOrientationEvent' in window) {
+        this.enableTiltControl();
+      } else {
+        console.log("DeviceOrientation is not supported on this device.");
+        const chk = document.getElementById('chk-use-tilt');
+        if (chk) chk.checked = false;
+        this.useTilt = false;
+        narrator.speak("この端末はチルト操作用のセンサーに対応していません。");
+      }
+    }
+  }
+
+  enableTiltControl() {
+    this.useTilt = true;
+    
+    if (this.state !== STATE_MENU && !this.screens.play.classList.contains('hidden')) {
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.remove('hidden');
+    }
+    
+    if (this.handleOrientationBound) {
+      window.removeEventListener('deviceorientation', this.handleOrientationBound);
+    }
+    this.handleOrientationBound = (e) => this.handleDeviceOrientation(e);
+    window.addEventListener('deviceorientation', this.handleOrientationBound);
+    
+    this.updateCanvasAriaLabel();
+    console.log("Tilt control successfully initialized.");
+  }
+
+  handleDeviceOrientation(event) {
+    if (!this.useTilt) return;
+    
+    let tilt = 0;
+    const orientation = window.orientation || (screen.orientation && screen.orientation.angle) || 0;
+    
+    if (orientation === 90) {
+      tilt = event.beta;
+    } else if (orientation === -90) {
+      tilt = -event.beta;
+    } else {
+      tilt = event.gamma;
+    }
+    
+    if (tilt === null || tilt === undefined) return;
+    
+    this.currentRawTilt = tilt;
+    
+    const calibratedTilt = tilt - this.tiltCalibrationAngle;
+    const threshold = 4.0; // 4度のデッドゾーン
+    
+    if (calibratedTilt < -threshold) {
+      this.keys['ArrowLeft'] = true;
+      this.keys['ArrowRight'] = false;
+    } else if (calibratedTilt > threshold) {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = true;
+    } else {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = false;
+    }
+  }
+
+  calibrateTilt() {
+    this.tiltCalibrationAngle = this.currentRawTilt;
+    console.log("Calibrated tilt center offset to: " + this.tiltCalibrationAngle);
+  }
+
+  updateCanvasAriaLabel() {
+    const canvasContainer = document.getElementById('canvas-container');
+    if (!canvasContainer) return;
+    
+    if (this.isMobile) {
+      if (this.useTilt) {
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを左右に傾けてラケットを操作します。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
+      } else {
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。接続されたキーボード、または画面をダブルタップしてアクションを行います。");
+      }
+    } else {
+      canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。キーボードの左右矢印キーでラケットを操作し、スペースキーでアクションを行います。");
     }
   }
 

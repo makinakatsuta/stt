@@ -35,6 +35,17 @@
           <span class="btn-text">オーディオを有効にして開始する</span>
           <span class="btn-subtext">Enter または スペースキー</span>
         </button>
+
+        <!-- モバイル向け設定パネル (JavaScriptでタッチ端末検出時に表示) -->
+        <div id="mobile-settings-panel" class="mobile-settings-panel hidden">
+          <div class="checkbox-container">
+            <input type="checkbox" id="chk-use-tilt" checked>
+            <label for="chk-use-tilt">スマートフォンの傾き（チルト）で操作する</label>
+          </div>
+          <p class="mobile-hint-text">
+            ※端末を左右に傾けてラケットを動かし、画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
+          </p>
+        </div>
       </section>
 
       <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->
@@ -132,12 +143,102 @@
           左右矢印キーでラケット移動。スペースキーでアクション。
         </div>
 
-        <!-- 3Dゲーム画面 (Canvas) -->
-        <div class="canvas-container" id="canvas-container" tabindex="0" role="application" aria-label="サウンドテーブルテニス コート。キーボードの左右矢印でラケットを操作します。">
-          <canvas id="game-canvas" width="800" height="500"></canvas>
+        <!-- ゲームプレイのレイアウトコンテナ -->
+        <div class="game-play-layout">
+          <div class="game-main-area">
+            <!-- 3Dゲーム画面 (Canvas) -->
+            <div class="canvas-container" id="canvas-container" tabindex="0" role="application" aria-label="サウンドテーブルテニス コート。キーボードの左右矢印でラケットを操作します。">
+              <canvas id="game-canvas" width="800" height="500"></canvas>
+            </div>
+          </div>
+          
+          <!-- STT公式規格・寸法ガイドパネル (見える人向け) -->
+          <aside class="dimension-guide-aside" aria-label="STT公式コート規格ガイド">
+            <h3 class="guide-title">🏓 STT公式コート規格</h3>
+            <div class="guide-specs">
+              <div class="spec-card">
+                <span class="spec-icon">📏</span>
+                <div class="spec-info">
+                  <span class="spec-label">卓球台の寸法</span>
+                  <span class="spec-value">縦 274 cm × 横 152.5 cm</span>
+                  <span class="spec-desc">床上高さ 76 cm の水平面 (2D画面に対応)</span>
+                </div>
+              </div>
+              <div class="spec-card">
+                <span class="spec-icon">🕸️</span>
+                <div class="spec-info">
+                  <span class="spec-label">ネットの高さ・隙間</span>
+                  <span class="spec-value">上縁 15.25 cm / 下縁隙間 4.2 cm</span>
+                  <span class="spec-desc">ボールはネットの下を通過します</span>
+                </div>
+              </div>
+              <div class="spec-card">
+                <span class="spec-icon">🧱</span>
+                <div class="spec-info">
+                  <span class="spec-label">サイドフレーム</span>
+                  <span class="spec-value">長さ 60 cm / 高さ 1.5 cm</span>
+                  <span class="spec-desc">エンドからネット方向へ 60 cm のサイド壁</span>
+                </div>
+              </div>
+              <div class="spec-card">
+                <span class="spec-icon">🟢</span>
+                <div class="spec-info">
+                  <span class="spec-label">公式ボール</span>
+                  <span class="spec-value">直径 4.0 cm / 重さ 3.6〜3.8 g</span>
+                  <span class="spec-desc">金属球4個内蔵（シャラシャラ音）</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- SVGによるコート平面・ネット断面のミニ図 -->
+            <div class="guide-diagrams">
+              <svg viewBox="0 0 160 120" class="guide-svg">
+                <!-- 卓球台の簡易平面図 -->
+                <rect x="15" y="15" width="50" height="90" rx="2" fill="#070a0f" stroke="var(--color-accent)" stroke-width="1.2"/>
+                <!-- ネット -->
+                <line x1="12" y1="60" x2="68" y2="60" stroke="rgba(0, 240, 255, 0.7)" stroke-width="1.5" stroke-dasharray="1.5 1"/>
+                <!-- 守備ライン -->
+                <line x1="15" y1="35" x2="65" y2="35" stroke="rgba(255, 255, 255, 0.25)" stroke-width="0.8" stroke-dasharray="2 1"/>
+                <line x1="15" y1="85" x2="65" y2="85" stroke="rgba(255, 255, 255, 0.25)" stroke-width="0.8" stroke-dasharray="2 1"/>
+                <!-- センターライン -->
+                <line x1="40" y1="15" x2="40" y2="35" stroke="rgba(255, 255, 255, 0.25)" stroke-width="0.8"/>
+                <line x1="40" y1="85" x2="40" y2="105" stroke="rgba(255, 255, 255, 0.25)" stroke-width="0.8"/>
+                <!-- サイド＆エンドフレーム強調 -->
+                <path d="M 15 35 L 15 15 L 65 15 L 65 35" fill="none" stroke="var(--color-accent-alt)" stroke-width="1.5"/>
+                <path d="M 15 85 L 15 105 L 65 105 L 65 85" fill="none" stroke="var(--color-accent-alt)" stroke-width="1.5"/>
+                
+                <!-- 寸法ラベル -->
+                <text x="40" y="11" font-size="6" fill="var(--text-muted)" text-anchor="middle" font-family="var(--font-title)">152.5 cm</text>
+                <text x="8" y="62" font-size="6" fill="var(--text-muted)" text-anchor="middle" transform="rotate(-90 8 62)" font-family="var(--font-title)">274 cm</text>
+                <text x="69" y="27" font-size="5" fill="var(--color-accent-alt)" text-anchor="start">フレーム 60 cm</text>
+                
+                <!-- ネットの断面図 (側視) -->
+                <g transform="translate(85, 20)">
+                  <!-- テーブル面 -->
+                  <line x1="5" y1="65" x2="65" y2="65" stroke="rgba(255, 255, 255, 0.3)" stroke-width="1.5"/>
+                  <!-- ネット支柱 -->
+                  <line x1="35" y1="65" x2="35" y2="15" stroke="var(--color-accent)" stroke-width="1.5"/>
+                  <!-- ネット -->
+                  <rect x="33" y="15" width="4" height="35" fill="rgba(0, 240, 255, 0.2)" stroke="var(--color-accent)" stroke-width="0.8"/>
+                  <!-- 隙間 4.2cm -->
+                  <line x1="45" y1="65" x2="45" y2="50" stroke="var(--color-warning)" stroke-width="0.8"/>
+                  <path d="M 43 62 L 45 65 L 47 62 M 43 53 L 45 50 L 47 53" fill="none" stroke="var(--color-warning)" stroke-width="0.8"/>
+                  <text x="49" y="60" font-size="5.5" fill="var(--color-warning)" font-family="var(--font-title)">隙間 4.2cm</text>
+                  <!-- ネット上縁 15.25cm -->
+                  <line x1="23" y1="65" x2="23" y2="15" stroke="var(--color-accent)" stroke-width="0.8"/>
+                  <path d="M 21 62 L 23 65 L 25 62 M 21 18 L 23 15 L 25 18" fill="none" stroke="var(--color-accent)" stroke-width="0.8"/>
+                  <text x="19" y="42" font-size="5.5" fill="var(--color-accent)" text-anchor="end" font-family="var(--font-title)">高さ 15.25cm</text>
+                  <!-- ボール -->
+                  <circle cx="35" cy="57.5" r="4.5" fill="var(--color-success)"/>
+                  <path d="M 10 57.5 L 60 57.5" stroke="var(--color-success)" stroke-dasharray="1 1" stroke-width="0.5"/>
+                </g>
+              </svg>
+            </div>
+          </aside>
         </div>
 
-        <div class="play-controls">
+        <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+          <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">チルトをリセット（水平にする）</button>
           <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
         </div>
       </section>
@@ -148,8 +249,8 @@
         <div class="help-content">
           <h3>🎮 操作キー</h3>
           <ul>
-            <li><strong>左矢印キー (←) または Aキー</strong>: ラケットを左に移動</li>
-            <li><strong>右矢印キー (→) または Dキー</strong>: ラケットを右に移動</li>
+            <li><strong>左矢印キー (←)</strong>: ラケットを左に移動</li>
+            <li><strong>右矢印キー (→)</strong>: ラケットを右に移動</li>
             <li><strong>スペースキー (Space)</strong>: アクションの決定 (サーブの構え、レシーブの返事「はい」、サーブ打球、ラリー中の打ち返し)</li>
             <li><strong>エスケープキー (Esc)</strong>: プレイの中断</li>
           </ul>

@@ -185,10 +185,12 @@ class SoundSystem {
 
 
   /**
-   * プレイヤーが移動したときの足音（シューズの床摩擦音「キュッ」）を合成します。
+   * プレイヤーが移動したときの足音（シューズの床摩擦音）を合成します。
+   * 移動速度（deltaX）に応じて音量とトーンを変化させます。
    * @param {number} x プレイヤーのX座標 (パン用)
+   * @param {number} deltaX 1フレームでの移動量
    */
-  playFootstepSound(x) {
+  playFootstepSound(x, deltaX) {
     if (!this.ctx || this.isMuted) return;
     
     const panVal = (x / CANVAS_WIDTH) * 2 - 1;
@@ -199,17 +201,24 @@ class SoundSystem {
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
     
-    // バンドパスフィルターで周波数帯を絞る (シューズの摩擦音らしい帯域)
+    // バンドパスフィルターで周波数帯を絞る
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(2500, this.ctx.currentTime);
-    filter.Q.setValueAtTime(3.0, this.ctx.currentTime); // Q値を高くして摩擦音的な響きにする
+    // 速度が速いほど高い摩擦音（キュッ）、遅いほど低いカサカサ音にする
+    const speedRatio = Math.min(deltaX / 7.0, 1.0);
+    const targetFreq = 1500 + (1500 * speedRatio); // 1500Hz 〜 3000Hz
+    filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
+    filter.Q.setValueAtTime(2.0 + (2.0 * speedRatio), this.ctx.currentTime); // 速度が速いほどシャープに
     
     const gain = this.ctx.createGain();
-    // 非常に短い「キュッ」という音のエンベロープ
+    // 速度に比例した音量設定 (最大0.18)
+    const targetVolume = 0.03 + (0.15 * speedRatio);
+    // 速度が速いほど摩擦音もわずかに長く響く
+    const duration = 0.04 + (0.06 * speedRatio); // 40ms 〜 100ms
+    
     gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.12, this.ctx.currentTime + 0.01); // 素早い立ち上がり
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.08); // 素早い減衰 (80ms)
+    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
     
     if (panner) {
       noise.connect(filter);
@@ -223,7 +232,7 @@ class SoundSystem {
     }
     
     noise.start();
-    noise.stop(this.ctx.currentTime + 0.1);
+    noise.stop(this.ctx.currentTime + duration);
   }
 
   /**
@@ -1438,10 +1447,11 @@ class GameEngine {
 
         // 自分（プレイヤー）のラケットの移動音（足音）の処理
         const myPaddleX = this.role === 1 ? this.p1.x : this.p2.x;
-        if (Math.abs(myPaddleX - this.lastMyPaddleX) > 0.01) {
+        const deltaX = Math.abs(myPaddleX - this.lastMyPaddleX);
+        if (deltaX > 0.02) {
           const now = Date.now();
-          if (now - this.lastFootstepTime > 250) { // 250ms 間隔
-            sounds.playFootstepSound(myPaddleX);
+          if (now - this.lastFootstepTime > 60) { // 60ms 間隔
+            sounds.playFootstepSound(myPaddleX, deltaX);
             this.lastFootstepTime = now;
           }
         }

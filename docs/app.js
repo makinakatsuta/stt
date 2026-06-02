@@ -696,8 +696,9 @@ class GameEngine {
     
     // 得点とゲーム設定
     this.scores = { p1: 0, p2: 0 };
+    this.gameScores = { p1: 0, p2: 0 }; // 各セット（ゲーム）の獲得数
     this.serverRole = 1; // 現在のサーバー (1 or 2)
-    this.matchGames = 5; // 5ゲームマッチ
+    this.matchGames = 3; // 3ゲームス2セット先取マッチ
     this.maxScore = 11;  // 11点先取
     
     // タイムアウト管理 (公式5秒ルールなどのチェック用)
@@ -1095,6 +1096,8 @@ class GameEngine {
   startNewMatch() {
     this.scores.p1 = 0;
     this.scores.p2 = 0;
+    this.gameScores.p1 = 0;
+    this.gameScores.p2 = 0;
     // CPU対戦時はレシーブ練習のために常にCPU(Player2)がサーブ権を持ち、オンライン対戦時はPlayer1が持ちます
     this.serverRole = this.mode === 'cpu' ? 2 : 1; 
     
@@ -1150,6 +1153,11 @@ class GameEngine {
   updateScoreboard() {
     document.getElementById('score-p1').textContent = this.scores.p1;
     document.getElementById('score-p2').textContent = this.scores.p2;
+    
+    const g1 = document.getElementById('game-p1');
+    const g2 = document.getElementById('game-p2');
+    if (g1) g1.textContent = `ゲーム獲得: ${this.gameScores.p1}`;
+    if (g2) g2.textContent = `ゲーム獲得: ${this.gameScores.p2}`;
   }
 
   /**
@@ -1394,7 +1402,7 @@ class GameEngine {
     // コール発声: 「ポイント [P1/P2]」
     const winnerName = winner === 1 ? "プレイヤー 1" : "プレイヤー 2";
     
-    // デュース判定などの公式スコア計算
+    // デュース判定などの公式スコア計算 (ホスト、またはCPU戦の場合のみ加算)
     if (this.mode === 'cpu' || this.isServerAndDecider()) {
       if (winner === 1) this.scores.p1++;
       else this.scores.p2++;
@@ -1416,14 +1424,46 @@ class GameEngine {
     const scoreAnnounce = `${reasonText}。ポイント、${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     narrator.speak(scoreAnnounce, true);
     
-    // 試合終了判定 (11点先取、デュース時は2点差)
+    // 1ゲーム（セット）終了判定 (11点先取、デュース時は2点差)
     const p1 = this.scores.p1;
     const p2 = this.scores.p2;
     const isGameFinished = (p1 >= this.maxScore || p2 >= this.maxScore) && Math.abs(p1 - p2) >= 2;
     
     setTimeout(() => {
       if (isGameFinished) {
-        this.finishGame(p1 > p2 ? 1 : 2);
+        // ゲーム獲得数をインクリメント
+        const gameWinner = p1 > p2 ? 1 : 2;
+        this.gameScores[gameWinner === 1 ? 'p1' : 'p2']++;
+        this.updateScoreboard();
+        
+        // マッチ勝利条件（2セット先取）のチェック
+        const winThreshold = Math.ceil(this.matchGames / 2); // 3ゲームマッチなら2
+        if (this.gameScores.p1 >= winThreshold || this.gameScores.p2 >= winThreshold) {
+          // マッチ終了（全ゲームセット）
+          this.finishMatch(this.gameScores.p1 > this.gameScores.p2 ? 1 : 2);
+        } else {
+          // 次のゲームの準備
+          const totalGames = this.gameScores.p1 + this.gameScores.p2;
+          const nextGameNum = totalGames + 1;
+          
+          narrator.speak(`ゲームカウント、${this.gameScores.p1} 対 ${this.gameScores.p2}。第 ${nextGameNum} ゲームを開始します。`, true);
+          
+          // ゲーム内のスコアをリセット
+          this.scores.p1 = 0;
+          this.scores.p2 = 0;
+          this.updateScoreboard();
+          
+          // サーブ権の初期設定 (奇数ゲームはPlayer1、偶数ゲームはPlayer2が最初のサーブ権を持つ)
+          if (this.mode === 'cpu') {
+            this.serverRole = 2; // CPU戦では常にCPUがサーブ
+          } else {
+            this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
+          }
+          
+          setTimeout(() => {
+            this.prepareServeSequence();
+          }, 3000);
+        }
       } else {
         // 次のサーブ権の移行チェック
         if (this.mode === 'cpu') {
@@ -1452,15 +1492,18 @@ class GameEngine {
   }
 
   /**
-   * ゲームの決着がついた際の終了処理。
+   * マッチ(試合全体)の決着がついた際の終了処理。
    */
-  finishGame(gameWinner) {
-    const winnerName = gameWinner === 1 ? "プレイヤー 1" : "プレイヤー 2";
-    narrator.speak(`ゲームセット！ 勝者は ${winnerName} です！`, true);
+  finishMatch(matchWinner) {
+    const winnerName = matchWinner === 1 ? "プレイヤー 1" : "プレイヤー 2";
+    narrator.speak(`マッチ終了！ 勝者は、${winnerName} です！おめでとうございます！`, true);
+    
+    // 画面のテキストを更新
+    document.getElementById('play-instructions').textContent = `試合終了！勝者: ${winnerName}`;
     
     setTimeout(() => {
       this.quitGame();
-    }, 5000);
+    }, 6000);
   }
 
   // ==========================================================================

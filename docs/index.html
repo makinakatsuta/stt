@@ -35,6 +35,17 @@
           <span class="btn-text">オーディオを有効にして開始する</span>
           <span class="btn-subtext">Enter または スペースキー</span>
         </button>
+
+        <!-- モバイル向け設定パネル (JavaScriptでタッチ端末検出時に表示) -->
+        <div id="mobile-settings-panel" class="mobile-settings-panel hidden">
+          <div class="checkbox-container">
+            <input type="checkbox" id="chk-use-tilt" checked>
+            <label for="chk-use-tilt">スマートフォンの傾き（チルト）で操作する</label>
+          </div>
+          <p class="mobile-hint-text">
+            ※端末を左右に傾けてラケットを動かし、画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
+          </p>
+        </div>
       </section>
 
       <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->
@@ -137,7 +148,8 @@
           <canvas id="game-canvas" width="800" height="500"></canvas>
         </div>
 
-        <div class="play-controls">
+        <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+          <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">チルトをリセット（水平にする）</button>
           <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
         </div>
       </section>

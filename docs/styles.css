@@ -562,3 +562,171 @@ body {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* 12. スマートフォン・タブレット向けレスポンシブデザイン ＆ アクセシビリティ */
+
+.mobile-settings-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 25px;
+  width: 100%;
+}
+
+.mobile-settings-panel .checkbox-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mobile-settings-panel input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.mobile-settings-panel label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mobile-hint-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  text-align: left;
+}
+
+/* メディアクエリ: モバイル端末向け調整 */
+@media (max-width: 768px) {
+  body {
+    padding: 10px;
+  }
+
+  .app-container {
+    padding: 10px;
+    min-height: 100vh;
+    justify-content: flex-start;
+  }
+
+  .game-header {
+    margin-bottom: 15px;
+  }
+
+  .game-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .game-header .subtitle {
+    font-size: 0.8rem;
+  }
+
+  .game-card {
+    padding: 20px 15px;
+    min-height: 320px;
+    border-radius: 12px;
+  }
+
+  .game-card h2 {
+    font-size: 1.4rem;
+    margin-bottom: 15px;
+  }
+
+  .game-card .description {
+    font-size: 0.85rem;
+    margin-bottom: 25px;
+    line-height: 1.6;
+  }
+
+  /* ボタンのタッチターゲット拡大 (アクセシビリティ強化) */
+  .btn {
+    min-height: 52px;
+    padding: 12px 24px;
+    font-size: 1rem;
+    width: 100%; /* モバイルではボタンを幅いっぱいに */
+    max-width: 320px;
+    margin-bottom: 10px;
+  }
+
+  .btn-large {
+    min-height: 60px;
+  }
+
+  .btn-subtext {
+    font-size: 0.75rem;
+  }
+
+  .menu-grid, .difficulty-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .btn-menu {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 15px;
+    min-height: 68px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .btn-menu .menu-icon {
+    font-size: 1.8rem;
+    margin-right: 15px;
+    margin-bottom: 0;
+  }
+
+  .btn-menu .menu-title {
+    font-size: 1rem;
+    margin-bottom: 2px;
+  }
+
+  .btn-menu .menu-desc {
+    font-size: 0.75rem;
+    display: block;
+  }
+
+  /* スコアボード */
+  .scoreboard {
+    padding: 10px 15px;
+    margin-bottom: 15px;
+  }
+
+  .score-name {
+    font-size: 0.75rem;
+  }
+
+  .score-val {
+    font-size: 1.8rem;
+  }
+
+  /* プレイ中操作説明 */
+  .play-instructions {
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+    padding: 0 10px;
+  }
+
+  /* ヘルプコンテンツ */
+  .help-content {
+    max-height: 280px;
+  }
+
+  .help-content h3 {
+    font-size: 1rem;
+  }
+
+  .help-content li, .help-content p {
+    font-size: 0.85rem;
+  }
+}

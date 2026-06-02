@@ -616,6 +616,15 @@ class GameEngine {
     // オンライン対戦時の遅延によるフライング得点防止用のタイマー
     this.pendingScoreTimeout = null;
 
+    // モバイル・アクセシビリティ対応用変数
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window) 
+      || (navigator.maxTouchPoints > 0);
+    this.useTilt = false;
+    this.tiltCalibrationAngle = 0;
+    this.currentRawTilt = 0;
+    this.handleOrientationBound = null;
+
     // イベントリスナーのバインド
     this.setupEventListeners();
   }
@@ -624,9 +633,66 @@ class GameEngine {
    * HTML上の各種ボタンにイベントをバインドします。
    */
   setupEventListeners() {
+    // モバイル用設定パネルの表示制御とARIALabel初期化
+    if (this.isMobile) {
+      const panel = document.getElementById('mobile-settings-panel');
+      if (panel) panel.classList.remove('hidden');
+    }
+    this.updateCanvasAriaLabel();
+
+    // チルト切り替えチェックボックスの変更監視
+    const useTiltCheckbox = document.getElementById('chk-use-tilt');
+    if (useTiltCheckbox) {
+      useTiltCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          this.requestDeviceOrientationPermission();
+        } else {
+          this.useTilt = false;
+          // キー状態のクリア
+          this.keys['ArrowLeft'] = false;
+          this.keys['ArrowRight'] = false;
+          this.keys['KeyA'] = false;
+          this.keys['KeyD'] = false;
+          document.getElementById('btn-calibrate-tilt').classList.add('hidden');
+          this.updateCanvasAriaLabel();
+        }
+      });
+    }
+
+    // チルト調整ボタンのクリック
+    const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+    if (btnCalibrate) {
+      btnCalibrate.addEventListener('click', () => {
+        this.calibrateTilt();
+        narrator.speak("チルトの中心位置を調整しました。");
+      });
+    }
+
+    // ゲーム画面タップによるアクション (スマホ・アクセシビリティ対応)
+    const canvasContainer = document.getElementById('canvas-container');
+    if (canvasContainer) {
+      canvasContainer.addEventListener('click', (e) => {
+        // プレイ中のステートでのみタップでアクションを実行
+        const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+        if (activeStates.includes(this.state)) {
+          if (e.target.id === 'game-canvas' || e.target.id === 'canvas-container') {
+            e.preventDefault();
+            this.handleActionInput();
+          }
+        }
+      });
+    }
+
     // 1. オーディオ有効化ボタン
     document.getElementById('btn-enable-audio').addEventListener('click', () => {
       sounds.init();
+      
+      const useTiltCheckbox = document.getElementById('chk-use-tilt');
+      const useTilt = useTiltCheckbox ? useTiltCheckbox.checked : false;
+      if (this.isMobile && useTilt) {
+        this.requestDeviceOrientationPermission();
+      }
+
       this.changeScreen('menu');
       narrator.speak("サウンドテーブルテニスへようこそ。モードを選択してください。");
     });
@@ -758,6 +824,16 @@ class GameEngine {
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     narrator.stop();
     this.changeScreen('menu');
+    
+    // チルト調整ボタンを非表示化、キーのクリア
+    const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+    if (btnCalibrate) btnCalibrate.classList.add('hidden');
+    this.keys['ArrowLeft'] = false;
+    this.keys['ArrowRight'] = false;
+    this.keys['KeyA'] = false;
+    this.keys['KeyD'] = false;
+    this.updateCanvasAriaLabel();
+
     narrator.speak("ゲームを終了し、メニューに戻りました。");
   }
 
@@ -910,6 +986,20 @@ class GameEngine {
     
     // UIの切り替え
     this.changeScreen('play');
+
+    // モバイルのチルト自動調整および調整ボタンの表示制御
+    if (this.isMobile && this.useTilt) {
+      setTimeout(() => {
+        this.calibrateTilt();
+      }, 500); // 手の傾きが安定するまで少し待って自動調整
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.remove('hidden');
+    } else {
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.add('hidden');
+    }
+    this.updateCanvasAriaLabel();
+
     this.updateScoreboard();
     
     // プレイヤーの名前設定
@@ -1722,6 +1812,120 @@ class GameEngine {
       ctx.fill();
       
       ctx.shadowBlur = 0; // シャドウリセット
+    }
+  }
+
+  // ==========================================================================
+  // 11. モバイル・アクセシビリティ（チルト操作等）の処理
+  // ==========================================================================
+
+  requestDeviceOrientationPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(permissionState => {
+          if (permissionState === 'granted') {
+            this.enableTiltControl();
+          } else {
+            console.log("DeviceOrientation permission denied.");
+            const chk = document.getElementById('chk-use-tilt');
+            if (chk) chk.checked = false;
+            this.useTilt = false;
+            narrator.speak("センサーのアクセス許可が得られなかったため、チルト操作は無効化されました。Bluetoothキーボードをお使いください。");
+          }
+        })
+        .catch(err => {
+          console.error("DeviceOrientation permission error:", err);
+          const chk = document.getElementById('chk-use-tilt');
+          if (chk) chk.checked = false;
+          this.useTilt = false;
+        });
+    } else {
+      if ('ondeviceorientation' in window || 'DeviceOrientationEvent' in window) {
+        this.enableTiltControl();
+      } else {
+        console.log("DeviceOrientation is not supported on this device.");
+        const chk = document.getElementById('chk-use-tilt');
+        if (chk) chk.checked = false;
+        this.useTilt = false;
+        narrator.speak("この端末はチルト操作用のセンサーに対応していません。");
+      }
+    }
+  }
+
+  enableTiltControl() {
+    this.useTilt = true;
+    
+    if (this.state !== STATE_MENU && !this.screens.play.classList.contains('hidden')) {
+      const btnCalibrate = document.getElementById('btn-calibrate-tilt');
+      if (btnCalibrate) btnCalibrate.classList.remove('hidden');
+    }
+    
+    if (this.handleOrientationBound) {
+      window.removeEventListener('deviceorientation', this.handleOrientationBound);
+    }
+    this.handleOrientationBound = (e) => this.handleDeviceOrientation(e);
+    window.addEventListener('deviceorientation', this.handleOrientationBound);
+    
+    this.updateCanvasAriaLabel();
+    console.log("Tilt control successfully initialized.");
+  }
+
+  handleDeviceOrientation(event) {
+    if (!this.useTilt) return;
+    
+    let tilt = 0;
+    const orientation = window.orientation || (screen.orientation && screen.orientation.angle) || 0;
+    
+    if (orientation === 90) {
+      tilt = event.beta;
+    } else if (orientation === -90) {
+      tilt = -event.beta;
+    } else {
+      tilt = event.gamma;
+    }
+    
+    if (tilt === null || tilt === undefined) return;
+    
+    this.currentRawTilt = tilt;
+    
+    const calibratedTilt = tilt - this.tiltCalibrationAngle;
+    const threshold = 4.0; // 4度のデッドゾーン
+    
+    if (calibratedTilt < -threshold) {
+      this.keys['ArrowLeft'] = true;
+      this.keys['ArrowRight'] = false;
+      this.keys['KeyA'] = true;
+      this.keys['KeyD'] = false;
+    } else if (calibratedTilt > threshold) {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = true;
+      this.keys['KeyA'] = false;
+      this.keys['KeyD'] = true;
+    } else {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = false;
+      this.keys['KeyA'] = false;
+      this.keys['KeyD'] = false;
+    }
+  }
+
+  calibrateTilt() {
+    this.tiltCalibrationAngle = this.currentRawTilt;
+    console.log("Calibrated tilt center offset to: " + this.tiltCalibrationAngle);
+  }
+
+  updateCanvasAriaLabel() {
+    const canvasContainer = document.getElementById('canvas-container');
+    if (!canvasContainer) return;
+    
+    if (this.isMobile) {
+      if (this.useTilt) {
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを左右に傾けてラケットを操作します。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
+      } else {
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。接続されたキーボード、または画面をダブルタップしてアクションを行います。");
+      }
+    } else {
+      canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。キーボードの左右矢印またはA・Dキーでラケットを操作し、スペースキーでアクションを行います。");
     }
   }
 

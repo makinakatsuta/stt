@@ -236,6 +236,41 @@ class SoundSystem {
   }
 
   /**
+   * ラケットを振ったときの風切り音（スイング音「ブン」）を合成します。
+   * @param {number} x ラケットのX座標 (パン用)
+   */
+  playSwingSound(x) {
+    if (!this.ctx || this.isMuted) return;
+    
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    
+    osc.type = 'triangle'; // 三角波で丸みのある低音にする
+    // 周波数を240Hzから60Hzへと急速にスウィープ
+    osc.frequency.setValueAtTime(240, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(60, this.ctx.currentTime + 0.12);
+    
+    gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.14);
+    
+    if (panner) {
+      osc.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+    }
+    
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.15);
+  }
+
+  /**
    * 打球音 (木製ラケットの「コン」という乾いた音) を合成します。
    * @param {number} x 衝突したX座標 (パン用)
    */
@@ -839,6 +874,13 @@ class GameEngine {
 
     // キーボード入力の監視
     window.addEventListener('keydown', (e) => {
+      // プレイ中は矢印キーのデフォルト挙動 (スクロール) を防止して連打・長押しを円滑にする
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code) || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        if (this.state !== STATE_MENU) {
+          e.preventDefault();
+        }
+      }
+
       this.keys[e.code] = true;
       
       // スペースキーによるアクション制御 (スクロール防止)
@@ -1278,7 +1320,11 @@ class GameEngine {
       const isIncoming = (this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0);
       const isNearPaddle = Math.abs(this.ball.y - defenseY) < 30; // 守備ライン付近30px
       const hitPaddle = this.ball.x >= paddle.x && this.ball.x <= paddle.x + PADDLE_WIDTH;
-                           
+      
+      // スイング音とスイング波紋エフェクトを即座に発生させる (ボールのヒットに関わらず連打可能)
+      sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2);
+      this.addRipple(paddle.x + PADDLE_WIDTH / 2, defenseY, 'swing');
+
       if (isIncoming && isNearPaddle && hitPaddle) {
         // 打ち返し成功！
         this.ball.y = defenseY; // 位置補正
@@ -1785,6 +1831,10 @@ class GameEngine {
       case 'serve':
         color = 'rgba(57, 255, 20, 0.7)';
         maxRadius = 110;
+        break;
+      case 'swing':
+        color = 'rgba(255, 255, 255, 0.45)';
+        maxRadius = 65;
         break;
     }
     

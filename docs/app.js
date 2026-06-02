@@ -1591,12 +1591,12 @@ class GameEngine {
     const speed = 7;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     
-    if (this.keys['ArrowLeft'] || this.keys['KeyA']) {
+    if (this.keys['ArrowLeft']) {
       paddle.x -= speed;
       if (paddle.x < 0) paddle.x = 0;
       this.syncPaddlePosition(paddle.x);
     }
-    if (this.keys['ArrowRight'] || this.keys['KeyD']) {
+    if (this.keys['ArrowRight']) {
       paddle.x += speed;
       if (paddle.x > CANVAS_WIDTH - PADDLE_WIDTH) paddle.x = CANVAS_WIDTH - PADDLE_WIDTH;
       this.syncPaddlePosition(paddle.x);

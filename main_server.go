@@ -134,9 +134,25 @@ func (r *Room) Run() {
 			r.mu.Unlock()
 
 		case message := <-r.broadcast:
-			// 部屋内の全プレイヤーにメッセージを転送 (送信者以外)
+			// メッセージをパースして種類に応じて処理を分岐する
 			var msg Message
 			if err := json.Unmarshal(message, &msg); err == nil {
+
+				// ping メッセージは broadcast せず、送信者本人に pong を返す
+				if msg.Type == "ping" {
+					r.mu.Lock()
+					if sender, ok := r.players[msg.Sender]; ok {
+						pongPayload := msg.Payload // sendTime をそのまま返す
+						select {
+						case sender.send <- mustMarshal(Message{Type: "pong", Sender: "server", Payload: pongPayload}):
+						default:
+						}
+					}
+					r.mu.Unlock()
+					continue
+				}
+
+				// それ以外は部屋内の全プレイヤーに転送 (送信者以外)
 				r.mu.Lock()
 				for id, p := range r.players {
 					if id != msg.Sender {

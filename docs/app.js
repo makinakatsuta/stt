@@ -558,6 +558,8 @@ class NetworkSystem {
     this.onError = null;
     this.pingInterval = null;
     this.latency = 0;
+    // パドル同期のスロットル用（30ms 以内の重複送信を防止）
+    this.paddleLastSent = 0;
   }
 
   /**
@@ -1551,11 +1553,15 @@ class GameEngine {
         this.syncPaddlePosition(paddle.x);
 
         // ボール状態の更新
-        this.ball.x = result.ball.x;
-        this.ball.y = result.ball.y;
-        this.ball.vx = result.ball.vx;
-        this.ball.vy = result.ball.vy;
-        this.ball.active = result.ball.active;
+        // オンライン対戦時: Player2（クライアント）はボール位置をローカル物理で上書きしない。
+        // ボール位置は serve / ball_hit の受信イベントでのみ更新する（両者独立計算によるズレ防止）。
+        if (this.mode !== 'online' || this.role !== 2) {
+          this.ball.x = result.ball.x;
+          this.ball.y = result.ball.y;
+          this.ball.vx = result.ball.vx;
+          this.ball.vy = result.ball.vy;
+          this.ball.active = result.ball.active;
+        }
 
         // 立体音響のアップデート
         if (this.ball.active && this.state === STATE_RALLY) {
@@ -1585,33 +1591,36 @@ class GameEngine {
                 });
               }
             } else if (evt.type === 'score') {
+              // オンライン対戦時: Player2（クライアント）はローカルの score イベントを無視し、
+              // Player1（ホスト）から送られてくる 'point' メッセージでのみ得点を更新する
+              if (this.mode === 'online' && this.role === 2) {
+                if (evt.reason === 'stop') {
+                  sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                }
+                // Player2 はここで処理を終わらせ、ホストの判定を待つ
+                return;
+              }
+
               if (this.mode === 'online') {
-                if (this.role === 1) {
-                  // ホスト(Player1)が得点を決定する
-                  if (evt.winner === 2) {
-                    // 自分がミスした場合は即座に判定
-                    if (evt.reason === 'stop') {
-                      sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
-                    }
-                    this.awardPointTo(evt.winner, evt.reason);
-                  } else {
-                    // 相手がミスした場合は、遅延パケット到着を考慮して300ms保留する
-                    if (this.pendingScoreTimeout) clearTimeout(this.pendingScoreTimeout);
-                    this.pendingScoreTimeout = setTimeout(() => {
-                      if (this.state === STATE_RALLY) { // まだラリー中であれば確定
-                        if (evt.reason === 'stop') {
-                          sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
-                        }
-                        this.awardPointTo(evt.winner, evt.reason);
-                      }
-                      this.pendingScoreTimeout = null;
-                    }, 300); // 300msのバッファ
-                  }
-                } else {
-                  // クライアント(Player2)はホストからの得点同期メッセージを待つため、ローカルのscoreイベントは無視する
+                // Player1（ホスト）が得点を決定・同期する
+                if (evt.winner === 2) {
+                  // 自分（Player1）がミスした場合は即座に判定
                   if (evt.reason === 'stop') {
                     sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
                   }
+                  this.awardPointTo(evt.winner, evt.reason);
+                } else {
+                  // 相手がミスした場合は、遅延パケット到着を考慮して300ms保留する
+                  if (this.pendingScoreTimeout) clearTimeout(this.pendingScoreTimeout);
+                  this.pendingScoreTimeout = setTimeout(() => {
+                    if (this.state === STATE_RALLY) { // まだラリー中であれば確定
+                      if (evt.reason === 'stop') {
+                        sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+                      }
+                      this.awardPointTo(evt.winner, evt.reason);
+                    }
+                    this.pendingScoreTimeout = null;
+                  }, 300); // 300msのバッファ
                 }
               } else {
                 // CPU戦などは即座に判定
@@ -1679,7 +1688,10 @@ class GameEngine {
     }
 
     // 3. ボールの運動計算 (ラリー中のみ移動)
-    if (this.ball.active && this.state === STATE_RALLY) {
+    // オンライン対戦で Player2（クライアント）の場合、ボール物理計算はスキップする。
+    // ボール位置は Player1 からの serve / ball_hit メッセージ受信時にのみ更新する。
+    const shouldComputeBall = !(this.mode === 'online' && this.role === 2);
+    if (shouldComputeBall && this.ball.active && this.state === STATE_RALLY) {
       // 摩擦による減速
       this.ball.vx *= TABLE_FRICTION;
       this.ball.vy *= TABLE_FRICTION;
@@ -1802,11 +1814,12 @@ class GameEngine {
    * 自分のラケット位置をネットワーク同期します (流量制限を行い負荷低減)。
    */
   syncPaddlePosition(x) {
-    if (this.mode === 'online') {
-      // 30ms以内に連続で送信しないようにスロットルをかけるなど調整できますが、
-      // ここでは簡易的に直近位置を送信します
-      this.net.send('action', { actionType: 'paddle', x: x });
-    }
+    if (this.mode !== 'online') return;
+    // 30ms 以内の重複送信を防いでサーバー負荷を抑制する（スロットル）
+    const now = Date.now();
+    if (now - this.net.paddleLastSent < 30) return;
+    this.net.paddleLastSent = now;
+    this.net.send('action', { actionType: 'paddle', x: x });
   }
 
   /**

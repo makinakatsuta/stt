@@ -560,6 +560,8 @@ class NetworkSystem {
     this.latency = 0;
     // パドル同期のスロットル用（30ms 以内の重複送信を防止）
     this.paddleLastSent = 0;
+    // 改善②: onerror → onclose の二重発火によるダブル quitGame を防ぐフラグ
+    this.disconnectHandled = false;
   }
 
   /**
@@ -846,6 +848,9 @@ class GameEngine {
       this.changeScreen('waiting');
       this.state = STATE_WAITING_OPPONENT; // 待機中ステートを設定
       document.getElementById('lbl-current-room').textContent = roomId || '自動マッチング';
+      // 改善②: 接続開始前にフラグをリセットして二重発火を防ぐ
+      this.net.disconnectHandled = false;
+      this.clearNetworkError();
       narrator.speak("サーバーに接続しています。対戦相手を待っています。");
       this.net.connect(roomId);
     });
@@ -955,19 +960,79 @@ class GameEngine {
   }
 
   handleNetworkDisconnect() {
+    // 改善②: onerror → onclose の二重発火によるダブル quitGame を防ぐ
+    if (this.net.disconnectHandled) return;
+    this.net.disconnectHandled = true;
+
     // プレイ中や待機中に予期せず切断された場合
     if (this.state === STATE_WAITING_OPPONENT || this.state === STATE_RALLY || this.state === STATE_PRE_SERVE_READY || this.state === STATE_PRE_SERVE_HEARD || this.state === STATE_SERVE_WAITING) {
-      narrator.speak("サーバーから切断されました。メインメニューに戻ります。", true);
-      this.quitGame();
+      const msg = "サーバーから切断されました。\nメインメニューに戻ります。";
+      narrator.speak(msg.replace('\n', ''), true);
+      // 改善①③: 視覚的エラーメッセージとカウントダウンを表示（5秒）
+      this.showNetworkError(msg, 5, () => this.quitGame());
     }
   }
 
   handleNetworkError() {
+    // 改善②: onerror → onclose の二重発火によるダブル quitGame を防ぐ
+    if (this.net.disconnectHandled) return;
+    this.net.disconnectHandled = true;
+
+    const msg = "サーバーへの接続に失敗しました。\n・stt.exe が起動しているか確認してください。\n・スマホからアクセスする場合はPCと同じWi-Fiに接続してください。";
     narrator.speak("サーバーへの接続に失敗しました。実行ファイルが起動しているか確認してください。", true);
-    // 2秒後にメニューに戻る
-    setTimeout(() => {
-      this.quitGame();
-    }, 2000);
+    // 改善①③: 視覚的エラーメッセージとカウントダウンを表示（5秒）
+    this.showNetworkError(msg, 5, () => this.quitGame());
+  }
+
+  /**
+   * 改善①: 待機画面にネットワークエラーメッセージとカウントダウンを視覚的に表示します。
+   * @param {string} message 表示するエラーメッセージ (\n で改行)
+   * @param {number} countdownSec カウントダウン秒数
+   * @param {Function} onComplete カウントダウン終了後に呼ぶコールバック
+   */
+  showNetworkError(message, countdownSec, onComplete) {
+    const box = document.getElementById('network-error-box');
+    const msgEl = document.getElementById('network-error-message');
+    const cntEl = document.getElementById('network-error-countdown');
+    const spinner = document.getElementById('waiting-spinner');
+
+    if (!box || !msgEl || !cntEl) {
+      // HTML要素がない場合は即コールバック
+      setTimeout(onComplete, countdownSec * 1000);
+      return;
+    }
+
+    // スピナーをエラー状態にする
+    if (spinner) spinner.classList.add('spinner-error');
+
+    // メッセージを表示
+    msgEl.innerHTML = message.replace(/\n/g, '<br>');
+    box.classList.remove('hidden');
+
+    // カウントダウン
+    let remaining = countdownSec;
+    cntEl.textContent = `${remaining} 秒後にメニューに戻ります...`;
+
+    const tick = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(tick);
+        cntEl.textContent = 'メニューに戻ります...';
+        onComplete();
+      } else {
+        cntEl.textContent = `${remaining} 秒後にメニューに戻ります...`;
+      }
+    }, 1000);
+  }
+
+  /**
+   * 改善①: エラーボックスをリセット・非表示にします。
+   */
+  clearNetworkError() {
+    const box = document.getElementById('network-error-box');
+    const spinner = document.getElementById('waiting-spinner');
+    if (box) box.classList.add('hidden');
+    if (spinner) spinner.classList.remove('spinner-error');
   }
 
   // ==========================================================================

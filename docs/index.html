@@ -110,8 +110,14 @@
       <section id="screen-waiting" class="game-card hidden" aria-labelledby="waiting-title">
         <h2 id="waiting-title">対戦相手を待っています...</h2>
         <div class="spinner-container">
-          <div class="spinner" aria-hidden="true"></div>
+          <div class="spinner" id="waiting-spinner" aria-hidden="true"></div>
           <p id="txt-waiting-status" class="pulse-text">ルームID: <span id="lbl-current-room" class="highlight">-</span> で接続を待機中</p>
+        </div>
+        <!-- エラー発生時に表示されるメッセージ領域 -->
+        <div id="network-error-box" class="network-error-box hidden" role="alert" aria-live="assertive">
+          <span class="error-icon">⚠️</span>
+          <p id="network-error-message" class="error-message-text"></p>
+          <p id="network-error-countdown" class="error-countdown-text"></p>
         </div>
         <button id="btn-cancel-matching" class="btn btn-danger">マッチングをキャンセル</button>
       </section>

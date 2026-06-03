@@ -853,3 +853,56 @@ body {
     max-width: 800px;
   }
 }
+
+/* ==========================================================================
+   ネットワークエラーボックス (待機画面に表示)
+   ========================================================================== */
+.network-error-box {
+  margin: 20px 0 10px;
+  padding: 18px 24px;
+  border: 1.5px solid var(--color-danger);
+  border-radius: 12px;
+  background: rgba(255, 49, 49, 0.08);
+  box-shadow: 0 0 18px rgba(255, 49, 49, 0.25), inset 0 0 10px rgba(255, 49, 49, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: errorFadeIn 0.4s ease-out;
+}
+
+.network-error-box.hidden {
+  display: none;
+}
+
+@keyframes errorFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.error-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.error-message-text {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ff6b6b;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.error-countdown-text {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* エラー時にスピナーをグレーアウトする */
+#waiting-spinner.spinner-error {
+  border-top-color: var(--color-danger);
+  opacity: 0.4;
+  animation-play-state: paused;
+}

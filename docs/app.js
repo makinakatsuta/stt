@@ -796,16 +796,30 @@ class GameEngine {
     // ゲーム画面タップによるアクション (スマホ・アクセシビリティ対応)
     const canvasContainer = document.getElementById('canvas-container');
     if (canvasContainer) {
-      canvasContainer.addEventListener('click', (e) => {
+      const handleCanvasAction = (e) => {
         // プレイ中のステートでのみタップでアクションを実行
         const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
         if (activeStates.includes(this.state)) {
-          if (e.target.id === 'game-canvas' || e.target.id === 'canvas-container') {
+          // closest() を使って、canvas-container 内であれば確実にキャッチする
+          if (e.target.closest('#canvas-container')) {
             e.preventDefault();
             this.handleActionInput();
           }
         }
-      });
+      };
+
+      // PC/タブレット向けのクリックイベント
+      canvasContainer.addEventListener('click', handleCanvasAction);
+
+      // スマホ向けのタッチイベント（touchend で click より早く応答）
+      // スマホ同士のオンライン対戦での操作信頼性確保のため追加
+      canvasContainer.addEventListener('touchend', (e) => {
+        const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+        if (activeStates.includes(this.state)) {
+          e.preventDefault(); // 300ms の click 遅延と二重発火を防ぐ
+          this.handleActionInput();
+        }
+      }, { passive: false });
     }
 
     // 1. オーディオ有効化ボタン
@@ -860,20 +874,27 @@ class GameEngine {
         const currentHost = window.location.host;
         const isLocal = currentHost === 'localhost:8080' || currentHost === '127.0.0.1:8080';
         const isGitHubPages = window.location.hostname.includes('github.io');
+        // LAN IP直アクセス（スマホからstt.exeのIPで開いた場合）
+        const isLanAccess = !isLocal && !isGitHubPages && /^\d+\.\d+\.\d+\.\d+/.test(window.location.hostname);
 
         if (isLocal) {
           // ローカルのstt.exeから開いているケース → 空白でOK
           addrDetected.textContent = '✅ ローカルサーバー経由で接続中。空白のままで接続できます。';
           addrDetected.style.color = '#39ff14';
+        } else if (isLanAccess) {
+          // LAN上のIPアドレス直アクセス（スマホからstt.exeのIPで開いた場合）→ 空白でOK、スマホ同士の場合の説明を追加
+          addrDetected.textContent = `✅ ${currentHost} 経由で接続中。アドレス欄は空白のままで接続できます。📱スマホ同士の対戦の場合、相手のスマホも同じURL「http://${currentHost}」を開いて、同じルームIDを入力してください。`;
+          addrDetected.style.color = '#39ff14';
         } else if (isGitHubPages) {
           // GitHub Pages経由 → 必ずサーバーアドレスが必要
-          addrDetected.textContent = '⚠️ GitHub Pages経由で開いています。スマホからPC上のstt.exeに接続するには、下のアドレス欄にPCのIPアドレスを入力してください。';
+          addrDetected.textContent = '⚠️ GitHub Pages経由で開いています。stt.exeが動いているPCのIPアドレスを下のアドレス欄に入力してください（例: http://192.168.1.15:8080）。スマホ同士の対戦も同様に両方のスマホで入力が必要です。';
           addrDetected.style.color = '#ffaa00';
           addrInput.focus();
         } else {
-          // その他（LAN上のIP直アクセス等）→ 空白でOK
-          addrDetected.textContent = `✅ ${currentHost} 経由で接続中。空白のままで接続できます。`;
-          addrDetected.style.color = '#39ff14';
+          // その他（file://等）
+          addrDetected.textContent = `⚠️ サーバーアドレスを入力してください。stt.exeが動いているPCのIPアドレスを入力します（例: http://192.168.1.15:8080）。`;
+          addrDetected.style.color = '#ffaa00';
+          addrInput.focus();
         }
       } else {
         document.getElementById('input-room-id').focus();
@@ -1664,14 +1685,32 @@ class GameEngine {
         this.syncPaddlePosition(paddle.x);
 
         // ボール状態の更新
-        // オンライン対戦時: Player2（クライアント）はボール位置をローカル物理で上書きしない。
-        // ボール位置は serve / ball_hit の受信イベントでのみ更新する（両者独立計算によるズレ防止）。
+        // オンライン対戦時: Player2（クライアント）はボール位置をWASMの独立計算では上書きしない。
+        // ただし、スマホ同士の対戦でタップ当たり判定が機能するよう、
+        // Player2でもserve/ball_hit受信後にローカル補間計算（移動のみ）を行う。
+        // （得点判定はPlayer1のみが送信するため、二重カウントは発生しない）
         if (this.mode !== 'online' || this.role !== 2) {
           this.ball.x = result.ball.x;
           this.ball.y = result.ball.y;
           this.ball.vx = result.ball.vx;
           this.ball.vy = result.ball.vy;
           this.ball.active = result.ball.active;
+        } else {
+          // Player2: ボールの移動補間のみ行う（壁反射・ネット跳ね返りのみ、スコア判定なし）
+          if (this.ball.active && this.state === STATE_RALLY) {
+            this.ball.vx *= TABLE_FRICTION;
+            this.ball.vy *= TABLE_FRICTION;
+            this.ball.x += this.ball.vx;
+            this.ball.y += this.ball.vy;
+            // 左右壁反射
+            if (this.ball.x - BALL_RADIUS <= 0) {
+              this.ball.x = BALL_RADIUS;
+              this.ball.vx = -this.ball.vx * 0.85;
+            } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
+              this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
+              this.ball.vx = -this.ball.vx * 0.85;
+            }
+          }
         }
 
         // 立体音響のアップデート
@@ -1799,8 +1838,23 @@ class GameEngine {
     }
 
     // 3. ボールの運動計算 (ラリー中のみ移動)
-    // オンライン対戦で Player2（クライアント）の場合、ボール物理計算はスキップする。
-    // ボール位置は Player1 からの serve / ball_hit メッセージ受信時にのみ更新する。
+    // オンライン対戦で Player2（クライアント）の場合、得点判定を伴うWASM物理計算はスキップ済み。
+    // ただし、タップ当たり判定のためにPlayer2でもローカル補間計算を行う（JSフォールバック）。
+    if (this.mode === 'online' && this.role === 2 && this.ball.active && this.state === STATE_RALLY) {
+      // Player2: 移動補間のみ（壁反射込み、スコア判定なし）
+      this.ball.vx *= TABLE_FRICTION;
+      this.ball.vy *= TABLE_FRICTION;
+      this.ball.x += this.ball.vx;
+      this.ball.y += this.ball.vy;
+      if (this.ball.x - BALL_RADIUS <= 0) {
+        this.ball.x = BALL_RADIUS;
+        this.ball.vx = -this.ball.vx * 0.85;
+      } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
+        this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
+        this.ball.vx = -this.ball.vx * 0.85;
+      }
+      sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
+    }
     const shouldComputeBall = !(this.mode === 'online' && this.role === 2);
     if (shouldComputeBall && this.ball.active && this.state === STATE_RALLY) {
       // 摩擦による減速

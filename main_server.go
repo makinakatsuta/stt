@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
 	"runtime"
@@ -356,6 +357,37 @@ func main() {
 	// サーバーの起動
 	port := ":8080"
 	log.Printf("STT Game Server starting on http://localhost%s", port)
+
+	// LAN内のIPアドレスを取得してスマホ向けURLを表示
+	if ifaces, err := net.Interfaces(); err == nil {
+		log.Println("==================================================")
+		log.Println("📱 スマホからアクセスするには以下のURLをブラウザで開いてください:")
+		for _, iface := range ifaces {
+			// ループバックや無効なインターフェースはスキップ
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				// IPv4のみ表示
+				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+					continue
+				}
+				log.Printf("   👉 http://%s:8080", ip.String())
+			}
+		}
+		log.Println("==================================================")
+	}
 
 	// サーバーが正常に起動してからブラウザを自動で開く (別スレッド)
 	go func() {

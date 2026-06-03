@@ -113,11 +113,17 @@
           </div>
           <button id="btn-join-room" class="btn btn-primary">ルームに入る / 対戦開始</button>
           <div class="lobby-hint">
-            💡 <strong>スマホから対戦する場合の手順</strong>:<br>
-            ① PCで <code>stt.exe</code> を起動する<br>
-            ② PCのIPアドレスを確認する（例: <code>192.168.1.15</code>）<br>
-            ③ 上の「サーバーアドレス」欄に <code>http://192.168.1.15:8080</code> と入力する<br>
-            ④ スマホとPCが<strong>同じ Wi-Fi</strong> に接続されていることを確認する
+            💡 <strong>対戦の接続方法（場合別）</strong>:<br>
+            <strong>📱スマホ vs スマホ（同じWi-Fi内）</strong><br>
+            ① どちらか一方のPC（なければWi-Fiルーター上）で <code>stt.exe</code> を起動する<br>
+            ② そのPCのIPアドレスを確認する（例: <code>192.168.1.15</code>）<br>
+            ③ <strong>両方のスマホ</strong>の「サーバーアドレス」欄に <code>http://192.168.1.15:8080</code> と入力する<br>
+            ④ 同じルームIDを入力して「ルームに入る」を押す<br>
+            ⑤ 両スマホが<strong>同じ Wi-Fi</strong> に接続されていることを確認する<br>
+            <br>
+            <strong>💻PC vs スマホ（同じWi-Fi内）</strong><br>
+            ① PCで <code>stt.exe</code> を起動する（PCはアドレス欄を空白のままでOK）<br>
+            ② スマホの「サーバーアドレス」欄に <code>http://PCのIP:8080</code> と入力する
           </div>
           <button id="btn-lobby-back" class="btn btn-secondary">メインメニューへ戻る</button>
         </div>

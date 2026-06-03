@@ -886,10 +886,18 @@ class GameEngine {
           addrDetected.textContent = `✅ ${currentHost} 経由で接続中。アドレス欄は空白のままで接続できます。📱スマホ同士の対戦の場合、相手のスマホも同じURL「http://${currentHost}」を開いて、同じルームIDを入力してください。`;
           addrDetected.style.color = '#39ff14';
         } else if (isGitHubPages) {
-          // GitHub Pages経由 → 必ずサーバーアドレスが必要
-          addrDetected.textContent = '⚠️ GitHub Pages経由で開いています。stt.exeが動いているPCのIPアドレスを下のアドレス欄に入力してください（例: http://192.168.1.15:8080）。スマホ同士の対戦も同様に両方のスマホで入力が必要です。';
-          addrDetected.style.color = '#ffaa00';
-          addrInput.focus();
+          // GitHub Pages経由 → https:// から ws:// への接続はブラウザのMixed Contentポリシーでブロックされるため接続不可
+          addrDetected.innerHTML = `
+            <strong>❌ このURL（GitHub Pages）からはオンライン対戦できません。</strong><br><br>
+            理由: ブラウザのセキュリティ制限（Mixed Content）により、
+            <code>https://</code> のページから <code>ws://</code>（暗号化なし）の
+            サーバーへの接続が自動的にブロックされます。<br><br>
+            <strong>✅ オンライン対戦・スマホ同士の対戦をするには:</strong><br>
+            ① PCで <code>stt.exe</code> を起動する<br>
+            ② 起動ログに表示される <code>http://192.168.x.x:8080</code> をスマホのブラウザで開く<br>
+            ③ このページ（github.io）ではなく、そちらのURLから「オンライン対戦」を選ぶ
+          `;
+          addrDetected.style.color = '#ff4444';
         } else {
           // その他（file://等）
           addrDetected.textContent = `⚠️ サーバーアドレスを入力してください。stt.exeが動いているPCのIPアドレスを入力します（例: http://192.168.1.15:8080）。`;

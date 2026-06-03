@@ -906,3 +906,32 @@ body {
   opacity: 0.4;
   animation-play-state: paused;
 }
+
+/* ==========================================================================
+   サーバーアドレス入力欄 (ロビー画面)
+   ========================================================================== */
+.label-hint {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.label-hint code {
+  background: rgba(0, 240, 255, 0.1);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85em;
+  color: var(--color-accent);
+}
+
+.server-addr-detected {
+  font-size: 0.82rem;
+  margin-top: 6px;
+  min-height: 1.2em;
+  line-height: 1.5;
+  transition: color 0.3s;
+}

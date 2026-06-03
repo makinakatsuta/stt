@@ -567,22 +567,35 @@ class NetworkSystem {
   /**
    * WebSocketサーバーへ接続します。
    * @param {string} roomId 部屋ID
+   * @param {string} serverAddr ユーザーが手入力したサーバーアドレス (例: http://192.168.1.15:8080)
    */
-  connect(roomId) {
+  connect(roomId, serverAddr) {
     this.roomId = roomId || 'lobby';
     
-    // プロトコルとホスト名を自動判定して接続先を決定
     let proto = 'ws:';
     let host = 'localhost:8080'; // デフォルトのフォールバック
-    
-    if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+
+    if (serverAddr && serverAddr.trim() !== '') {
+      // ユーザーが明示的にサーバーアドレスを指定した場合はそちらを優先する
+      try {
+        const url = new URL(serverAddr.trim());
+        proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+        host = url.host;
+        console.log(`Using user-specified server: ${proto}//${host}`);
+      } catch (e) {
+        console.error('Invalid server address:', serverAddr, e);
+        // 不正な形式でもフォールバックで続行
+      }
+    } else if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+      // サーバーアドレス未指定の場合は現在のページのホストに接続
       proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       host = window.location.host;
     } else {
-      console.warn("File protocol detected. Falling back WebSocket connection host to localhost:8080");
+      console.warn('File protocol detected. Falling back to localhost:8080');
     }
     
     const wsUrl = `${proto}//${host}/ws?room=${this.roomId}&id=${this.clientId}`;
+    console.log('Connecting to:', wsUrl);
     
     this.ws = new WebSocket(wsUrl);
     
@@ -838,21 +851,48 @@ class GameEngine {
     document.getElementById('btn-mode-online').addEventListener('click', () => {
       this.mode = 'online';
       this.changeScreen('lobby');
-      narrator.speak("オンラインロビーです。対戦相手と同じルームIDを入力して、ルームに入るボタンを押してください。空白のままだと、共通のロビールームに入ります。");
-      document.getElementById('input-room-id').focus();
+      narrator.speak("オンラインロビーです。サーバーアドレスとルームIDを入力して、ルームに入るボタンを押してください。");
+
+      // 現在のアクセス元を検出してヒントを表示
+      const addrDetected = document.getElementById('server-addr-detected');
+      const addrInput = document.getElementById('input-server-addr');
+      if (addrDetected && addrInput) {
+        const currentHost = window.location.host;
+        const isLocal = currentHost === 'localhost:8080' || currentHost === '127.0.0.1:8080';
+        const isGitHubPages = window.location.hostname.includes('github.io');
+
+        if (isLocal) {
+          // ローカルのstt.exeから開いているケース → 空白でOK
+          addrDetected.textContent = '✅ ローカルサーバー経由で接続中。空白のままで接続できます。';
+          addrDetected.style.color = '#39ff14';
+        } else if (isGitHubPages) {
+          // GitHub Pages経由 → 必ずサーバーアドレスが必要
+          addrDetected.textContent = '⚠️ GitHub Pages経由で開いています。スマホからPC上のstt.exeに接続するには、下のアドレス欄にPCのIPアドレスを入力してください。';
+          addrDetected.style.color = '#ffaa00';
+          addrInput.focus();
+        } else {
+          // その他（LAN上のIP直アクセス等）→ 空白でOK
+          addrDetected.textContent = `✅ ${currentHost} 経由で接続中。空白のままで接続できます。`;
+          addrDetected.style.color = '#39ff14';
+        }
+      } else {
+        document.getElementById('input-room-id').focus();
+      }
     });
 
     // 4. ロビー: 接続開始
     document.getElementById('btn-join-room').addEventListener('click', () => {
       const roomId = document.getElementById('input-room-id').value.trim();
+      const serverAddrEl = document.getElementById('input-server-addr');
+      const serverAddr = serverAddrEl ? serverAddrEl.value.trim() : '';
+
       this.changeScreen('waiting');
-      this.state = STATE_WAITING_OPPONENT; // 待機中ステートを設定
+      this.state = STATE_WAITING_OPPONENT;
       document.getElementById('lbl-current-room').textContent = roomId || '自動マッチング';
-      // 改善②: 接続開始前にフラグをリセットして二重発火を防ぐ
       this.net.disconnectHandled = false;
       this.clearNetworkError();
       narrator.speak("サーバーに接続しています。対戦相手を待っています。");
-      this.net.connect(roomId);
+      this.net.connect(roomId, serverAddr);
     });
 
     // 5. ロビーから戻る
@@ -1066,10 +1106,16 @@ class GameEngine {
         this.handleOpponentAction(msg.payload);
         break;
 
-      case 'error':
-        alert(msg.payload.message);
-        this.quitGame();
+      case 'error': {
+        // サーバーからのエラー（ルーム満員など）をカウントダウン付きで表示
+        const errMsg = (msg.payload && msg.payload.message) ? msg.payload.message : 'サーバーエラーが発生しました。';
+        const localizedMsg = errMsg === 'Room is full'
+          ? 'このルームはすでに満員です（2名まで）。\n別のルームIDを試してください。'
+          : errMsg;
+        narrator.speak(localizedMsg.replace(/\n/g, ''), true);
+        this.showNetworkError(localizedMsg, 5, () => this.quitGame());
         break;
+      }
     }
   }
 

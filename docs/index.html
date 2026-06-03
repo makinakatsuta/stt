@@ -93,14 +93,31 @@
       <section id="screen-lobby" class="game-card hidden" aria-labelledby="lobby-title">
         <h2 id="lobby-title">オンラインロビー</h2>
         <div class="lobby-form">
+
+          <!-- サーバーアドレス入力欄（スマホからアクセス時に使用） -->
+          <div class="input-group" id="server-address-group">
+            <label id="lbl-server-addr" for="input-server-addr">サーバーアドレス
+              <span class="label-hint">（スマホからの場合: <code>http://PCのIP:8080</code> の形式で入力）</span>
+            </label>
+            <input type="url" id="input-server-addr"
+              placeholder="空白のままだと、このページのサーバーに接続します"
+              aria-labelledby="lbl-server-addr"
+              autocomplete="off"
+              inputmode="url">
+            <p id="server-addr-detected" class="server-addr-detected"></p>
+          </div>
+
           <div class="input-group">
-            <label id="lbl-room-id" for="input-room-id">ルームID (対戦相手と同じIDを入力してください。空白のまま「ルームに入る」を押すと自動で共通ロビーに入ります。)</label>
+            <label id="lbl-room-id" for="input-room-id">ルームID（対戦相手と同じIDを入力。空白のまま押すと共通ロビーに入ります）</label>
             <input type="text" id="input-room-id" placeholder="例: maki" aria-labelledby="lbl-room-id" autocomplete="off">
           </div>
           <button id="btn-join-room" class="btn btn-primary">ルームに入る / 対戦開始</button>
           <div class="lobby-hint">
-            💡 <strong>別のパソコンと対戦する場合</strong>:<br>
-            片方のPCで `stt.exe` を起動し、そのPCのIPアドレス（例: `192.168.1.15`）を確認します。もう一方のPCのブラウザから `http://[親機のIP]:8080` にアクセスしてください。
+            💡 <strong>スマホから対戦する場合の手順</strong>:<br>
+            ① PCで <code>stt.exe</code> を起動する<br>
+            ② PCのIPアドレスを確認する（例: <code>192.168.1.15</code>）<br>
+            ③ 上の「サーバーアドレス」欄に <code>http://192.168.1.15:8080</code> と入力する<br>
+            ④ スマホとPCが<strong>同じ Wi-Fi</strong> に接続されていることを確認する
           </div>
           <button id="btn-lobby-back" class="btn btn-secondary">メインメニューへ戻る</button>
         </div>

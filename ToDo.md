@@ -85,3 +85,28 @@
   - 従来の簡午モードは CPUの移動速度を下げて大きなブレを加える「打ち負かす」設計で、STTのラリー感覧が得られなかった。
   - CPUサーブを「低速(±0.4の微小な横成分、縦速度3.5px)」に変更。また CPU AIの追従速度を上げ(4.5px)てミスを減らし、ブレを最小限にして「当たりやすいラリー」を長させる設計に変更。
   - 『ラリーを続ける』達成感を优先し、STT初心者が音響・操作誓を様向けに設計されたモード。
+
+## [x] 11. プレイ集中モード実装 ＆ ボール接近ビープ音ガイドの追加 (2026-06-06)
+
+プレイ中のUI改善と音によるタイミングガイドを実装した。
+
+- [x] 11.1 **[UI] プレイ中のplay-instructions非表示化** (`docs/app.js` - `prepareServeSequence`)
+  - 従来はプレイ中も画面に「スペースキーを押して…」などの操作説明テキストが表示され、スクリーンリーダー使用者にとって余計な視覚情報となっていた。
+  - `prepareServeSequence()` 呼び出し時に `play-instructions` 要素に `hidden` クラスを付与して非表示化。試合終了・ゲーム中断時に再表示するよう `quitGame()` と `finishMatch()` にも処理を追加した。
+  - 案内はすべて `narrator.speak()` 経由の音声と `sr-announcer` のaria-liveテキストで行う設計に統一。
+
+- [x] 11.2 **[UI] プレイ画面全体タップ対応** (`docs/app.js` - `setupEventListeners`)
+  - 従来はcanvas-container内のタップのみアクションが発火し、スコアボードや枠外タップでは反応しなかった。
+  - `screen-play` セクション全体に click / touchend イベントを追加。ボタン・input・ラベル等の除外リストを設け誤爆を防止。canvas-containerにも後方互換としてイベントを残した。
+
+- [x] 11.3 **[音響] ボール接近ビープ音 `playBeep()` メソッド追加** (`docs/app.js` - `SoundSystem`)
+  - ラリー中にボールが自分の守備ラインへ近づいたとき、3段階の「ぴ」音でタイミングを伝える機能を新設。
+  - stage=`far`(880Hz/0.18音量)・`near`(1320Hz/0.28音量)・`hit`(1760Hz/0.40音量) と段階的に周波数・音量を上げる設計。
+  - `SoundSystem.playBeep(stage)` として実装し、WebAudio APIのOscillatorNodeで純音正弦波を合成。
+
+- [x] 11.4 **[物理] `updateApproachBeep()` メソッドの追加** (`docs/app.js` - `GameEngine`)
+  - 毎フレーム `updatePhysics()` から呼ばれ、ボールの進行方向とY座標から接近段階（far/near/hit）を判定する。
+  - 守備ライン120px圏内でfar、60px圏内でnear、30px圏内でhitに昇格（降格はしない）。
+  - ビープの最低間隔は200msに制限し、過剰発火を防止。
+  - hitゾーンへの初回到達時は `sr-announcer` のaria-liveで「今です！タップまたはスペースキーで打ち返してください。」をアナウンス。
+  - WASM物理ブロックとJSフォールバックの両方に呼び出しを追加し、どちらの経路でも動作することを確認。

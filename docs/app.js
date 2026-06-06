@@ -503,6 +503,53 @@ class SoundSystem {
     osc.start();
     osc.stop(this.ctx.currentTime + dur + 0.01);
   }
+
+  /**
+   * 試合終了時の歓声・拍手効果音を合成します。
+   * ピンクノイズ風のフィルターとLFOを使って、観客の盛り上がりを表現します。
+   */
+  playCheerSound() {
+    if (!this.ctx || this.isMuted) return;
+
+    const duration = 4.0; // 4秒かけてフェードアウト
+    const now = this.ctx.currentTime;
+
+    // 観客のノイズソース（ホワイトノイズを使用）
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    noise.loop = true;
+
+    // 低音域を削り、中高音域を強調するフィルター（拍手と歓声の帯域）
+    const bandpass = this.ctx.createBiquadFilter();
+    bandpass.type = 'bandpass';
+    bandpass.frequency.setValueAtTime(800, now);
+    bandpass.Q.setValueAtTime(0.5, now);
+
+    // 音の揺らぎ（歓声のざわめき）を作るLFO
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(4.0, now); // 4Hzの揺らぎ
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.setValueAtTime(100, now); // 中心周波数を±100Hz揺らす
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(bandpass.frequency);
+
+    const gain = this.ctx.createGain();
+    // ボリュームのエンベロープ（徐々に盛り上がり、フェードアウトする）
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.5); // 0.5秒でピーク
+    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+    noise.connect(bandpass);
+    bandpass.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    noise.start(now);
+    lfo.start(now);
+    noise.stop(now + duration);
+    lfo.stop(now + duration);
+  }
 }
 
 const sounds = new SoundSystem();
@@ -1729,6 +1776,9 @@ class GameEngine {
   finishMatch(matchWinner) {
     const winnerName = matchWinner === 1 ? "プレイヤー 1" : "プレイヤー 2";
     narrator.speak(`マッチ終了！ 勝者は、${winnerName} です！おめでとうございます！`, true);
+    
+    // 試合終了の歓声音を再生
+    sounds.playCheerSound();
     
     // play-instructions を再表示し試合終了メッセージを書き込む
     const instrEl = document.getElementById('play-instructions');

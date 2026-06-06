@@ -361,6 +361,50 @@ class SoundSystem {
   }
 
   /**
+   * プレイヤーが打ち返した時の正解音（チャイム）
+   * @param {number} x 衝突したX座標 (パン用)
+   * @param {boolean} isEasy 初級編かどうか
+   */
+  playSuccessChime(x, isEasy = false) {
+    if (!this.ctx || this.isMuted) return;
+
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+
+    // キラキラしたベル音（サイン波ベース）
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    
+    // 初級編の場合はより高く明るい音（1200Hz）、通常は少し控えめ（900Hz）
+    const baseFreq = isEasy ? 1200 : 900;
+    osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, this.ctx.currentTime + 0.1);
+
+    // 初級編の場合は音を大きく・長くする
+    const peakGain = isEasy ? 0.6 : 0.3;
+    const duration = isEasy ? 0.4 : 0.2;
+
+    gain.gain.setValueAtTime(0, this.ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(peakGain, this.ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+
+    if (panner) {
+      osc.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+    }
+
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration + 0.1);
+  }
+
+  /**
    * フレーム衝突音 (サイド/エンドフレームに当たった時の「カツ」という高い音)
    * @param {number} x 衝突したX座標 (パン用)
    */
@@ -1332,7 +1376,11 @@ class GameEngine {
       
       // 衝突音と波紋
       sounds.playHitSound(this.ball.x);
-      this.addRipple(this.ball.x, this.ball.y, 'hit');
+      if (this.ball.vy < 0) {
+        this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
+      } else {
+        this.addRipple(this.ball.x, this.ball.y, 'hit');
+      }
     }
     else if (payload.actionType === 'point') {
       // 得点の決定
@@ -1599,7 +1647,7 @@ class GameEngine {
       const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
       const isIncoming = (this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0);
       const isNearPaddle = Math.abs(this.ball.y - defenseY) < 30; // 守備ライン付近30px
-      const hitPaddle = this.ball.x >= paddle.x && this.ball.x <= paddle.x + PADDLE_WIDTH;
+      const hitPaddle = this.ball.x >= paddle.x - 15 && this.ball.x <= paddle.x + PADDLE_WIDTH + 15;
       
       // スイング音とスイング波紋エフェクトを即座に発生させる (ボールのヒットに関わらず連打可能)
       sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2);
@@ -1609,7 +1657,7 @@ class GameEngine {
         // 打ち返し成功！
         this.ball.y = defenseY; // 位置補正
         const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-        this.ball.vx = relativeHitPos * 4.0;
+        this.ball.vx = relativeHitPos * 7.5; // フレームショットで横に大きく逸れるように拡張
         
         if (this.role === 1) {
           this.ball.vy = -Math.abs(this.ball.vy) * 1.05; // 上方向（-Y）へ打ち返す
@@ -1618,7 +1666,12 @@ class GameEngine {
         }
         
         sounds.playHitSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'hit');
+        sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy');
+        if (this.role === 1) {
+          this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
+        } else {
+          this.addRipple(this.ball.x, this.ball.y, 'hit');
+        }
         
         if (this.mode === 'online') {
           this.net.send('action', { 
@@ -1656,6 +1709,9 @@ class GameEngine {
     switch (reason) {
       case 'miss':
         reasonText = "リターンミス";
+        break;
+      case 'safe':
+        reasonText = "セーフ（得点）";
         break;
       case 'serve_fault':
         reasonText = "サービスフォルト";
@@ -1883,7 +1939,11 @@ class GameEngine {
               this.addRipple(evt.x, evt.y, 'net');
             } else if (evt.type === 'ball_hit') {
               sounds.playHitSound(evt.x);
-              this.addRipple(evt.x, evt.y, 'hit');
+              if (evt.vy < 0 || evt.player === 1) {
+                this.addRipple(evt.x, evt.y, 'hit_p1');
+              } else {
+                this.addRipple(evt.x, evt.y, 'hit');
+              }
               
               if (this.mode === 'online' && this.role === evt.player) {
                 this.net.send('action', { 
@@ -2033,17 +2093,15 @@ class GameEngine {
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
       this.updateApproachBeep(); // ビープ接近検知 (JSフォールバック)
 
-      // --- 左右サイドフレーム (X=0, X=800) の衝突判定 ---
-      if (this.ball.x - BALL_RADIUS <= 0) {
-        this.ball.x = BALL_RADIUS;
-        this.ball.vx = -this.ball.vx * 0.85; // 反発係数
-        sounds.playFrameSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'wall');
-      } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
-        this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
-        this.ball.vx = -this.ball.vx * 0.85;
-        sounds.playFrameSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'wall');
+      // --- 左右サイド境界 (X=0, X=800) からの落下（アウト）判定 ---
+      if (this.ball.x - BALL_RADIUS <= 0 || this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
+        // テーブルの横から落ちる（アウト）
+        const hitter = this.ball.vy < 0 ? 1 : 2;
+        const winner = hitter === 1 ? 2 : 1;
+        const edgeX = this.ball.x - BALL_RADIUS <= 0 ? 0 : CANVAS_WIDTH;
+        
+        this.addRipple(edgeX, this.ball.y, 'wall'); // 落ちたエフェクトとしてwallを利用
+        this.awardPointTo(winner, 'out');
       }
 
       // --- ネット (Y=250) の通過判定 ---
@@ -2074,7 +2132,7 @@ class GameEngine {
             this.ball.vy = -Math.abs(this.ball.vy) * 1.05;
             
             sounds.playHitSound(this.ball.x);
-            this.addRipple(this.ball.x, this.ball.y, 'hit');
+            this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
           }
         }
       }
@@ -2101,14 +2159,26 @@ class GameEngine {
       
       // 1. 自分側 (P1) のエンドライン到達
       if (this.ball.y > CANVAS_HEIGHT) {
-        // ラケットで打ち返せず奥に抜けた -> 相手(P2)の得点
-        this.awardPointTo(2, 'miss');
+        if (Math.abs(this.ball.vy) > 13) {
+          // 強すぎてエンドフレームを越えた -> P1の得点 (P2のアウト)
+          this.awardPointTo(1, 'out');
+        } else {
+          // エンドフレーム到達（セーフ） -> P2の得点
+          sounds.playHitSound(this.ball.x);
+          this.awardPointTo(2, 'safe');
+        }
       }
       
       // 2. 相手側 (P2) のエンドライン到達
       else if (this.ball.y < 0) {
-        // 相手が打ち返せず奥に抜けた -> 自分(P1)の得点
-        this.awardPointTo(1, 'miss');
+        if (Math.abs(this.ball.vy) > 13) {
+          // 強すぎてエンドフレームを越えた -> P2の得点 (P1のアウト)
+          this.awardPointTo(2, 'out');
+        } else {
+          // エンドフレーム到達（セーフ） -> P1の得点
+          sounds.playHitSound(this.ball.x);
+          this.awardPointTo(1, 'safe');
+        }
       }
 
       // 3. ボールの摩擦停止判定 (守備ライン手前で停止した場合は失点)
@@ -2274,6 +2344,10 @@ class GameEngine {
       case 'hit':
         color = 'rgba(0, 240, 255, 0.6)';
         maxRadius = 100;
+        break;
+      case 'hit_p1':
+        color = 'rgba(0, 240, 255, 0.8)';
+        maxRadius = 180;
         break;
       case 'smash':
         color = 'rgba(255, 0, 127, 0.8)';

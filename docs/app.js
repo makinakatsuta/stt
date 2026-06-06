@@ -204,11 +204,20 @@ class SoundSystem {
     // バンドパスフィルターで周波数帯を絞る
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
+    
     // 速度が速いほど高い摩擦音（キュッ）、遅いほど低いカサカサ音にする
     const speedRatio = Math.min(deltaX / 7.0, 1.0);
-    const targetFreq = 1500 + (1500 * speedRatio); // 1500Hz 〜 3000Hz
+    // 左右の位置(panVal: -1〜1)によって微妙に音色を変化させる（右に行くほど少し高く、中央で基準音）
+    // また、中央(panVal=0)の周辺はピッチの変化を滑らかにし、定位を直感的にわかりやすくする
+    const positionShift = panVal * 400; // -400Hz(左) 〜 +400Hz(右)
+    
+    const targetFreq = 1500 + (1200 * speedRatio) + positionShift; // 約1100Hz 〜 3100Hz
     filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
-    filter.Q.setValueAtTime(2.0 + (2.0 * speedRatio), this.ctx.currentTime); // 速度が速いほどシャープに
+    
+    // 中央付近ではQ値を少し上げて音をクリアにし、中央位置をよりわかりやすくする
+    const centerProximity = 1.0 - Math.abs(panVal); // 端=0, 中央=1
+    const targetQ = 2.0 + (2.0 * speedRatio) + (1.5 * centerProximity);
+    filter.Q.setValueAtTime(targetQ, this.ctx.currentTime);
     
     const gain = this.ctx.createGain();
     // 速度に比例した音量設定 (最大0.18)

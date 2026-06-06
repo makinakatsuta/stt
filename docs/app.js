@@ -748,6 +748,7 @@ class GameEngine {
     this.useTilt = false;
     this.tiltCalibrationAngle = 0;
     this.currentRawTilt = 0;
+    this.tiltSpeed = 0; // チルト比例速度 (0.0〜1.0)
     this.handleOrientationBound = null;
 
     // イベントリスナーのバインド
@@ -1411,14 +1412,19 @@ class GameEngine {
                 
                 document.getElementById('play-instructions').textContent = "ラリー中！ボールが近づいたらスペースキーで打ち返してください！";
 
-                // 相手から自分へ (Yをプラス方向へ)
                 // 難易度に応じてサーブの速度や角度を調整
-                let speedMultiplier = 1.0;
-                if (this.difficulty === 'easy') speedMultiplier = 0.8;
-                if (this.difficulty === 'hard') speedMultiplier = 1.25;
-                
-                this.ball.vx = (2.0 + Math.random() * 2.0) * speedMultiplier;
-                this.ball.vy = 5.5 * speedMultiplier;
+                // 【簡単モード】低速・ほぼ直進で打ち返しやすいサーブ（ラリー練習重視）
+                if (this.difficulty === 'easy') {
+                  // ゆっくりまっすぐ転がってくるサーブ（横方向のブレを最小限に抑える）
+                  this.ball.vx = (Math.random() * 0.8 - 0.4); // ±0.4 の微小なランダム横成分
+                  this.ball.vy = 3.5; // 通常より低速
+                } else {
+                  let speedMultiplier = 1.0;
+                  if (this.difficulty === 'hard') speedMultiplier = 1.25;
+                  
+                  this.ball.vx = (2.0 + Math.random() * 2.0) * speedMultiplier;
+                  this.ball.vy = 5.5 * speedMultiplier;
+                }
                 
                 sounds.playHitSound(this.ball.x);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
@@ -1797,16 +1803,25 @@ class GameEngine {
       return;
     }
 
-    // 1. プレイヤーのラケット移動 (矢印キー / A,Dキー)
-    const speed = 7;
+    // 1. プレイヤーのラケット移動 (矢印キー / A,Dキー / チルト比例制御)
+    // チルト操作時: 傾き比率 (0〜1) × 最大速度(7px) で比例移動
+    // キーボード操作時: 固定速度 7px/frame
+    const maxSpeed = 7;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     
     if (this.keys['ArrowLeft']) {
+      // チルト操作中は比例速度を使用、キーボードは最大速度
+      const speed = (this.useTilt && this.tiltSpeed !== undefined)
+        ? maxSpeed * this.tiltSpeed
+        : maxSpeed;
       paddle.x -= speed;
       if (paddle.x < 0) paddle.x = 0;
       this.syncPaddlePosition(paddle.x);
     }
     if (this.keys['ArrowRight']) {
+      const speed = (this.useTilt && this.tiltSpeed !== undefined)
+        ? maxSpeed * this.tiltSpeed
+        : maxSpeed;
       paddle.x += speed;
       if (paddle.x > CANVAS_WIDTH - PADDLE_WIDTH) paddle.x = CANVAS_WIDTH - PADDLE_WIDTH;
       this.syncPaddlePosition(paddle.x);
@@ -1820,9 +1835,10 @@ class GameEngine {
       
       switch (this.difficulty) {
         case 'easy':
-          cpuSpeed = 3.0; // 移動速度が遅い
-          // 意図的にブレ（ズレ）を生じさせて中央から外しやすくする
-          targetOffset = Math.sin(Date.now() / 150) * 45;
+          // 【簡単モード】ラリー練習重視 — CPUは必ずボールを打ち返す設計
+          // 追従速度を上げてミスを減らし、ブレをほぼゼロにして長いラリーを維持できるようにする
+          cpuSpeed = 4.5; // 確実に追いつける速度（ただしhardより遅い）
+          targetOffset = Math.sin(Date.now() / 600) * 8; // 微小なブレのみ（自然な動きの演出用）
           break;
         case 'normal':
           cpuSpeed = 5.2; // 標準の速度
@@ -2430,18 +2446,37 @@ class GameEngine {
     
     this.currentRawTilt = tilt;
     
+    // キャリブレーション後の傾き角度
     const calibratedTilt = tilt - this.tiltCalibrationAngle;
-    const threshold = 4.0; // 4度のデッドゾーン
     
-    if (calibratedTilt < -threshold) {
+    // デッドゾーン: ±4度以内は静止と見なす
+    const deadzone = 4.0;
+    // フルスケール: ±30度で最大速度に達する
+    const maxTilt = 30.0;
+    
+    // デッドゾーン外の傾き量を 0〜1 の比率に正規化（30度でclamping）
+    let tiltRatio = 0;
+    if (Math.abs(calibratedTilt) > deadzone) {
+      const effectiveTilt = Math.abs(calibratedTilt) - deadzone;
+      const effectiveRange = maxTilt - deadzone;
+      tiltRatio = Math.min(effectiveTilt / effectiveRange, 1.0);
+    }
+    
+    // 傾き比率をラケット速度(px/frame)に変換し、keys の代わりに tiltSpeed として格納
+    // updatePhysics 内で keys['ArrowLeft/Right'] のオン/オフも維持するが、
+    // 比例速度は this.tiltSpeed で管理する
+    this.tiltSpeed = tiltRatio; // 0.0 〜 1.0
+    
+    if (calibratedTilt < -deadzone) {
       this.keys['ArrowLeft'] = true;
       this.keys['ArrowRight'] = false;
-    } else if (calibratedTilt > threshold) {
+    } else if (calibratedTilt > deadzone) {
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = true;
     } else {
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = false;
+      this.tiltSpeed = 0;
     }
   }
 

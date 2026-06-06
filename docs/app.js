@@ -914,27 +914,20 @@ class GameEngine {
       this.handleActionInput();
     };
 
-    if (screenPlay) {
-      // PC/タブレット向けのクリックイベント（プレイ画面全体）
-      screenPlay.addEventListener('click', handlePlayAreaAction);
+    // PC/タブレット向けのクリックイベント（画面全体）
+    document.addEventListener('click', handlePlayAreaAction);
 
-      // スマホ向けのタッチイベント（touchend で click より早く応答）
-      screenPlay.addEventListener('touchend', (e) => {
-        const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
-        if (!activeStates.includes(this.state)) return;
+    // スマホ向けのタッチイベント（touchend で click より早く応答）
+    document.addEventListener('touchend', (e) => {
+      const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+      if (!activeStates.includes(this.state)) return;
 
-        const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
-        if (excluded.includes(e.target.tagName)) return;
+      const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
+      if (excluded.includes(e.target.tagName)) return;
 
-        e.preventDefault(); // 300ms の click 遅延と二重発火を防ぐ
-        this.handleActionInput();
-      }, { passive: false });
-    }
-
-    // canvas-container にも残す（後方互換・フォーカス制御用）
-    if (canvasContainer) {
-      canvasContainer.addEventListener('click', handlePlayAreaAction);
-    }
+      e.preventDefault(); // 300ms の click 遅延と二重発火を防ぐ
+      this.handleActionInput();
+    }, { passive: false });
 
     // 1. オーディオ有効化ボタン
     document.getElementById('btn-enable-audio').addEventListener('click', () => {

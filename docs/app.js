@@ -594,6 +594,49 @@ class SoundSystem {
     noise.stop(now + duration);
     lfo.stop(now + duration);
   }
+
+  /**
+   * CPUラケットの移動音（少し高いシュッという音、奥から立体パンニング）
+   */
+  playCpuMoveSound(x, deltaX) {
+    if (!this.ctx || this.isMuted) return;
+    
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = this.noiseBuffer;
+    
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    const speedRatio = Math.min(deltaX / 7.0, 1.0);
+    const targetFreq = 2800 + (1200 * speedRatio); // 高めのシュッという音
+    filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
+    filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+    
+    const gain = this.ctx.createGain();
+    const targetVolume = 0.02 + (0.10 * speedRatio);
+    const duration = 0.04 + (0.05 * speedRatio);
+    
+    gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
+    
+    if (panner) {
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.ctx.destination);
+    }
+    
+    noise.start();
+    noise.stop(this.ctx.currentTime + duration);
+  }
 }
 
 const sounds = new SoundSystem();
@@ -1500,15 +1543,13 @@ class GameEngine {
     this.lastBeepStage = null;
     this.lastBeepTime  = 0;
     
-    // ボールをサーバーの目の前に配置
+    // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
     if (this.serverRole === 1) {
-      // Player 1 (下側) がサーブ
-      this.ball.x = 600; // サービスエリア(右半分)の中央付近
-      this.ball.y = Y_DEFENSE_P1 + 20;
+      this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
+      this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
     } else {
-      // Player 2 (上側) がサーブ
-      this.ball.x = 200; // 相手側のサービスエリア(相手から見て右、自分から見て左)
-      this.ball.y = Y_DEFENSE_P2 - 20;
+      this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
+      this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
     }
     this.ball.vx = 0;
     this.ball.vy = 0;
@@ -1614,15 +1655,20 @@ class GameEngine {
 
         // 音声のみでラリー開始を案円（テキストフィールドには書かない）
         narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
-        // サーブの初速度設定 (相手方向へ)
+        // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
         if (this.serverRole === 1) {
           // 自分から相手へ (Yをマイナス方向へ)
-          // サービスエリア(右半分)からレシーブエリア(左半分)へ転がるように角度を設定
-          this.ball.vx = -2.5 - Math.random() * 2.0; 
+          const startX = this.p1.x + PADDLE_WIDTH / 2;
+          const targetX = CANVAS_WIDTH - startX; // 対角を狙う
+          const dx = targetX - startX;
+          this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2); // 距離に応じて横成分を決定
           this.ball.vy = -6.0;
         } else {
           // 相手から自分へ (Yをプラス方向へ)
-          this.ball.vx = 2.5 + Math.random() * 2.0;
+          const startX = this.p2.x + PADDLE_WIDTH / 2;
+          const targetX = CANVAS_WIDTH - startX;
+          const dx = targetX - startX;
+          this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2);
           this.ball.vy = 6.0;
         }
         
@@ -1850,6 +1896,19 @@ class GameEngine {
    */
   updatePhysics() {
     try {
+      // サービス前のボール吸着処理 (物理演算呼び出し前に行う)
+      if (this.state === STATE_PRE_SERVE_READY || 
+          this.state === STATE_PRE_SERVE_HEARD || 
+          this.state === STATE_SERVE_WAITING) {
+        if (this.serverRole === 1) {
+          this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
+          this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
+        } else {
+          this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
+          this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
+        }
+      }
+
       // Go WebAssembly版の物理演算がロードされている場合はそれを使用
       if (typeof window.updatePhysicsWasm === 'function') {
       const result = window.updatePhysicsWasm(
@@ -1869,17 +1928,29 @@ class GameEngine {
         this.p1.x = result.p1.x;
         this.p2.x = result.p2.x;
 
-        // 自分（プレイヤー）のラケットの移動音（足音）の処理
+        // 自分（プレイヤー）とCPUのラケット移動音の処理
         const myPaddleX = this.role === 1 ? this.p1.x : this.p2.x;
-        const deltaX = Math.abs(myPaddleX - this.lastMyPaddleX);
-        if (deltaX > 0.02) {
-          const now = Date.now();
-          if (now - this.lastFootstepTime > 60) { // 60ms 間隔
-            sounds.playFootstepSound(myPaddleX, deltaX);
+        const oppPaddleX = this.role === 1 ? this.p2.x : this.p1.x;
+        
+        const myDeltaX = Math.abs(myPaddleX - (this.lastMyPaddleX || myPaddleX));
+        const oppDeltaX = Math.abs(oppPaddleX - (this.lastOppPaddleX || oppPaddleX));
+        
+        const now = Date.now();
+        if (myDeltaX > 0.02) {
+          if (now - (this.lastFootstepTime || 0) > 60) { // 60ms 間隔
+            sounds.playFootstepSound(myPaddleX, myDeltaX);
             this.lastFootstepTime = now;
           }
         }
+        if (oppDeltaX > 0.02 && this.mode === 'cpu') {
+          if (now - (this.lastOppFootstepTime || 0) > 60) {
+            sounds.playCpuMoveSound(oppPaddleX, oppDeltaX);
+            this.lastOppFootstepTime = now;
+          }
+        }
+        
         this.lastMyPaddleX = myPaddleX;
+        this.lastOppPaddleX = oppPaddleX;
 
         // パドル位置の同期 (オンライン対戦用)
         const paddle = this.role === 1 ? this.p1 : this.p2;
@@ -2163,9 +2234,9 @@ class GameEngine {
           // 強すぎてエンドフレームを越えた -> P1の得点 (P2のアウト)
           this.awardPointTo(1, 'out');
         } else {
-          // エンドフレーム到達（セーフ） -> P2の得点
+          // エンドフレーム到達（即失点） -> P2の得点
           sounds.playHitSound(this.ball.x);
-          this.awardPointTo(2, 'safe');
+          this.awardPointTo(2, 'miss');
         }
       }
       
@@ -2175,9 +2246,9 @@ class GameEngine {
           // 強すぎてエンドフレームを越えた -> P2の得点 (P1のアウト)
           this.awardPointTo(2, 'out');
         } else {
-          // エンドフレーム到達（セーフ） -> P1の得点
+          // エンドフレーム到達（即失点） -> P1の得点
           sounds.playHitSound(this.ball.x);
-          this.awardPointTo(1, 'safe');
+          this.awardPointTo(1, 'miss');
         }
       }
 

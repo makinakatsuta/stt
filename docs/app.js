@@ -1772,6 +1772,10 @@ class GameEngine {
     this.state = STATE_POINT_WON;
     this.ball.active = false;
     
+    // 得点が入ってプレイが止まったらボールの転がり音をミュートする
+    sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+
+    
     // 効果音の再生
     if (winner === this.role) {
       // 自分の得点

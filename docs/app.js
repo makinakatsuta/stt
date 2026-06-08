@@ -100,45 +100,64 @@ class SoundSystem {
    * 金属球が入ったボールの「シャラシャラ」という転がり音を生成・ループ再生します。
    */
   startBallRollLoop() {
-    // 1. ノイズソース
+    // 1. ノイズソース（シャラシャラ音のベース）
     this.ballRollSource = this.ctx.createBufferSource();
     this.ballRollSource.buffer = this.noiseBuffer;
     this.ballRollSource.loop = true;
     
-    // 転がり音をシャラシャラした金属音に近づけるため、ハイパスフィルターを設定 (カットオフを上げてシャープに)
-    const highpass = this.ctx.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.setValueAtTime(2200, this.ctx.currentTime);
+    // ホワイトノイズを金属音らしくするためのマルチバンドパス（共鳴フィルター）
+    // STT球の中の4つの金属球がぶつかり合う高い「チリン」「シャリ」という音を再現
+    const noiseGain = this.ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
+
+    const freqs = [3200, 4800, 7200]; // 金属球の共鳴周波数帯
+    const biquads = freqs.map(freq => {
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(freq, this.ctx.currentTime);
+      bp.Q.setValueAtTime(4.0, this.ctx.currentTime); // 鋭く共鳴させる
+      return bp;
+    });
+
+    // 各バンドパスにノイズを分配
+    biquads.forEach(bp => {
+      this.ballRollSource.connect(bp);
+      bp.connect(noiseGain);
+    });
     
-    // 2. コトコト音用オシレーター (金属球が転がる低いゴロゴロ音を追加)
-    const lowOsc = this.ctx.createOscillator();
-    lowOsc.type = 'triangle';
-    lowOsc.frequency.setValueAtTime(160, this.ctx.currentTime);
+    // シャラシャラ感を出すためのLFO（音量を断続的に揺らして粒立ちを作る）
+    this.rattleLfo = this.ctx.createOscillator();
+    this.rattleLfo.type = 'sawtooth'; // ノコギリ波でパーカッシブな「シャッ」という刻みを連続させる
+    this.rattleLfo.frequency.setValueAtTime(15, this.ctx.currentTime);
     
-    // コトコト感を出すためのLFO (音量を細かく揺らす)
-    const lfo = this.ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.setValueAtTime(14, this.ctx.currentTime); // 14Hzの振動
+    const rattleGain = this.ctx.createGain();
+    rattleGain.gain.setValueAtTime(0.5, this.ctx.currentTime); // 揺れの深さ
     
-    const lfoGain = this.ctx.createGain();
-    lfoGain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+    this.rattleLfo.connect(rattleGain);
     
-    const lowOscGain = this.ctx.createGain();
-    lowOscGain.gain.setValueAtTime(0.14, this.ctx.currentTime); // 低音ブレンド量
+    // noiseGainの音量をLFOで揺らすためのマスターゲイン
+    const masterNoiseGain = this.ctx.createGain();
+    masterNoiseGain.gain.setValueAtTime(0.5, this.ctx.currentTime); // LFOのベース
+    rattleGain.connect(masterNoiseGain.gain);
     
-    // 接続
-    lfo.connect(lfoGain);
-    lfoGain.connect(lowOscGain.gain);
+    noiseGain.connect(masterNoiseGain);
+    masterNoiseGain.connect(this.ballRollFilter);
+
+    // 2. プラスチックの空洞音（ゴロゴロ・コトコト音）
+    this.rumbleOsc = this.ctx.createOscillator();
+    this.rumbleOsc.type = 'triangle';
+    this.rumbleOsc.frequency.setValueAtTime(120, this.ctx.currentTime);
     
-    this.ballRollSource.connect(highpass);
-    highpass.connect(this.ballRollFilter);
+    this.rumbleGain = this.ctx.createGain();
+    this.rumbleGain.gain.setValueAtTime(0.08, this.ctx.currentTime); 
     
-    lowOsc.connect(lowOscGain);
-    lowOscGain.connect(this.ballRollFilter);
+    this.rumbleOsc.connect(this.rumbleGain);
+    this.rumbleGain.connect(this.ballRollFilter);
     
+    // 再生開始
     this.ballRollSource.start(0);
-    lowOsc.start(0);
-    lfo.start(0);
+    this.rattleLfo.start(0);
+    this.rumbleOsc.start(0);
   }
 
   /**
@@ -158,29 +177,41 @@ class SoundSystem {
     if (this.panner.pan) {
       this.panner.pan.setValueAtTime(panValue, this.ctx.currentTime);
     } else {
-      // PannerNode フォールバックの場合
       this.panner.setPosition(panValue, 0, 1 - Math.abs(panValue));
     }
     
     // 2. 奥行き（Y座標）に応じたローパスフィルターの設定
-    // 自分側 (Y=500) に近づくほどクリア (高周波数)、相手側 (Y=0) に遠ざかるほどこもる (低周波数)
     const yRatio = 1 - (y / CANVAS_HEIGHT); // 0 (自分側) 〜 1 (相手側)
-    // 近づいたときに高音を完全開放(12000Hz)し、遠ざかったときは徹底的にこもらせる(500Hz)
     const targetFreq = 500 + (11500 * (1 - yRatio)); 
     this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
     
     // 3. ボールの速度と距離に応じた音量設定
-    // 速度が速いほど大きく、相手側に遠ざかるほど少し音量を減衰させる
-    let targetVolume = (speed / 10) * 0.4; // ベース音量を以前の0.4に戻す
+    let targetVolume = (speed / 10) * 0.45; // ベース音量
     if (targetVolume > 1.0) targetVolume = 1.0;
     
-    // 近づいてくる音をよりはっきりさせるため、非線形カーブで手前での音量を強調
     const distanceVolumeRatio = 0.3 + (0.7 * Math.pow(1 - yRatio, 1.5)); 
     targetVolume *= distanceVolumeRatio;
     
     if (speed < 0.1) targetVolume = 0; // 停止時は消音
     
     this.ballRollGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.05);
+
+    // 4. 速度連動型の振動（STT球のリアルな挙動）
+    if (this.rattleLfo && this.rumbleOsc && this.rumbleGain) {
+      if (speed > 0.1) {
+        // 速度が速いほど、シャラシャラの粒（揺れの速さ）を細かくする
+        // 低速で約8Hz、高速で最大35Hz
+        const rattleFreq = 8 + Math.min(speed, 20) * 1.3; 
+        this.rattleLfo.frequency.setTargetAtTime(rattleFreq, this.ctx.currentTime, 0.1);
+
+        // ゴロゴロ音（空洞音）も速いほど少し高くなり、音量も増す
+        const rumbleFreq = 100 + Math.min(speed, 15) * 3.0;
+        this.rumbleOsc.frequency.setTargetAtTime(rumbleFreq, this.ctx.currentTime, 0.1);
+        
+        const rumbleVol = 0.04 + Math.min(speed / 10, 1.0) * 0.12;
+        this.rumbleGain.gain.setTargetAtTime(rumbleVol, this.ctx.currentTime, 0.1);
+      }
+    }
   }
 
 

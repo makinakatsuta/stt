@@ -1407,7 +1407,7 @@ class GameEngine {
         
         if (this.isMyTurnToReceive()) {
           // 音声のみで案円（画面テキストは非表示中）
-          narrator.speak("画面をタップまたはスペースキーで「はい」と返答してください。", false);
+          // narrator.speak("画面をタップまたはスペースキーで「はい」と返答してください。", false);
         }
       } 
       else if (payload.call === 'hai') {
@@ -1417,7 +1417,7 @@ class GameEngine {
         
         if (this.isMyTurnToServe()) {
           // 音声のみで案円（画面テキストは非表示中）
-          narrator.speak("画面をタップまたはスペースキーそサーブを打ってください。", false);
+          // narrator.speak("画面をタップまたはスペースキーそサーブを打ってください。", false);
         }
       }
     } 
@@ -1590,7 +1590,7 @@ class GameEngine {
     
     if (this.isMyTurnToServe()) {
       // 音声のみで案内（テキストフィールドには書かない）
-      narrator.speak("あなたのサーブです。画面をタップまたはスペースキーで「いきます」と発声してください。", false);
+      // narrator.speak("あなたのサーブです。画面をタップまたはスペースキーで「いきます」と発声してください。", false);
     } else {
       // CPU対戦かつCPUがサーバーの場合、一定時間後にCPUが自動で「いきます」と発声
       if (this.mode === 'cpu' && this.serverRole === 2) {
@@ -1655,7 +1655,7 @@ class GameEngine {
                 this.ball.active = true;
 
                 // 音声のみでラリー開始を案内（テキストフィールドには書かない）
-                narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
+                // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
                 // 難易度に応じてサーブの速度や角度を調整
                 // 【簡単モード】低速・ほぼ直進で打ち返しやすいサーブ（ラリー練習重視）
                 if (this.difficulty === 'easy') {
@@ -1685,7 +1685,7 @@ class GameEngine {
         this.ball.active = true;
 
         // 音声のみでラリー開始を案円（テキストフィールドには書かない）
-        narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
+        // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
         // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
         if (this.serverRole === 1) {
           // 自分から相手へ (Yをマイナス方向へ)

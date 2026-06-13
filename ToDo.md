@@ -128,3 +128,160 @@
   - 4秒間かけて徐々にフェードアウトするエンベロープを設定。
   - `finishMatch()` の呼び出し時に再生するよう追加。
 
+## [x] 14. CPU戦のサーブ交代制の実装 (2026-06-13)
+
+CPU戦においてもSTT本来の「いきます / はい」サーブシーケンスをプレイヤーが担う場面を設けた。
+
+- [x] 14.1 **[ゲームロジック] Normal/Hardでのサーブ権交代** (`docs/app.js` - `awardPointTo`, `startNewMatch`)
+  - Easy難易度はCPUサーブ固定（ラリー練習重視）のまま維持。
+  - Normal/Hard難易度は2ポイントごとにサーブ権が交代するよう変更（オンライン対戦と同一ロジック）。
+  - `startNewMatch()` でNormal/Hardの場合はサーブ権を `serverRole = 1`（プレイヤー先攻）から開始するよう変更。
+
+## [x] 15. チャージサーブの実装 (2026-06-13)
+
+スペースキーの長押し時間に応じてサーブ速度が変化するチャージサーブを実装した。
+
+- [x] 15.1 **[ゲームロジック] チャージ状態管理** (`docs/app.js` - `GameEngine`)
+  - `chargeStartTime`, `isCharging`, `chargeInterval` の3変数をコンストラクタに追加。
+  - `STATE_SERVE_WAITING` かつ自分のサーブターン中にスペースキーを押し続けると `isCharging = true` に遷移。
+
+- [x] 15.2 **[音響] `playChargeBeep(chargeRatio)` メソッドの追加** (`docs/app.js` - `SoundSystem`)
+  - チャージ率（0.0〜1.0）に応じて400Hz〜1200Hzに上昇するサイン波ビープを150msごとに再生。
+  - チャージ率が高いほど音が高くなりプレイヤーに蓄積状況をフィードバック。
+
+- [x] 15.3 **[ゲームロジック] チャージ量をサーブ速度に反映** (`docs/app.js` - `handleActionInput`)
+  - スペースキーリリース時に長押し時間から `chargeRatio`（0.0〜1.0）を算出（最大1.5秒）。
+  - vy = 4.5 + chargeRatio × 3.5 として初速度を設定（速度範囲: 4.5〜8.0）。
+
+## [x] 16. 打ち返し判定の難易度別調整 ＆ ミス方向音声 (2026-06-13)
+
+難易度に合わせた打ち返し判定幅の調整と、スクリーンリーダー向けのミス方向フィードバックを追加した。
+
+- [x] 16.1 **[ゲームロジック] 打ち返し判定幅の難易度別設定** (`docs/app.js` - `handleActionInput`)
+  - Easy: 50px / Normal: 30px / Hard: 20px に判定幅を変更。
+
+- [x] 16.2 **[アクセシビリティ] ミス方向アナウンス** (`docs/app.js` - `updatePhysics`)
+  - ボールがプレイヤーの守備ラインを通過して失点した際、X座標から左/中央/右を判定し sr-announcer 経由でアナウンス。
+
+## [x] 17. インターバルスキップ機能の実装 (2026-06-13)
+
+得点後の待機時間をスペースキー／タップでスキップできる機能を追加した。
+
+- [x] 17.1 **[ゲームロジック] スキップコールバック管理** (`docs/app.js` - `awardPointTo`, `handleActionInput`)
+  - `intervalSkipCallback` と `currentIntervalTimer` をコンストラクタに追加。
+  - `awardPointTo()` 内でコールバックを格納し、スキップ時に `clearTimeout` → 即実行。
+  - `handleActionInput()` の先頭で `STATE_POINT_WON` 時のスキップ処理を追加。
+  - タッチイベントの `activeStates` にも `STATE_POINT_WON` を追加。
+
+## [x] 18. ミス方向ガイド音（パンニング付きmissSound）の実装 (2026-06-13)
+
+失点時のミス音にX座標パンニングを付加し、「どちら側でミスしたか」が音で分かるようにした。
+
+- [x] 18.1 **[音響] `playMissSound(x)` のパンニング対応** (`docs/app.js` - `SoundSystem`)
+  - 引数 `x`（デフォルト400）を追加し、StereoPannerNode 経由でパンニングを適用。
+  - 既存の全呼び出し箇所を `sounds.playMissSound(this.ball.x)` に更新。
+
+## [x] 19. ボール停止位置音の実装 (2026-06-13)
+
+ボールが停止した際に停止X座標にパンニングした位置音を再生し、停止位置を音で把握できるようにした。
+
+- [x] 19.1 **[音響] `playBallStopSound(x)` メソッドの追加** (`docs/app.js` - `SoundSystem`)
+  - 三角波オシレーター（280→120Hzスウィープ、0.2秒）を StereoPanner 経由で再生。
+  - `updatePhysics()` のボール停止検知箇所（速度 < 0.12）でインターフェース呼び出しを追加。
+
+## [x] 20. 音量ダイナミクスの対数スケール化 (2026-06-13)
+
+ボール転がり音の音量計算を線形スケールから対数スケールに変更し、低速域の表現を豊かにした。
+
+- [x] 20.1 **[音響] `updateBallSound()` 音量計算式の変更** (`docs/app.js` - `SoundSystem`)
+  - `let targetVolume = (speed / 10) * 0.45;` から `Math.log1p(speed * 0.8) / Math.log1p(8) * 0.5` に変更。
+
+## [x] 21. 音声速度設定スライダーの実装 (2026-06-13)
+
+スクリーンリーダー利用者が読み上げ速度を自分好みに調整できるスライダーをウェルカム画面に追加した。
+
+- [x] 21.1 **[HTML] 音声速度パネルの追加** (`docs/index.html`)
+  - `#screen-welcome` 内にスライダー（min=0.5, max=2.0, step=0.1）と現在値ラベルを含む `.speech-rate-panel` を追加。
+
+- [x] 21.2 **[CSS] `.speech-rate-panel` のスタイル定義** (`docs/styles.css`)
+  - ダッシュボーダーパネル、スライダーのアクセントカラー指定などを追加。
+
+- [x] 21.3 **[JS] `SpeechSystem` の動的レート対応** (`docs/app.js` - `SpeechSystem`)
+  - コンストラクタに `this.speechRate = parseFloat(localStorage.getItem('stt_speech_rate') || '1.2')` を追加。
+  - `speak()` 内のハードコードされたレートをプロパティ参照に変更。
+  - `setSpeechRate(rate)` メソッドを追加しlocalStorageに保存。
+
+## [x] 22. 試合結果画面の改善 (2026-06-13)
+
+試合終了後に勝者・スコアを表示し、「もう一度プレイ」「メニューに戻る」を選択できる結果画面を実装した。
+
+- [x] 22.1 **[ゲームロジック] `finishMatch()` の改善** (`docs/app.js` - `GameEngine`)
+  - 従来の `setTimeout(() => quitGame(), 6000)` を廃止。
+  - `play-instructions` 要素に `.match-result-overlay` を含むHTMLを挿入。
+  - 「もう一度プレイ」ボタンで `startNewMatch()`、「メニューに戻る」で `quitGame()` を呼び出す。
+
+- [x] 22.2 **[CSS] 試合結果オーバーレイのスタイル定義** (`docs/styles.css`)
+  - `.match-result-overlay`, `.match-result-title`, `.match-result-winner`, `.match-result-score`, `.match-result-buttons` を追加。
+
+## [x] 23. リマッチ機能の実装 (2026-06-13)
+
+オンライン対戦終了後、同じWebSocket接続のまま再試合を開始できるリマッチ機能を実装した。
+
+- [x] 23.1 **[ネットワーク] `rematch_offer` / `rematch_accept` アクションの追加** (`docs/app.js`)
+  - `finishMatch()` でオンラインモード時に `rematch_offer` を送信。
+  - `handleOpponentAction()` で `rematch_accept` を受信したら `startNewMatch()` を実行。
+  - 「もう一度プレイ」ボタンをオンライン時は `rematch_accept` 送信に、CPU時は直接 `startNewMatch()` に振り分け。
+
+## [x] 24. 切断時の5秒再接続猶予の実装 (2026-06-13)
+
+対戦相手が切断した際に即終了せず、5秒間の再接続を待つ機能をサーバーに実装した。
+
+- [x] 24.1 **[サーバー] `Room` 構造体の拡張** (`main_server.go`)
+  - `disconnectedPlayers map[string]*Client`, `reconnectTimers map[string]*time.Timer` フィールドを追加。
+  - `NewRoom()` で両マップを初期化。
+
+- [x] 24.2 **[サーバー] `unregister` ハンドラの変更** (`main_server.go` - `Room.Run()`)
+  - 切断クライアントを `disconnectedPlayers` に移動し、残存プレイヤーに `opponent_disconnected`（countdown=5）を送信。
+  - `time.AfterFunc(5s, ...)` でタイマーを開始し、5秒後も再接続がない場合に `opponent_left` を送信してクリーンアップ。
+
+- [x] 24.3 **[サーバー] `register` ハンドラの再接続処理** (`main_server.go` - `Room.Run()`)
+  - 参加要求のクライアントIDが `disconnectedPlayers` に存在する場合、タイマーをキャンセルしてプレイヤーを復元。
+  - 残存プレイヤーと全観戦者に `opponent_reconnected` を送信。
+
+## [x] 25. 観戦モード（Observer）の実装 (2026-06-13)
+
+試合中のルームに第三者が観戦者として参加できる機能をサーバーに実装した。
+
+- [x] 25.1 **[サーバー] `Room` 構造体の拡張** (`main_server.go`)
+  - `observers map[string]*Client` フィールドを追加。
+  - `NewRoom()` で初期化。
+
+- [x] 25.2 **[サーバー] 観戦者の入室処理** (`main_server.go` - `Room.Run()` の `register` ハンドラ)
+  - 部屋に既に2名のプレイヤーがいる場合、新規接続を `role: 3`（観戦者）として `observers` マップに追加。
+  - 観戦者数が5名を超える場合は `{type: "error", message: "Observer slots full"}` を返して拒否。
+
+- [x] 25.3 **[サーバー] ブロードキャストの観戦者転送** (`main_server.go` - `Room.Run()` の `broadcast` ハンドラ)
+  - 通常メッセージをプレイヤーに転送後、すべての観戦者にも転送するよう処理を追加。
+
+- [x] 25.4 **[サーバー] 観戦者メッセージのフィルタリング** (`main_server.go` - `Client.readPump()`)
+  - `client.role == 3` の場合はメッセージをブロードキャストチャネルに流さず破棄。
+
+## [x] 26. 設定の永続化（localStorage）(2026-06-13)
+
+難易度・チルト設定・サーバーアドレス・音声速度をlocalStorageに保存し次回起動時に自動復元する機能を実装した。
+
+- [x] 26.1 **[設定保存] 難易度の保存と復元** (`docs/app.js` - `setupEventListeners`)
+  - 難易度ボタンクリック時に `localStorage.setItem('stt_last_difficulty', this.difficulty)` を追加。
+
+- [x] 26.2 **[設定保存] チルトON/OFFの保存と復元** (`docs/app.js` - `setupEventListeners`)
+  - チルトチェックボックス変更時に `localStorage.setItem('stt_use_tilt', e.target.checked)` を追加。
+  - `btn-enable-audio` クリック時にlocalStorageから復元してチェックボックスの状態を初期化。
+
+- [x] 26.3 **[設定保存] サーバーアドレスの保存と復元** (`docs/app.js` - `setupEventListeners`)
+  - `input-server-addr` の初期値をlocalStorageから復元。
+  - ルームに入る際に入力値をlocalStorageに保存。
+
+- [x] 26.4 **[設定保存] 音声速度の保存と復元** (`docs/app.js` - `SpeechSystem`)
+  - コンストラクタでlocalStorageから速度を読み込み。
+  - スライダー変更時に `narrator.setSpeechRate(rate)` 経由で保存。
+

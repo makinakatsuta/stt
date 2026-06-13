@@ -46,6 +46,14 @@
             ※端末を左右に傾けてラケットを動かし、画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
           </p>
         </div>
+
+        <!-- 音声読み上げ速度設定 -->
+        <div class="speech-rate-panel">
+          <label for="range-speech-rate">音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
+          <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
+            aria-label="音声読み上げの速さを調整します　10倍は最大速度、ち0.5倍は最小速度です。">
+          <p class="mobile-hint-text">　10」が標準速度です。慣れた方は1.5〜2.0に設定すると、読み上げが小咑利になります。</p>
+        </div>
       </section>
 
       <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->

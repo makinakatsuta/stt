@@ -186,7 +186,8 @@ class SoundSystem {
     this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
     
     // 3. ボールの速度と距離に応じた音量設定
-    let targetVolume = (speed / 10) * 0.45; // ベース音量
+    // 対数スケールで低速域の音量変化を豊かに (Feature #7)
+    let targetVolume = Math.log1p(speed * 0.8) / Math.log1p(8) * 0.5;
     if (targetVolume > 1.0) targetVolume = 1.0;
     
     const distanceVolumeRatio = 0.3 + (0.7 * Math.pow(1 - yRatio, 1.5)); 
@@ -509,11 +510,16 @@ class SoundSystem {
   }
 
   /**
-   * アウト / 失敗音 (低いブザー音のような合成音)
+   * アウト / 失敗音 (低いブザー音のような合成音に、パンニング処理を追加) (Feature #5)
+   * @param {number} x ボールのX座標
    */
-  playMissSound() {
+  playMissSound(x = CANVAS_WIDTH / 2) {
     if (!this.ctx || this.isMuted) return;
     
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+
     const osc1 = this.ctx.createOscillator();
     const osc2 = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -527,15 +533,47 @@ class SoundSystem {
     gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
     
-    osc1.connect(gain);
-    osc2.connect(gain);
-    gain.connect(this.ctx.destination);
+    if (panner) {
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+    } else {
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+    }
     
     osc1.start();
     osc2.start();
     
     osc1.stop(this.ctx.currentTime + 0.45);
     osc2.stop(this.ctx.currentTime + 0.45);
+  }
+
+  /**
+   * ボール停止時の「コトン」という位置音を合成します。(Feature #6)
+   * @param {number} x 停止したX座標
+   */
+  playBallStopSound(x) {
+    if (!this.ctx || this.isMuted) return;
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
+    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
+    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(280, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
+    if (panner) {
+      osc.connect(gain); gain.connect(panner); panner.connect(this.ctx.destination);
+    } else {
+      osc.connect(gain); gain.connect(this.ctx.destination);
+    }
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.22);
   }
 
   /**
@@ -627,6 +665,25 @@ class SoundSystem {
   }
 
   /**
+   * サーブチャージ中の上昇音を合成します。(Feature #2)
+   * @param {number} chargeRatio チャージ率 0.0〜1.0
+   */
+  playChargeBeep(chargeRatio) {
+    if (!this.ctx || this.isMuted) return;
+    const freq = 400 + (chargeRatio * 800); // 400Hz〜1200Hz
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.07);
+  }
+
+  /**
    * CPUラケットの移動音（少し高いシュッという音、奥から立体パンニング）
    */
   playCpuMoveSound(x, deltaX) {
@@ -681,6 +738,8 @@ class SpeechSystem {
     this.voice = null;
     this.srAnnouncer = document.getElementById('sr-announcer');
     this.refereeMessage = document.getElementById('referee-message');
+    // Feature #8: 音声速度設定の初期読み込み
+    this.speechRate = parseFloat(localStorage.getItem('stt_speech_rate') || '1.2');
     
     // 日本語の音声を検索してセットする
     if (this.synth) {
@@ -738,7 +797,8 @@ class SpeechSystem {
           utterance.voice = this.voice;
         }
         utterance.lang = 'ja-JP';
-        utterance.rate = isReferee ? 1.3 : 1.1; 
+        // Feature #8: 設定された speechRate を適用
+        utterance.rate = isReferee ? this.speechRate : Math.max(0.7, this.speechRate - 0.2); 
         utterance.pitch = isReferee ? 1.0 : 1.1;
         
         this.synth.speak(utterance);
@@ -755,6 +815,14 @@ class SpeechSystem {
     if (this.synth) {
       this.synth.cancel();
     }
+  }
+
+  /**
+   * 音声読み上げ速度を変更して保存します。(Feature #8)
+   */
+  setSpeechRate(rate) {
+    this.speechRate = rate;
+    localStorage.setItem('stt_speech_rate', rate);
   }
 }
 
@@ -937,6 +1005,12 @@ class GameEngine {
     this.stateStartTime = 0;
     this.timerInterval = null;
 
+    // Feature #2, #4: チャージサーブおよびインターバルスキップ用の状態管理変数
+    this.chargeStartTime = 0;
+    this.isCharging = false;
+    this.chargeInterval = null;
+    this.intervalSkipCallback = null;
+
     // キー入力状態
     this.keys = {
       ArrowLeft: false,
@@ -985,10 +1059,27 @@ class GameEngine {
     }
     this.updateCanvasAriaLabel();
 
-    // チルト切り替えチェックボックスの変更監視
+    // Feature #8: 音声速度設定スライダーのバインド＆初期化
+    const rangeSpeechRate = document.getElementById('range-speech-rate');
+    const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
+    if (rangeSpeechRate && lblSpeechRateVal) {
+      const savedRate = localStorage.getItem('stt_speech_rate') || '1.2';
+      rangeSpeechRate.value = savedRate;
+      lblSpeechRateVal.textContent = savedRate;
+      narrator.speechRate = parseFloat(savedRate);
+      
+      rangeSpeechRate.addEventListener('input', (e) => {
+        const rate = e.target.value;
+        lblSpeechRateVal.textContent = rate;
+        narrator.setSpeechRate(parseFloat(rate));
+      });
+    }
+
+    // チルト切り替えチェックボックスの変更監視 (Feature #17: 保存)
     const useTiltCheckbox = document.getElementById('chk-use-tilt');
     if (useTiltCheckbox) {
       useTiltCheckbox.addEventListener('change', (e) => {
+        localStorage.setItem('stt_use_tilt', e.target.checked);
         if (e.target.checked) {
           this.requestDeviceOrientationPermission();
         } else {
@@ -1035,9 +1126,9 @@ class GameEngine {
     // PC/タブレット向けのクリックイベント（画面全体）
     document.addEventListener('click', handlePlayAreaAction);
 
-    // スマホ向けのタッチイベント（touchend で click より早く応答）
+    // スマホ向けのタッチイベント（touchend で click より早く応答）(Feature #4: STATE_POINT_WON を追加)
     document.addEventListener('touchend', (e) => {
-      const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+      const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
 
       const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
@@ -1047,11 +1138,40 @@ class GameEngine {
       this.handleActionInput();
     }, { passive: false });
 
+    // スマホ用のtouchstartでチャージ開始 (Feature #2)
+    document.addEventListener('touchstart', (e) => {
+      const activeStates = [STATE_SERVE_WAITING];
+      if (!activeStates.includes(this.state)) return;
+
+      const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
+      if (excluded.includes(e.target.tagName)) return;
+
+      if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
+        e.preventDefault();
+        this.isCharging = true;
+        this.chargeStartTime = Date.now();
+        if (this.chargeInterval) clearInterval(this.chargeInterval);
+        sounds.playChargeBeep(0);
+        this.chargeInterval = setInterval(() => {
+          const chargeRatio = Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0);
+          sounds.playChargeBeep(chargeRatio);
+        }, 150);
+      }
+    }, { passive: false });
+
     // 1. オーディオ有効化ボタン
     document.getElementById('btn-enable-audio').addEventListener('click', () => {
       sounds.init();
       
+      // Feature #17: 設定からチルト復元
       const useTiltCheckbox = document.getElementById('chk-use-tilt');
+      if (useTiltCheckbox) {
+        const savedTilt = localStorage.getItem('stt_use_tilt') === 'true';
+        useTiltCheckbox.checked = savedTilt;
+        // changeイベントをディスパッチして状態を適用させる
+        useTiltCheckbox.dispatchEvent(new Event('change'));
+      }
+
       const useTilt = useTiltCheckbox ? useTiltCheckbox.checked : false;
       if (this.isMobile && useTilt) {
         this.requestDeviceOrientationPermission();
@@ -1069,24 +1189,27 @@ class GameEngine {
       narrator.speak("CPUの難易度を選択してください。簡単、普通、難しいから選べます。");
     });
 
-    // 2.5 難易度選択ボタン
+    // 2.5 難易度選択ボタン (Feature #17: 選択した難易度を保存)
     document.getElementById('btn-diff-easy').addEventListener('click', () => {
       this.difficulty = 'easy';
+      localStorage.setItem('stt_last_difficulty', 'easy');
       this.startNewMatch();
     });
     document.getElementById('btn-diff-normal').addEventListener('click', () => {
       this.difficulty = 'normal';
+      localStorage.setItem('stt_last_difficulty', 'normal');
       this.startNewMatch();
     });
     document.getElementById('btn-diff-hard').addEventListener('click', () => {
       this.difficulty = 'hard';
+      localStorage.setItem('stt_last_difficulty', 'hard');
       this.startNewMatch();
     });
     document.getElementById('btn-difficulty-back').addEventListener('click', () => {
       this.changeScreen('menu');
     });
 
-    // 3. モード選択: オンライン戦
+    // 3. モード選択: オンライン戦 (Feature #17: サーバーアドレスの復元)
     document.getElementById('btn-mode-online').addEventListener('click', () => {
       this.mode = 'online';
       this.changeScreen('lobby');
@@ -1095,6 +1218,15 @@ class GameEngine {
       // 現在のアクセス元を検出してヒントを表示
       const addrDetected = document.getElementById('server-addr-detected');
       const addrInput = document.getElementById('input-server-addr');
+      if (addrInput) {
+        // Feature #17: サーバーアドレスの復元
+        const savedAddr = localStorage.getItem('stt_server_addr') || '';
+        addrInput.value = savedAddr;
+        addrInput.addEventListener('change', () => {
+          localStorage.setItem('stt_server_addr', addrInput.value.trim());
+        });
+      }
+
       if (addrDetected && addrInput) {
         const currentHost = window.location.host;
         const isLocal = currentHost === 'localhost:8080' || currentHost === '127.0.0.1:8080';
@@ -1140,6 +1272,11 @@ class GameEngine {
       const serverAddrEl = document.getElementById('input-server-addr');
       const serverAddr = serverAddrEl ? serverAddrEl.value.trim() : '';
 
+      // Feature #17: 接続時にもアドレス保存
+      if (serverAddr) {
+        localStorage.setItem('stt_server_addr', serverAddr);
+      }
+
       this.changeScreen('waiting');
       this.state = STATE_WAITING_OPPONENT;
       document.getElementById('lbl-current-room').textContent = roomId || '自動マッチング';
@@ -1174,7 +1311,7 @@ class GameEngine {
       this.quitGame();
     });
 
-    // キーボード入力の監視
+    // キーボード入力の監視 (Feature #2: スペースキー長押しによるサーブチャージ)
     window.addEventListener('keydown', (e) => {
       // プレイ中は矢印キーのデフォルト挙動 (スクロール) を防止して連打・長押しを円滑にする
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code) || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
@@ -1188,7 +1325,21 @@ class GameEngine {
       // スペースキーによるアクション制御 (スクロール防止)
       if (e.code === 'Space') {
         e.preventDefault();
-        this.handleActionInput();
+        if (!e.repeat) {
+          if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
+            // サーブチャージ開始
+            this.isCharging = true;
+            this.chargeStartTime = Date.now();
+            if (this.chargeInterval) clearInterval(this.chargeInterval);
+            sounds.playChargeBeep(0);
+            this.chargeInterval = setInterval(() => {
+              const chargeRatio = Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0);
+              sounds.playChargeBeep(chargeRatio);
+            }, 150);
+          } else {
+            this.handleActionInput();
+          }
+        }
       }
       
       // Escキーによる中断
@@ -1201,6 +1352,13 @@ class GameEngine {
 
     window.addEventListener('keyup', (e) => {
       this.keys[e.code] = false;
+      
+      if (e.code === 'Space') {
+        if (this.isCharging) {
+          // チャージ完了でサーブ実行
+          this.handleActionInput();
+        }
+      }
     });
 
     // Canvasへのフォーカス制御 (矢印キーでのブラウザスクロール防止)
@@ -1464,6 +1622,23 @@ class GameEngine {
       
       this.awardPointTo(payload.winner, payload.reason);
     }
+    else if (payload.actionType === 'rematch_offer') {
+      // Feature #13: 再戦の申し込みを受信
+      narrator.speak("対戦相手が再戦を希望しています。もう一度プレイボタンを押すと再戦が開始します。", true);
+      const btnPlayAgain = document.getElementById('btn-play-again');
+      if (btnPlayAgain) {
+        btnPlayAgain.textContent = "再戦を受ける";
+      }
+    }
+    else if (payload.actionType === 'rematch_accept') {
+      // Feature #13: 再戦の同意を受信
+      const instr = document.getElementById('play-instructions');
+      if (instr) {
+        instr.classList.add('hidden');
+        instr.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。';
+      }
+      this.startNewMatch();
+    }
   }
 
   // ==========================================================================
@@ -1474,12 +1649,21 @@ class GameEngine {
    * 新しいマッチ(5ゲームマッチ)を開始します。
    */
   startNewMatch() {
+    // Feature #17: 難易度を復元
+    if (this.mode === 'cpu' && !this.difficulty) {
+      this.difficulty = localStorage.getItem('stt_last_difficulty') || 'normal';
+    }
+
     this.scores.p1 = 0;
     this.scores.p2 = 0;
     this.gameScores.p1 = 0;
     this.gameScores.p2 = 0;
-    // CPU対戦時はレシーブ練習のために常にCPU(Player2)がサーブ権を持ち、オンライン対戦時はPlayer1が持ちます
-    this.serverRole = this.mode === 'cpu' ? 2 : 1; 
+    // Feature #1: CPU戦のサーブ交代制 (easyならCPU固定(2)、normal/hardならプレイヤー先発(1))
+    if (this.mode === 'cpu') {
+      this.serverRole = this.difficulty === 'easy' ? 2 : 1;
+    } else {
+      this.serverRole = 1;
+    } 
     
     // UIの切り替え
     this.changeScreen('play');
@@ -1610,6 +1794,14 @@ class GameEngine {
    * STT特有の「いきます」「はい」「サーブ打球」などのシークエンスを進めます。
    */
   handleActionInput() {
+    // Feature #4: インターバルスキップ - STATE_POINT_WON中にアクションでインターバルをスキップ
+    if (this.state === STATE_POINT_WON && this.intervalSkipCallback) {
+      clearTimeout(this.currentIntervalTimer);
+      this.intervalSkipCallback();
+      this.intervalSkipCallback = null;
+      return;
+    }
+
     // オンライン対戦時、自分のターン以外の誤入力を防ぐ
     
     if (this.state === STATE_PRE_SERVE_READY) {
@@ -1649,31 +1841,46 @@ class GameEngine {
         } else {
           // CPU戦かつCPUがサーバー（自分がレシーバー）の場合、一定時間後にCPUが自動でサーブを打つ
           if (this.serverRole === 2) {
+            const cpuDelay = 1200 + Math.random() * 800;
+            const cpuChargeStartTime = Date.now();
+            
+            // Feature #2: CPUチャージビープ音のシミュレーション
+            const cpuChargeInterval = setInterval(() => {
+              if (this.state !== STATE_SERVE_WAITING) {
+                clearInterval(cpuChargeInterval);
+                return;
+              }
+              const elapsed = Date.now() - cpuChargeStartTime;
+              const ratio = Math.min(elapsed / cpuDelay, 0.8); // 最大0.8まで
+              sounds.playChargeBeep(ratio);
+            }, 150);
+
             setTimeout(() => {
+              clearInterval(cpuChargeInterval);
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.ball.active = true;
 
-                // 音声のみでラリー開始を案内（テキストフィールドには書かない）
-                // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
                 // 難易度に応じてサーブの速度や角度を調整
-                // 【簡単モード】低速・ほぼ直進で打ち返しやすいサーブ（ラリー練習重視）
                 if (this.difficulty === 'easy') {
-                  // ゆっくりまっすぐ転がってくるサーブ（横方向のブレを最小限に抑える）
                   this.ball.vx = (Math.random() * 0.8 - 0.4); // ±0.4 の微小なランダム横成分
                   this.ball.vy = 3.5; // 通常より低速
                 } else {
                   let speedMultiplier = 1.0;
-                  if (this.difficulty === 'hard') speedMultiplier = 1.25;
+                  if (this.difficulty === 'hard') speedMultiplier = 1.15;
                   
+                  // Feature #2: CPUチャージシミュレーションによる初速設定
+                  const chargeRatio = 0.3 + Math.random() * 0.5;
+                  const baseVy = (4.5 + chargeRatio * 3.5) * speedMultiplier;
+
                   this.ball.vx = (2.0 + Math.random() * 2.0) * speedMultiplier;
-                  this.ball.vy = 5.5 * speedMultiplier;
+                  this.ball.vy = baseVy;
                 }
                 
                 sounds.playHitSound(this.ball.x);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
-            }, 1200 + Math.random() * 800); // 1.2〜2.0秒後にサーブ
+            }, cpuDelay);
           }
         }
       }
@@ -1681,10 +1888,17 @@ class GameEngine {
     else if (this.state === STATE_SERVE_WAITING) {
       // 3. サーバーによるサーブ実行
       if (this.isMyTurnToServe()) {
+        // Feature #2: チャージ量を計算して初速に反映
+        const chargeTime = this.isCharging ? Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0) : 0;
+        this.isCharging = false;
+        if (this.chargeInterval) { clearInterval(this.chargeInterval); this.chargeInterval = null; }
+        const chargeRatio = chargeTime;
+        const baseVy = 4.5 + (chargeRatio * 3.5); // 4.5〜8.0
+
         this.state = STATE_RALLY;
         this.ball.active = true;
 
-        // 音声のみでラリー開始を案円（テキストフィールドには書かない）
+        // 音声のみでラリー開始を案内（テキストフィールドには書かない）
         // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
         // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
         if (this.serverRole === 1) {
@@ -1693,14 +1907,14 @@ class GameEngine {
           const targetX = CANVAS_WIDTH - startX; // 対角を狙う
           const dx = targetX - startX;
           this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2); // 距離に応じて横成分を決定
-          this.ball.vy = -6.0;
+          this.ball.vy = -baseVy;
         } else {
           // 相手から自分へ (Yをプラス方向へ)
           const startX = this.p2.x + PADDLE_WIDTH / 2;
           const targetX = CANVAS_WIDTH - startX;
           const dx = targetX - startX;
           this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2);
-          this.ball.vy = 6.0;
+          this.ball.vy = baseVy;
         }
         
         sounds.playHitSound(this.ball.x);
@@ -1723,7 +1937,10 @@ class GameEngine {
       const paddle = this.role === 1 ? this.p1 : this.p2;
       const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
       const isIncoming = (this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0);
-      const isNearPaddle = Math.abs(this.ball.y - defenseY) < 30; // 守備ライン付近30px
+      
+      // Feature #3: 難易度別のヒットゾーン (easy: 50px, hard: 20px, normal: 30px)
+      const hitZone = this.difficulty === 'easy' ? 50 : this.difficulty === 'hard' ? 20 : 30;
+      const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
       const hitPaddle = this.ball.x >= paddle.x - 15 && this.ball.x <= paddle.x + PADDLE_WIDTH + 15;
       
       // スイング音とスイング波紋エフェクトを即座に発生させる (ボールのヒットに関わらず連打可能)
@@ -1781,8 +1998,8 @@ class GameEngine {
       // 自分の得点
       sounds.playFrameSound(CANVAS_WIDTH / 2);
     } else {
-      // 相手の得点
-      sounds.playMissSound();
+      // 相手の得点 - Feature #5: パンニングのためにボールのX座標を渡す
+      sounds.playMissSound(this.ball.x);
     }
     
     // 得点の理由案内テキスト
@@ -1830,6 +2047,20 @@ class GameEngine {
       }
     }
 
+    // Feature #3: リターンミス時のミス方向音声アナウンス
+    if (reason === 'miss') {
+      const sideText = this.ball.x < CANVAS_WIDTH / 3 ? '左を通りました' : (this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右を通りました' : '中央を通りました');
+      try {
+        const srEl = document.getElementById('sr-announcer');
+        if (srEl) {
+          srEl.textContent = '';
+          setTimeout(() => {
+            srEl.textContent = sideText;
+          }, 80);
+        }
+      } catch (e) {}
+    }
+
     const scoreAnnounce = `${reasonText}。ポイント、${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     narrator.speak(scoreAnnounce, true);
     
@@ -1838,7 +2069,8 @@ class GameEngine {
     const p2 = this.scores.p2;
     const isGameFinished = (p1 >= this.maxScore || p2 >= this.maxScore) && Math.abs(p1 - p2) >= 2;
     
-    setTimeout(() => {
+    // Feature #4: インターバルスキップ用のコールバックパターンの適用
+    this.intervalSkipCallback = () => {
       if (isGameFinished) {
         // ゲーム獲得数をインクリメント
         const gameWinner = p1 > p2 ? 1 : 2;
@@ -1862,9 +2094,9 @@ class GameEngine {
           this.scores.p2 = 0;
           this.updateScoreboard();
           
-          // サーブ権の初期設定 (奇数ゲームはPlayer1、偶数ゲームはPlayer2が最初のサーブ権を持つ)
+          // Feature #1: CPU戦サーブ交代制 (easyならCPU固定(2)、normal/hardなら交代)
           if (this.mode === 'cpu') {
-            this.serverRole = 2; // CPU戦では常にCPUがサーブ
+            this.serverRole = this.difficulty === 'easy' ? 2 : nextGameNum % 2 === 1 ? 1 : 2;
           } else {
             this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
           }
@@ -1875,9 +2107,18 @@ class GameEngine {
         }
       } else {
         // 次のサーブ権の移行チェック
+        // Feature #1: CPU戦のサーブ交代制 (normal/hardなら2点交代を適用)
         if (this.mode === 'cpu') {
-          // CPU戦ではプレイヤーのレシーブ（守備）練習を優先するため、常にCPUがサーブを打つように固定
-          this.serverRole = 2;
+          if (this.difficulty === 'easy') {
+            this.serverRole = 2; // CPU戦簡単では常にCPUがサーブ
+          } else {
+            const total = p1 + p2;
+            if (p1 >= 10 && p2 >= 10) {
+              this.serverRole = this.serverRole === 1 ? 2 : 1;
+            } else if (total > 0 && total % 2 === 0) {
+              this.serverRole = this.serverRole === 1 ? 2 : 1;
+            }
+          }
         } else {
           // オンライン対戦時は、合算スコアが2の倍数のとき、またはデュース（10:10以降）は1ポイントごとにサーブ交代
           const total = p1 + p2;
@@ -1890,7 +2131,15 @@ class GameEngine {
         
         this.prepareServeSequence();
       }
+    };
+
+    const skipTimer = setTimeout(() => {
+      if (this.intervalSkipCallback) {
+        this.intervalSkipCallback();
+        this.intervalSkipCallback = null;
+      }
     }, 4000);
+    this.currentIntervalTimer = skipTimer;
   }
 
   /**
@@ -1910,16 +2159,50 @@ class GameEngine {
     // 試合終了の歓声音を再生
     sounds.playCheerSound();
     
-    // play-instructions を再表示し試合終了メッセージを書き込む
+    // play-instructions を再表示し、リザルト画面に書き換える (Feature #11)
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) {
       instrEl.classList.remove('hidden');
-      instrEl.textContent = `試合終了！勝者: ${winnerName}`;
+      instrEl.innerHTML = `<div class="match-result-overlay">
+        <div class="match-result-title">🏆 試合終了！</div>
+        <div class="match-result-winner">勝者: ${winnerName}</div>
+        <div class="match-result-score">最終スコア ${this.gameScores.p1} - ${this.gameScores.p2}</div>
+        <div class="match-result-buttons">
+          <button id="btn-play-again" class="btn btn-primary">もう一度プレイ</button>
+          <button id="btn-quit-to-menu" class="btn btn-secondary">メニューに戻る</button>
+        </div>
+      </div>`;
+      
+      const btnPlayAgain = document.getElementById('btn-play-again');
+      const btnQuitMenu = document.getElementById('btn-quit-to-menu');
+      
+      if (btnPlayAgain) {
+        btnPlayAgain.addEventListener('click', () => {
+          instrEl.classList.add('hidden');
+          instrEl.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。'; // 元に戻す
+          
+          if (this.mode === 'online') {
+            // Feature #13: オンライン対戦時は相手に rematch_accept を送信
+            this.net.send('action', { actionType: 'rematch_accept' });
+          } else {
+            this.startNewMatch();
+          }
+        });
+      }
+      
+      if (btnQuitMenu) {
+        btnQuitMenu.addEventListener('click', () => {
+          this.quitGame();
+        });
+      }
+      
+      if (btnPlayAgain) btnPlayAgain.focus();
     }
-    
-    setTimeout(() => {
-      this.quitGame();
-    }, 6000);
+
+    // Feature #13: オンライン対戦時は相手に再戦希望を送信
+    if (this.mode === 'online') {
+      this.net.send('action', { actionType: 'rematch_offer' });
+    }
   }
 
   // ==========================================================================
@@ -2061,6 +2344,10 @@ class GameEngine {
                 });
               }
             } else if (evt.type === 'score') {
+              // Feature #6: ボール停止位置音の再生
+              if (evt.reason === 'stop') {
+                sounds.playBallStopSound(this.ball.x);
+              }
               // オンライン対戦時: Player2（クライアント）はローカルの score イベントを無視し、
               // Player1（ホスト）から送られてくる 'point' メッセージでのみ得点を更新する
               if (this.mode === 'online' && this.role === 2) {
@@ -2293,6 +2580,7 @@ class GameEngine {
         // ボールが止まった
         this.ball.vx = 0;
         this.ball.vy = 0;
+        sounds.playBallStopSound(this.ball.x); // Feature #6: ボール停止位置音の再生
         sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
         
         // 停止したコートの位置によってポイントを決定

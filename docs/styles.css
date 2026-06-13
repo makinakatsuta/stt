@@ -935,3 +935,121 @@ body {
   line-height: 1.5;
   transition: color 0.3s;
 }
+
+/* ==========================================================================
+   Match Result Overlay
+   ========================================================================== */
+.match-result-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(0,240,255,0.08) 0%, rgba(255,0,127,0.08) 100%);
+  border: 1px solid rgba(0,240,255,0.25);
+  border-radius: 16px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.match-result-title {
+  font-family: var(--font-title);
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--color-warning);
+  text-shadow: 0 0 20px rgba(255,170,0,0.5);
+  letter-spacing: 2px;
+}
+
+.match-result-winner {
+  font-family: var(--font-title);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  text-shadow: 0 0 12px rgba(0,240,255,0.5);
+}
+
+.match-result-score {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  font-family: var(--font-title);
+  letter-spacing: 1px;
+}
+
+.match-result-buttons {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* Speech rate panel */
+.speech-rate-panel {
+  background: rgba(255,255,255,0.03);
+  border: 1px dashed rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-top: 15px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.speech-rate-panel label {
+  font-size: 0.95rem;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.speech-rate-panel input[type="range"] {
+  width: 100%;
+  max-width: 320px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+  height: 6px;
+}
+
+/* Spinner error state */
+.spinner-error {
+  border-color: rgba(255,49,49,0.15) !important;
+  border-left-color: var(--color-danger) !important;
+  animation: none !important;
+}
+
+/* Network error box */
+.network-error-box {
+  background: rgba(255,49,49,0.08);
+  border: 1px solid rgba(255,49,49,0.3);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  max-width: 400px;
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 1.5rem;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.error-message-text {
+  font-size: 0.9rem;
+  color: var(--color-danger);
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.error-countdown-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* server-addr-detected text */
+.server-addr-detected {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-top: 4px;
+}

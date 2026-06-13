@@ -31,7 +31,7 @@ type Client struct {
 	send chan []byte     // クライアントへ送信するメッセージのチャネル
 	room *Room           // 所属している部屋
 	id   string          // プレイヤーID (UUID的な文字列)
-	role int             // プレイヤーの役割 (1: サーバー/Player1, 2: レシーバー/Player2)
+	role int             // プレイヤーの役割 (1: サーバー/Player1, 2: レシーバー/Player2, 3: 観戦者/Observer)
 }
 
 // Message はクライアント間で送受信されるデータの標準フォーマットです。
@@ -43,22 +43,28 @@ type Message struct {
 
 // Room は対戦が行われる部屋を表します。
 type Room struct {
-	id         string             // 部屋ID
-	players    map[string]*Client // 部屋に参加しているプレイヤー（最大2名）
-	register   chan *Client       // 参加用チャネル
-	unregister chan *Client       // 退出用チャネル
-	broadcast  chan []byte        // ブロードキャスト用チャネル
-	mu         sync.Mutex         // 部屋内の排他制御用
+	id                  string             // 部屋ID
+	players             map[string]*Client // 部屋に参加しているプレイヤー（最大2名）
+	observers           map[string]*Client // 観戦者マップ（最大5名）
+	disconnectedPlayers map[string]*Client // 一時切断中のプレイヤー（再接続待ち）
+	reconnectTimers     map[string]*time.Timer // 再接続待ちタイマー
+	register            chan *Client       // 参加用チャネル
+	unregister          chan *Client       // 退出用チャネル
+	broadcast           chan []byte        // ブロードキャスト用チャネル
+	mu                  sync.Mutex         // 部屋内の排他制御用
 }
 
 // NewRoom は新しい対戦部屋を作成します。
 func NewRoom(id string) *Room {
 	return &Room{
-		id:         id,
-		players:    make(map[string]*Client),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		broadcast:  make(chan []byte),
+		id:                  id,
+		players:             make(map[string]*Client),
+		observers:           make(map[string]*Client),
+		disconnectedPlayers: make(map[string]*Client),
+		reconnectTimers:     make(map[string]*time.Timer),
+		register:            make(chan *Client),
+		unregister:          make(chan *Client),
+		broadcast:           make(chan []byte),
 	}
 }
 
@@ -68,6 +74,85 @@ func (r *Room) Run() {
 		select {
 		case client := <-r.register:
 			r.mu.Lock()
+
+			// --- Feature #14: 再接続チェック ---
+			// 同じclientIdが切断待ち状態にある場合は再接続として扱う
+			if disconnected, ok := r.disconnectedPlayers[client.id]; ok {
+				log.Printf("Player %s reconnected to room %s", client.id, r.id)
+
+				// タイマーをキャンセル
+				if timer, timerOk := r.reconnectTimers[client.id]; timerOk {
+					timer.Stop()
+					delete(r.reconnectTimers, client.id)
+				}
+
+				// 新しいコネクションで既存のclientを更新（役割を引き継ぐ）
+				client.role = disconnected.role
+				r.players[client.id] = client
+				delete(r.disconnectedPlayers, client.id)
+
+				// 本人に初期化情報を送信
+				initPayload, _ := json.Marshal(map[string]interface{}{
+					"role":   client.role,
+					"roomId": r.id,
+					"id":     client.id,
+				})
+				client.send <- mustMarshal(Message{Type: "init", Sender: "server", Payload: initPayload})
+
+				// 相手に再接続を通知
+				for id, p := range r.players {
+					if id != client.id {
+						reconnPayload, _ := json.Marshal(map[string]string{"message": "Opponent reconnected"})
+						select {
+						case p.send <- mustMarshal(Message{Type: "opponent_reconnected", Sender: "server", Payload: reconnPayload}):
+						default:
+						}
+					}
+				}
+				// 観戦者にも再接続を通知
+				for _, obs := range r.observers {
+					reconnPayload, _ := json.Marshal(map[string]string{"message": "Player reconnected"})
+					select {
+					case obs.send <- mustMarshal(Message{Type: "opponent_reconnected", Sender: "server", Payload: reconnPayload}):
+					default:
+					}
+				}
+
+				r.mu.Unlock()
+				continue
+			}
+
+			// --- Feature #15: 観戦者モード ---
+			// 部屋に既に2人の選手がいる場合は観戦者として参加
+			if len(r.players) >= 2 {
+				// 観戦者数の上限チェック（最大5名）
+				if len(r.observers) >= 5 {
+					log.Printf("Room %s observer slots full. Rejecting Observer %s", r.id, client.id)
+					errPayload, _ := json.Marshal(map[string]string{"message": "Observer slots full"})
+					client.send <- mustMarshal(Message{Type: "error", Sender: "server", Payload: errPayload})
+					client.conn.Close()
+					r.mu.Unlock()
+					continue
+				}
+
+				// 観戦者として追加
+				client.role = 3
+				r.observers[client.id] = client
+				log.Printf("Observer %s joined room %s. Total observers: %d", client.id, r.id, len(r.observers))
+
+				// 本人に観戦者として初期化情報を送信
+				initPayload, _ := json.Marshal(map[string]interface{}{
+					"role":   3,
+					"roomId": r.id,
+					"id":     client.id,
+				})
+				client.send <- mustMarshal(Message{Type: "init", Sender: "server", Payload: initPayload})
+
+				r.mu.Unlock()
+				continue
+			}
+
+			// 通常のプレイヤー参加処理
 			// 部屋には最大2人まで参加可能
 			if len(r.players) < 2 {
 				r.players[client.id] = client
@@ -110,7 +195,7 @@ func (r *Room) Run() {
 					}
 				}
 			} else {
-				// 満員の場合はエラーメッセージを返す
+				// 満員の場合はエラーメッセージを返す（通常はここに来ないはず）
 				log.Printf("Room %s is full (currently %d players). Rejecting Player %s", r.id, len(r.players), client.id)
 				errPayload, _ := json.Marshal(map[string]string{"message": "Room is full"})
 				client.send <- mustMarshal(Message{Type: "error", Sender: "server", Payload: errPayload})
@@ -120,16 +205,78 @@ func (r *Room) Run() {
 
 		case client := <-r.unregister:
 			r.mu.Lock()
-			if _, ok := r.players[client.id]; ok {
-				delete(r.players, client.id)
-				close(client.send)
-				log.Printf("Player %s left room %s", client.id, r.id)
 
-				// 相手が残っている場合、相手に退出を通知
+			// --- Feature #15: 観戦者の退出処理 ---
+			if _, isObserver := r.observers[client.id]; isObserver {
+				delete(r.observers, client.id)
+				close(client.send)
+				log.Printf("Observer %s left room %s", client.id, r.id)
+				r.mu.Unlock()
+				continue
+			}
+
+			// --- Feature #14: プレイヤー切断時の再接続猶予処理 ---
+			if _, ok := r.players[client.id]; ok {
+				// プレイヤーを切断済みマップへ移動（まだ削除しない）
+				r.disconnectedPlayers[client.id] = client
+				delete(r.players, client.id)
+				log.Printf("Player %s disconnected from room %s. Waiting 5s for reconnect...", client.id, r.id)
+
+				// 残っている相手プレイヤーに切断を通知（カウントダウン付き）
 				for _, p := range r.players {
-					leavePayload, _ := json.Marshal(map[string]string{"message": "Opponent disconnected"})
-					p.send <- mustMarshal(Message{Type: "opponent_left", Sender: "server", Payload: leavePayload})
+					discPayload, _ := json.Marshal(map[string]interface{}{
+						"message":   "Opponent disconnected",
+						"countdown": 5,
+					})
+					select {
+					case p.send <- mustMarshal(Message{Type: "opponent_disconnected", Sender: "server", Payload: discPayload}):
+					default:
+					}
 				}
+				// 観戦者にも通知
+				for _, obs := range r.observers {
+					discPayload, _ := json.Marshal(map[string]interface{}{
+						"message":   "Player disconnected",
+						"countdown": 5,
+					})
+					select {
+					case obs.send <- mustMarshal(Message{Type: "opponent_disconnected", Sender: "server", Payload: discPayload}):
+					default:
+					}
+				}
+
+				// 5秒後のタイムアウト処理
+				disconnectedClientId := client.id
+				timer := time.AfterFunc(5*time.Second, func() {
+					r.mu.Lock()
+					defer r.mu.Unlock()
+
+					// タイマー発火時点でまだ disconnectedPlayers にいれば、完全に退出処理
+					if dc, stillDisconnected := r.disconnectedPlayers[disconnectedClientId]; stillDisconnected {
+						log.Printf("Player %s did not reconnect in time. Removing from room %s.", disconnectedClientId, r.id)
+						close(dc.send)
+						delete(r.disconnectedPlayers, disconnectedClientId)
+						delete(r.reconnectTimers, disconnectedClientId)
+
+						// 残った相手プレイヤーに完全退出を通知
+						for _, p := range r.players {
+							leavePayload, _ := json.Marshal(map[string]string{"message": "Opponent left"})
+							select {
+							case p.send <- mustMarshal(Message{Type: "opponent_left", Sender: "server", Payload: leavePayload}):
+							default:
+							}
+						}
+						// 観戦者にも通知
+						for _, obs := range r.observers {
+							leavePayload, _ := json.Marshal(map[string]string{"message": "Player left"})
+							select {
+							case obs.send <- mustMarshal(Message{Type: "opponent_left", Sender: "server", Payload: leavePayload}):
+							default:
+							}
+						}
+					}
+				})
+				r.reconnectTimers[client.id] = timer
 			}
 			// 部屋が空になったらマネージャー側で削除されるようにします
 			r.mu.Unlock()
@@ -163,6 +310,15 @@ func (r *Room) Run() {
 							close(p.send)
 							delete(r.players, id)
 						}
+					}
+				}
+				// --- Feature #15: 観戦者にも転送 ---
+				for id, obs := range r.observers {
+					select {
+					case obs.send <- message:
+					default:
+						close(obs.send)
+						delete(r.observers, id)
 					}
 				}
 				r.mu.Unlock()
@@ -203,7 +359,7 @@ func (s *Server) CleanEmptyRooms() {
 		s.mu.Lock()
 		for id, room := range s.rooms {
 			room.mu.Lock()
-			if len(room.players) == 0 {
+			if len(room.players) == 0 && len(room.observers) == 0 && len(room.disconnectedPlayers) == 0 {
 				log.Printf("Cleaning up empty room: %s", id)
 				delete(s.rooms, id)
 				// チャネルのクローズ等はGCに任せます
@@ -231,6 +387,11 @@ func (c *Client) readPump() {
 				log.Printf("error: %v", err)
 			}
 			break
+		}
+
+		// --- Feature #15: 観戦者はメッセージを送信できない（ドロップ） ---
+		if c.role == 3 {
+			continue
 		}
 
 		// メッセージをパースして送信者IDを埋め込む

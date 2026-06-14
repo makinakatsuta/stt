@@ -1660,7 +1660,7 @@ class GameEngine {
     this.gameScores.p2 = 0;
     // Feature #1: CPU戦のサーブ交代制 (easyならCPU固定(2)、normal/hardならプレイヤー先発(1))
     if (this.mode === 'cpu') {
-      this.serverRole = this.difficulty === 'easy' ? 2 : 1;
+      this.serverRole = 1; // 改善⑦: easy でも先攻サーブはプレイヤー（CPU固定を廃止）
     } else {
       this.serverRole = 1;
     } 
@@ -1869,11 +1869,20 @@ class GameEngine {
                   let speedMultiplier = 1.0;
                   if (this.difficulty === 'hard') speedMultiplier = 1.15;
                   
-                  // Feature #2: CPUチャージシミュレーションによる初速設定
+                  // Feature #2 / 改善③: CPUチャージシミュレーションによる初速設定 + サーブバリエーション（直球/左/右）
                   const chargeRatio = 0.3 + Math.random() * 0.5;
                   const baseVy = (4.5 + chargeRatio * 3.5) * speedMultiplier;
 
-                  this.ball.vx = (2.0 + Math.random() * 2.0) * speedMultiplier;
+                  const serveType = Math.random();
+                  let cpuServeVx;
+                  if (serveType < 0.33) {
+                    cpuServeVx = (Math.random() * 1.0 - 0.5) * speedMultiplier; // 直球（横ほぼなし）
+                  } else if (serveType < 0.66) {
+                    cpuServeVx = -(1.5 + Math.random() * 2.5) * speedMultiplier; // 左流し
+                  } else {
+                    cpuServeVx = (1.5 + Math.random() * 2.5) * speedMultiplier;  // 右流し
+                  }
+                  this.ball.vx = cpuServeVx;
                   this.ball.vy = baseVy;
                 }
                 
@@ -2026,7 +2035,10 @@ class GameEngine {
     }
     
     // コール発声: 「ポイント [P1/P2]」
-    const winnerName = winner === 1 ? "プレイヤー 1" : "プレイヤー 2";
+    // 改善⑥: CPU戦では「プレイヤー 2」でなく「CPU」と読み上げる
+    const winnerName = this.mode === 'cpu'
+      ? (winner === 1 ? 'プレイヤー' : 'CPU')
+      : (winner === 1 ? 'プレイヤー 1' : 'プレイヤー 2');
     
     // デュース判定などの公式スコア計算 (ホスト、またはCPU戦の場合のみ加算)
     if (this.mode === 'cpu' || this.isServerAndDecider()) {
@@ -2064,6 +2076,17 @@ class GameEngine {
     const scoreAnnounce = `${reasonText}。ポイント、${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     narrator.speak(scoreAnnounce, true);
     
+    // 改善⑧: インターバル中にスキップ可能なことをスクリーンリーダーで案内（2秒後）
+    setTimeout(() => {
+      try {
+        const srEl = document.getElementById('sr-announcer');
+        if (srEl) {
+          srEl.textContent = '';
+          setTimeout(() => { srEl.textContent = 'タップまたはスペースキーで次のサーブへ進めます。'; }, 50);
+        }
+      } catch(e) {}
+    }, 2000);
+    
     // 1ゲーム（セット）終了判定 (11点先取、デュース時は2点差)
     const p1 = this.scores.p1;
     const p2 = this.scores.p2;
@@ -2094,12 +2117,8 @@ class GameEngine {
           this.scores.p2 = 0;
           this.updateScoreboard();
           
-          // Feature #1: CPU戦サーブ交代制 (easyならCPU固定(2)、normal/hardなら交代)
-          if (this.mode === 'cpu') {
-            this.serverRole = this.difficulty === 'easy' ? 2 : nextGameNum % 2 === 1 ? 1 : 2;
-          } else {
-            this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
-          }
+          // Feature #1 / 改善⑦: CPU戦サーブ交代制（easy含め全難易度でゲームごとに交代）
+          this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
           
           setTimeout(() => {
             this.prepareServeSequence();
@@ -2107,20 +2126,8 @@ class GameEngine {
         }
       } else {
         // 次のサーブ権の移行チェック
-        // Feature #1: CPU戦のサーブ交代制 (normal/hardなら2点交代を適用)
-        if (this.mode === 'cpu') {
-          if (this.difficulty === 'easy') {
-            this.serverRole = 2; // CPU戦簡単では常にCPUがサーブ
-          } else {
-            const total = p1 + p2;
-            if (p1 >= 10 && p2 >= 10) {
-              this.serverRole = this.serverRole === 1 ? 2 : 1;
-            } else if (total > 0 && total % 2 === 0) {
-              this.serverRole = this.serverRole === 1 ? 2 : 1;
-            }
-          }
-        } else {
-          // オンライン対戦時は、合算スコアが2の倍数のとき、またはデュース（10:10以降）は1ポイントごとにサーブ交代
+        // Feature #1 / 改善⑦: 全難易度・全モードで共通のサーブ交代制（2点ごと交代、デュース時1点ごと）
+        {
           const total = p1 + p2;
           if (p1 >= 10 && p2 >= 10) {
             this.serverRole = this.serverRole === 1 ? 2 : 1;
@@ -2153,7 +2160,10 @@ class GameEngine {
    * マッチ(試合全体)の決着がついた際の終了処理。
    */
   finishMatch(matchWinner) {
-    const winnerName = matchWinner === 1 ? "プレイヤー 1" : "プレイヤー 2";
+    // 改善⑥: CPU戦では「プレイヤー 2」でなく「CPU」と読み上げる
+    const winnerName = this.mode === 'cpu'
+      ? (matchWinner === 1 ? 'プレイヤー' : 'CPU')
+      : (matchWinner === 1 ? 'プレイヤー 1' : 'プレイヤー 2');
     narrator.speak(`マッチ終了！ 勝者は、${winnerName} です！おめでとうございます！`, true);
     
     // 試合終了の歓声音を再生
@@ -2521,8 +2531,11 @@ class GameEngine {
           if (hitPaddle) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-            this.ball.vx = relativeHitPos * 4.0;
-            this.ball.vy = -Math.abs(this.ball.vy) * 1.05;
+            // 改善①②④: 難易度別の返球横速度・縦加速
+            const cpuVxFactor = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 6.0 : 4.0;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.12 : this.difficulty === 'easy' ? 1.02 : 1.05;
+            this.ball.vx = relativeHitPos * cpuVxFactor;
+            this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost;
             
             sounds.playHitSound(this.ball.x);
             this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
@@ -2539,11 +2552,19 @@ class GameEngine {
           if (hitPaddle) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-            this.ball.vx = relativeHitPos * 4.0;
-            this.ball.vy = Math.abs(this.ball.vy) * 1.05;
+            // 改善①②④: 難易度別の返球横速度・縦加速
+            const cpuVxFactor = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 6.0 : 4.0;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.12 : this.difficulty === 'easy' ? 1.02 : 1.05;
+            this.ball.vx = relativeHitPos * cpuVxFactor;
+            this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost;
             
             sounds.playHitSound(this.ball.x);
             this.addRipple(this.ball.x, this.ball.y, 'hit');
+            // 改善⑤: CPU打球時のスクリーンリーダー向け通知
+            try {
+              const srEl = document.getElementById('sr-announcer');
+              if (srEl) { srEl.textContent = ''; setTimeout(() => { srEl.textContent = 'CPUが打ちました'; }, 20); }
+            } catch(e) {}
           }
         }
       }

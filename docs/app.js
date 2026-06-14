@@ -1395,6 +1395,7 @@ class GameEngine {
   quitGame() {
     this.net.disconnect();
     this.state = STATE_MENU;
+    this.stopLoop(); // アニメーションループを確実に停止
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     narrator.stop();
     this.changeScreen('menu');
@@ -2209,7 +2210,8 @@ class GameEngine {
       if (btnPlayAgain) btnPlayAgain.focus();
     }
 
-    // Feature #13: オンライン対戦時は相手に再戦希望を送信
+    // Feature #13: オンライン対戦時は相手に再戦希望（offer）のみを送信する。
+    // accept は「もう一度プレイ」ボタン押下時に送信される。
     if (this.mode === 'online') {
       this.net.send('action', { actionType: 'rematch_offer' });
     }
@@ -2990,10 +2992,12 @@ class GameEngine {
     ctx.stroke();
     ctx.setLineDash([]);
     
-    // ボール (ネオングリーン)
+    // ボール (ネオングリーン) × 2個 (通過中と停止位置を示す)
     ctx.fillStyle = '#39ff14';
     ctx.beginPath();
     ctx.arc(netX - 20, tblY - 6, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(netX, tblY - 6, 4.5, 0, Math.PI * 2);
     ctx.fill();
     
@@ -3214,15 +3218,18 @@ class GameEngine {
       if (this.state !== STATE_MENU) {
         this.updatePhysics();
         this.draw();
-        requestAnimationFrame(loop);
+        this.rafId = requestAnimationFrame(loop);
       }
     };
     
-    requestAnimationFrame(loop);
+    this.rafId = requestAnimationFrame(loop);
   }
 
   stopLoop() {
-    // requestAnimationFrame のクリーンアップは state 監視で行います
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
   }
 }
 

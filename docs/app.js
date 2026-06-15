@@ -1367,6 +1367,18 @@ class GameEngine {
         e.preventDefault();
       }
     });
+
+    // タブ切り替え・画面非表示時のチャージ状態リセット
+    // （Alt+Tab等で keyup が発火しないまま isCharging が残るケースを防ぐ）
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.isCharging) {
+        this.isCharging = false;
+        if (this.chargeInterval) {
+          clearInterval(this.chargeInterval);
+          this.chargeInterval = null;
+        }
+      }
+    });
   }
 
   /**
@@ -1504,6 +1516,10 @@ class GameEngine {
       case 'init':
         // 役割の確定 (1: 手前 / 2: 奥)
         this.role = msg.payload.role;
+        // サーバーが割り当てたIDを保存（再接続時にサーバー側と照合するために使用）
+        if (msg.payload.id) {
+          this.net.clientId = msg.payload.id;
+        }
         console.log(`Your assigned role is Player ${this.role}`);
         break;
 
@@ -2161,6 +2177,8 @@ class GameEngine {
    * マッチ(試合全体)の決着がついた際の終了処理。
    */
   finishMatch(matchWinner) {
+    // ゲームループを停止（リザルト表示中に物理計算・描画が走り続けるのを防ぐ）
+    this.stopLoop();
     // 改善⑥: CPU戦では「プレイヤー 2」でなく「CPU」と読み上げる
     const winnerName = this.mode === 'cpu'
       ? (matchWinner === 1 ? 'プレイヤー' : 'CPU')
@@ -2194,7 +2212,9 @@ class GameEngine {
           
           if (this.mode === 'online') {
             // Feature #13: オンライン対戦時は相手に rematch_accept を送信
+            // 送信側も即座に startNewMatch() を呼ぶ（双方が同時にゲームを開始する）
             this.net.send('action', { actionType: 'rematch_accept' });
+            this.startNewMatch();
           } else {
             this.startNewMatch();
           }

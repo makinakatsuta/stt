@@ -16,12 +16,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// アップグレーダーの設定。許容するオリジンをすべて許可します（開発・公開用）。
+// アップグレーダーの設定。許容するオリジンをすべて許可します（開発・LAN用）。
+// NOTE: インターネット公開時は r.Header.Get("Origin") を検証し、
+// 許可するオリジンを明示的に制限してください（CSRF対策）。
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return true // 開発・LAN環境用: すべてのオリジンを許可
 	},
 }
 
@@ -121,6 +123,12 @@ func (r *Room) Run() {
 				r.mu.Unlock()
 				continue
 			}
+
+			// 新規接続: セキュリティ強化のためサーバー側でIDを生成する。
+			// クライアントが指定してきたIDは上書きされる。
+			// これにより、切断済みプレイヤーのIDを第三者が詐称して
+			// セッションを乗っ取るリスクを低減する。
+			client.id = fmt.Sprintf("sv-%d", time.Now().UnixNano())
 
 			// --- Feature #15: 観戦者モード ---
 			// 部屋に既に2人の選手がいる場合は観戦者として参加

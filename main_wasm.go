@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/rand"
 	"syscall/js"
-	"time"
 )
 
 const (
@@ -22,9 +21,6 @@ const (
 )
 
 func main() {
-	// Initialize random seed
-	rand.Seed(time.Now().UnixNano())
-
 	// Register the function to JavaScript global scope
 	js.Global().Set("updatePhysicsWasm", js.FuncOf(updatePhysicsWasm))
 

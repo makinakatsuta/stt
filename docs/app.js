@@ -576,46 +576,6 @@ class SoundSystem {
     osc.stop(this.ctx.currentTime + 0.22);
   }
 
-  /**
-   * ボール接近通知ビープ音「ぴ」を合成します。
-   * ラリー中にボールがプレイヤーの守備ラインへ近づいたとき、段階的に音量・周波数を変えて鳴らします。
-   * @param {'far'|'near'|'hit'} stage 接近段階
-   *   - 'far'  : 守備ライン手前 80px 圏内 — 低めの短い「ぴ」
-   *   - 'near' : 守備ライン手前 40px 圏内 — 高めの「ぴ」(打ち返しゾーン接近)
-   *   - 'hit'  : 打ち返し可能ゾーン  — 高く鋭い「ぴっ」(タップ/スペースキーの合図)
-   */
-  playBeep(stage = 'far') {
-    if (!this.ctx || this.isMuted) return;
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'sine';
-
-    let freq = 880;    // 'far'
-    let vol  = 0.18;
-    let dur  = 0.08;
-
-    if (stage === 'near') {
-      freq = 1320;
-      vol  = 0.28;
-      dur  = 0.07;
-    } else if (stage === 'hit') {
-      freq = 1760;
-      vol  = 0.40;
-      dur  = 0.055;
-    }
-
-    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-    gain.gain.setValueAtTime(vol, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-
-    osc.start();
-    osc.stop(this.ctx.currentTime + dur + 0.01);
-  }
 
   /**
    * 試合終了時の歓声・拍手効果音を合成します。
@@ -1040,9 +1000,6 @@ class GameEngine {
     this.tiltSpeed = 0; // チルト比例速度 (0.0〜1.0)
     this.handleOrientationBound = null;
 
-    // ボール接近ビープ管理
-    this.lastBeepStage = null;   // 'far' | 'near' | 'hit' | null
-    this.lastBeepTime  = 0;      // 最後にビープを鳴らした timestamp (ms)
 
     // イベントリスナーのバインド
     this.setupEventListeners();
@@ -1425,9 +1382,6 @@ class GameEngine {
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) instrEl.classList.remove('hidden');
 
-    // ビープ状態リセット
-    this.lastBeepStage = null;
-    this.lastBeepTime  = 0;
 
     narrator.speak("ゲームを終了し、メニューに戻りました。");
   }
@@ -1771,9 +1725,6 @@ class GameEngine {
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) instrEl.classList.add('hidden');
 
-    // ビープ接近検知をリセット
-    this.lastBeepStage = null;
-    this.lastBeepTime  = 0;
     
     // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
     if (this.serverRole === 1) {
@@ -2340,14 +2291,6 @@ class GameEngine {
           sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
         }
 
-        // =========================================================
-        // ボール接近ビープ音検知 (WASM物理ブロック内)
-        // ラリー中にボールが自分のコートに向かって転がってきたとき
-        // 3段階のビープ音でプレイヤーに打ち返しのタイミングを通知する
-        // =========================================================
-        if (this.ball.active && this.state === STATE_RALLY) {
-          this.updateApproachBeep();
-        }
 
         // イベントの処理 (音、エフェクト、得点、通信同期)
         if (result.events && result.events.length > 0) {
@@ -2503,7 +2446,7 @@ class GameEngine {
         this.ball.vx = -this.ball.vx * 0.85;
       }
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
-      this.updateApproachBeep(); // ビープ接近検知 (Player2補間モード)
+
     }
     const shouldComputeBall = !(this.mode === 'online' && this.role === 2);
     if (shouldComputeBall && this.ball.active && this.state === STATE_RALLY) {
@@ -2516,7 +2459,7 @@ class GameEngine {
       
       // 立体音響のアップデート
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
-      this.updateApproachBeep(); // ビープ接近検知 (JSフォールバック)
+
 
       // --- 左右サイド境界 (X=0, X=800) からの落下（アウト）判定 ---
       if (this.ball.x - BALL_RADIUS <= 0 || this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
@@ -2691,78 +2634,6 @@ class GameEngine {
         const winner = offender === 1 ? 2 : 1;
         this.awardPointTo(winner, 'overtime');
       }
-    }
-  }
-
-  /**
-   * ラリー中にボールが自分の守備ラインへ近づいたとき、段階的なビープ音を鳴らします。
-   * 毎フレームupdatePhysicsから呼ばれます。
-   * 
-   * ビープ段階:
-   *   - 'far'  : 守備ライン手前 120px 圏内 (ボールが向かってきている)
-   *   - 'near' : 守備ライン手前 60px 圏内  (打ち返しゾーン接近)
-   *   - 'hit'  : 打ち返し可能ゾーン内 30px (タップ/スペースキーの合図)
-   * 
-   * - ビープ間の最低間隔は 200ms で過剰発火を防ぎます。
-   * - 打ち返し後（ボールが遠ざかる向き）はリセットします。
-   */
-  updateApproachBeep() {
-    if (this.state !== STATE_RALLY || !this.ball.active) return;
-
-    // 自分のプレイヤーロールに応じた守備ラインY座標と「ボールが向かっている」判定
-    const myDefenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
-    const isIncoming = (this.role === 1 && this.ball.vy > 0) ||
-                       (this.role === 2 && this.ball.vy < 0);
-
-    // ボールが遠ざかっているならリセット
-    if (!isIncoming) {
-      this.lastBeepStage = null;
-      return;
-    }
-
-    // 守備ラインまでの距離
-    const distToDefense = Math.abs(this.ball.y - myDefenseY);
-
-    // 段階を決定
-    let newStage = null;
-    if (distToDefense <= 30) {
-      newStage = 'hit';
-    } else if (distToDefense <= 60) {
-      newStage = 'near';
-    } else if (distToDefense <= 120) {
-      newStage = 'far';
-    }
-
-    if (!newStage) {
-      this.lastBeepStage = null;
-      return;
-    }
-
-    // 同じ段階で200ms以内の再発火は無視
-    const now = Date.now();
-    const minInterval = 200; // ms
-    if (newStage === this.lastBeepStage && (now - this.lastBeepTime) < minInterval) return;
-
-    // 段階が後退した場合（far→nearへの昇格はOK、hit→nearへの降格はスキップ）
-    const stageOrder = { 'far': 0, 'near': 1, 'hit': 2 };
-    if (this.lastBeepStage && stageOrder[newStage] < stageOrder[this.lastBeepStage]) return;
-
-    // ビープを鳴らす
-    const prevStage = this.lastBeepStage;
-    sounds.playBeep(newStage);
-    this.lastBeepStage = newStage;
-    this.lastBeepTime  = now;
-
-    // 「hit」ゾーンに初めて突入した瞬間だけ sr-announcer で「今です」と通知
-    // (音声合成は SpeechSynthesis をキャンセルしてしまうため aria-live のみ使用)
-    if (newStage === 'hit' && prevStage !== 'hit') {
-      try {
-        const srEl = document.getElementById('sr-announcer');
-        if (srEl) {
-          srEl.textContent = '';
-          setTimeout(() => { srEl.textContent = '今です！タップまたはスペースキーで打ち返してください。'; }, 20);
-        }
-      } catch(e) { /* silent */ }
     }
   }
 

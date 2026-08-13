@@ -99,12 +99,12 @@
   - 従来はcanvas-container内のタップのみアクションが発火し、スコアボードや枠外タップでは反応しなかった。
   - `screen-play` セクション全体に click / touchend イベントを追加。ボタン・input・ラベル等の除外リストを設け誤爆を防止。canvas-containerにも後方互換としてイベントを残した。
 
-- [x] 11.3 **[音響] ボール接近ビープ音 `playBeep()` メソッド追加** (`docs/app.js` - `SoundSystem`)
+- [x] 11.3 **[音響] ボール接近ビープ音 `playBeep()` メソッド追加** (`docs/app.js` - `SoundSystem`) ※ v3.4.0にて削除済み
   - ラリー中にボールが自分の守備ラインへ近づいたとき、3段階の「ぴ」音でタイミングを伝える機能を新設。
   - stage=`far`(880Hz/0.18音量)・`near`(1320Hz/0.28音量)・`hit`(1760Hz/0.40音量) と段階的に周波数・音量を上げる設計。
   - `SoundSystem.playBeep(stage)` として実装し、WebAudio APIのOscillatorNodeで純音正弦波を合成。
 
-- [x] 11.4 **[物理] `updateApproachBeep()` メソッドの追加** (`docs/app.js` - `GameEngine`)
+- [x] 11.4 **[物理] `updateApproachBeep()` メソッドの追加** (`docs/app.js` - `GameEngine`) ※ v3.4.0にて削除済み
   - 毎フレーム `updatePhysics()` から呼ばれ、ボールの進行方向とY座標から接近段階（far/near/hit）を判定する。
   - 守備ライン120px圏内でfar、60px圏内でnear、30px圏内でhitに昇格（降格はしない）。
   - ビープの最低間隔は200msに制限し、過剰発火を防止。
@@ -285,3 +285,22 @@ CPU戦においてもSTT本来の「いきます / はい」サーブシーケ�
   - コンストラクタでlocalStorageから速度を読み込み。
   - スライダー変更時に `narrator.setSpeechRate(rate)` 経由で保存。
 
+## [x] 27. ボール接近ビープ音の削除 (2026-08-13)
+
+ラリー中の「かちかち」という接近通知ビープ音がボール追跡の集中を妨げるとのフィードバックを受け、完全に削除した。
+コンセプトの音響（ボール転がり音・打球音・ラケット移動音・チャージ音・歓声音など）はすべてそのまま維持。
+
+- [x] 27.1 **[音響] `playBeep()` メソッドの削除** (`docs/app.js` - `SoundSystem`)
+  - `SoundSystem` クラスから `playBeep(stage)` メソッドを完全削除。
+
+- [x] 27.2 **[物理] `updateApproachBeep()` メソッドの削除** (`docs/app.js` - `GameEngine`)
+  - `GameEngine` クラスから `updateApproachBeep()` メソッドを完全削除。
+  - WASM物理ブロック内、Player2補間モード、JSフォールバックの計3箇所の呼び出しを削除。
+
+- [x] 27.3 **[状態管理] 関連プロパティの削除** (`docs/app.js` - `GameEngine`)
+  - `this.lastBeepStage`・`this.lastBeepTime` のプロパティ宣言および全リセット箇所を削除。
+
+- [x] 27.4 **[ドキュメント] 各ドキュメントの更新**
+  - `release-notes.txt`: v3.4 として接近ビープ削除を記録。
+  - `README.md`: 操作説明からボール接近ビープガイドの項目を削除。changelogにv3.4エントリを追加。v2.6.0のビープ追加エントリを削除。
+  - `ToDo.md`: 11.3・11.4に「v3.4.0にて削除済み」の注記を追加。本タスク (27) を新規追加。

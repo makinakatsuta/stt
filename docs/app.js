@@ -41,6 +41,9 @@ class SoundSystem {
     this.ballRollFilter = null;
     this.panner = null;
     this.isMuted = false;
+    this.rattleLfo = null;
+    this.rumbleOsc = null;
+    this.rumbleGain = null;
   }
 
   /**
@@ -54,16 +57,35 @@ class SoundSystem {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AudioContextClass();
     
-    // 3D定位用のステレオパンナーを作成
-    if (this.ctx.createStereoPanner) {
-      this.panner = this.ctx.createStereoPanner();
-    } else {
-      // 古いブラウザ用のフォールバック (PannerNode)
-      this.panner = this.ctx.createPanner();
-      this.panner.panningModel = 'HRTF';
+    // HRTF 3D空間オーディオ用のPannerNodeを作成 (3次元定位・奥行き表現用)
+    this.panner = this.ctx.createPanner();
+    this.panner.panningModel = 'HRTF';
+    this.panner.distanceModel = 'inverse';
+    this.panner.refDistance = 1.0;
+    this.panner.maxDistance = 10.0;
+    this.panner.rolloffFactor = 1.2;
+    this.panner.coneInnerAngle = 360;
+
+    // リスナー（プレイヤーの耳の位置）の設定
+    if (this.ctx.listener) {
+      const listener = this.ctx.listener;
+      if (listener.positionX) {
+        listener.positionX.setValueAtTime(0, this.ctx.currentTime);
+        listener.positionY.setValueAtTime(0, this.ctx.currentTime);
+        listener.positionZ.setValueAtTime(0, this.ctx.currentTime);
+        listener.forwardX.setValueAtTime(0, this.ctx.currentTime);
+        listener.forwardY.setValueAtTime(0, this.ctx.currentTime);
+        listener.forwardZ.setValueAtTime(-1, this.ctx.currentTime);
+        listener.upX.setValueAtTime(0, this.ctx.currentTime);
+        listener.upY.setValueAtTime(1, this.ctx.currentTime);
+        listener.upZ.setValueAtTime(0, this.ctx.currentTime);
+      } else {
+        listener.setPosition(0, 0, 0);
+        listener.setOrientation(0, 0, -1, 0, 1, 0);
+      }
     }
     
-    // ボールの転がり音用のローパスフィルターを作成 (奥行き表現用)
+    // ボールの転がり音用のローパスフィルターを作成 (空気吸収・距離感の音色変化用)
     this.ballRollFilter = this.ctx.createBiquadFilter();
     this.ballRollFilter.type = 'lowpass';
     this.ballRollFilter.frequency.setValueAtTime(4000, this.ctx.currentTime);
@@ -72,7 +94,7 @@ class SoundSystem {
     this.ballRollGain = this.ctx.createGain();
     this.ballRollGain.gain.setValueAtTime(0, this.ctx.currentTime);
     
-    // 音響ルートの接続: 転がり音 -> フィルター -> ゲイン -> パンナー -> 出力
+    // 音響ルートの接続: 転がり音 -> フィルター -> ゲイン -> 3Dパンナー -> 出力
     this.ballRollFilter.connect(this.ballRollGain);
     this.ballRollGain.connect(this.panner);
     this.panner.connect(this.ctx.destination);
@@ -82,6 +104,61 @@ class SoundSystem {
     
     // ボール転がり音のループ再生を開始
     this.startBallRollLoop();
+  }
+
+  /**
+   * ゲーム画面座標 (x, y) を 3D音響空間座標 (x, y, z) に変換します。
+   * リスナー(プレイヤーの耳)を (0, 0, 0) とした空間モデル:
+   *  - X: -1.5m (左端) 〜 +1.5m (右端)
+   *  - Y: -0.2m (テーブル面高さ: 耳よりやや下)
+   *  - Z: -3.8m (相手コート奥) 〜 -2.0m (ネット中央) 〜 -0.6m (自分守備ライン) 〜 -0.2m (手前エンド)
+   * @param {number} x キャンバスX座標 (0〜800)
+   * @param {number} y キャンバスY座標 (0〜500)
+   * @returns {{x: number, y: number, z: number}}
+   */
+  get3DCoords(x, y) {
+    const x3D = ((x / CANVAS_WIDTH) * 2 - 1) * 1.5;
+    const yRatio = y / CANVAS_HEIGHT; // 0.0 (相手奥) 〜 1.0 (手前)
+    const z3D = -3.8 + (yRatio * 3.6); // -3.8m 〜 -0.2m
+    const y3D = -0.2;
+    return { x: x3D, y: y3D, z: z3D };
+  }
+
+  /**
+   * PannerNodeの3D位置を滑らかに更新します。
+   */
+  setPannerPosition(panner, x3D, y3D, z3D) {
+    if (panner.positionX) {
+      panner.positionX.setTargetAtTime(x3D, this.ctx.currentTime, 0.03);
+      panner.positionY.setTargetAtTime(y3D, this.ctx.currentTime, 0.03);
+      panner.positionZ.setTargetAtTime(z3D, this.ctx.currentTime, 0.03);
+    } else {
+      panner.setPosition(x3D, y3D, z3D);
+    }
+  }
+
+  /**
+   * 単発効果音用の 3D PannerNode を作成します。
+   * @param {number} x キャンバスX座標
+   * @param {number} y キャンバスY座標 (デフォルト: ネット中央)
+   */
+  create3DPanner(x, y = Y_NET) {
+    const panner = this.ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 1.0;
+    panner.maxDistance = 10.0;
+    panner.rolloffFactor = 1.2;
+    
+    const coords = this.get3DCoords(x, y);
+    if (panner.positionX) {
+      panner.positionX.setValueAtTime(coords.x, this.ctx.currentTime);
+      panner.positionY.setValueAtTime(coords.y, this.ctx.currentTime);
+      panner.positionZ.setValueAtTime(coords.z, this.ctx.currentTime);
+    } else {
+      panner.setPosition(coords.x, coords.y, coords.z);
+    }
+    return panner;
   }
 
   /**
@@ -161,7 +238,8 @@ class SoundSystem {
   }
 
   /**
-   * ボールのリアルタイムな位置と速度に応じて、音量・パン・フィルターを更新します。
+   * ボールのリアルタイムな位置と速度に応じて、3D空間定位・距離減衰・空気吸収フィルター・
+   * およびボールが手元に迫る時間間隔（ラトル周期）を動的に更新します。
    * @param {number} x ボールのX座標 (0〜800)
    * @param {number} y ボールのY座標 (0〜500)
    * @param {number} vx ボールのX方向速度
@@ -172,45 +250,55 @@ class SoundSystem {
     
     const speed = Math.sqrt(vx * vx + vy * vy);
     
-    // 1. 左右のパンニング設定 (-1.0: 左端, +1.0: 右端)
-    const panValue = (x / CANVAS_WIDTH) * 2 - 1;
-    if (this.panner.pan) {
-      this.panner.pan.setValueAtTime(panValue, this.ctx.currentTime);
-    } else {
-      this.panner.setPosition(panValue, 0, 1 - Math.abs(panValue));
-    }
+    // 1. HRTF 3D空間座標 (X, Y, Z) のリアルタイム追従
+    const coords = this.get3DCoords(x, y);
+    this.setPannerPosition(this.panner, coords.x, coords.y, coords.z);
     
-    // 2. 奥行き（Y座標）に応じたローパスフィルターの設定
-    const yRatio = 1 - (y / CANVAS_HEIGHT); // 0 (自分側) 〜 1 (相手側)
-    const targetFreq = 500 + (11500 * (1 - yRatio)); 
-    this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.05);
+    // 2. 距離比率 (0.0: 自分守備ライン 〜 1.0: 相手コート奥)
+    const distRatio = Math.max(0, Math.min(1, (Y_DEFENSE_P1 - y) / Y_DEFENSE_P1));
+    const isApproaching = vy > 0; // 自分に向かって迫ってくる進行方向か
     
-    // 3. ボールの速度と距離に応じた音量設定
-    // 対数スケールで低速域の音量変化を豊かに (Feature #7)
-    let targetVolume = Math.log1p(speed * 0.8) / Math.log1p(8) * 0.5;
-    if (targetVolume > 1.0) targetVolume = 1.0;
+    // 3. 奥行き（空気吸収・距離感）に応じたローパスフィルター
+    // 相手コート奥 (distRatio=1.0) では 650Hz (こもった遠方の音)
+    // ネット付近 (distRatio=0.4) では約 3500Hz
+    // 自分守備手前 (distRatio=0.0) では 14000Hz (金属球のきらめき・粒立ちが完全に開く)
+    const targetFreq = 650 + (13350 * Math.pow(1 - distRatio, 1.8)); 
+    this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.04);
     
-    const distanceVolumeRatio = 0.3 + (0.7 * Math.pow(1 - yRatio, 1.5)); 
-    targetVolume *= distanceVolumeRatio;
+    // 4. 音量設定（対数スケール + 距離ダイナミクス）
+    let baseVolume = Math.log1p(speed * 0.8) / Math.log1p(8) * 0.55;
+    if (baseVolume > 1.0) baseVolume = 1.0;
+    
+    // 手前に近づくほど音圧が高まり、迫力と近接感が生まれる
+    const proximityGain = 0.35 + (0.65 * Math.pow(1 - distRatio, 1.4));
+    let targetVolume = baseVolume * proximityGain;
     
     if (speed < 0.1) targetVolume = 0; // 停止時は消音
     
-    this.ballRollGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.05);
+    this.ballRollGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.04);
 
-    // 4. 速度連動型の振動（STT球のリアルな挙動）
+    // 5. 【ボールの来る間隔（テンポ・リズム感）の動的変調】
+    // ボール内部の金属球が転がる刻み（ラトル周期 LFO）と空洞音
     if (this.rattleLfo && this.rumbleOsc && this.rumbleGain) {
       if (speed > 0.1) {
-        // 速度が速いほど、シャラシャラの粒（揺れの速さ）を細かくする
-        // 低速で約8Hz、高速で最大35Hz
-        const rattleFreq = 8 + Math.min(speed, 20) * 1.3; 
-        this.rattleLfo.frequency.setTargetAtTime(rattleFreq, this.ctx.currentTime, 0.1);
-
-        // ゴロゴロ音（空洞音）も速いほど少し高くなり、音量も増す
-        const rumbleFreq = 100 + Math.min(speed, 15) * 3.0;
-        this.rumbleOsc.frequency.setTargetAtTime(rumbleFreq, this.ctx.currentTime, 0.1);
+        // 基本の速度連動 (8Hz 〜 24Hz)
+        let rattleFreq = 8 + Math.min(speed, 20) * 1.2;
         
-        const rumbleVol = 0.04 + Math.min(speed / 10, 1.0) * 0.12;
-        this.rumbleGain.gain.setTargetAtTime(rumbleVol, this.ctx.currentTime, 0.1);
+        // 迫ってくる時（isApproaching）は、残距離が近くなるほど刻みのピッチとパルス密度が加速
+        // これにより「タタタタ…」という間隔が耳で測れ、手元に来るタイミングが直感化される
+        if (isApproaching) {
+          const approachFactor = Math.pow(1 - distRatio, 2.0) * 12.0; // 0 〜 +12Hz
+          rattleFreq += approachFactor;
+        }
+        
+        this.rattleLfo.frequency.setTargetAtTime(rattleFreq, this.ctx.currentTime, 0.08);
+
+        // ゴロゴロ空洞音も接近に伴い鮮明化
+        const rumbleFreq = 90 + Math.min(speed, 15) * 3.5 + (isApproaching ? (1 - distRatio) * 40 : 0);
+        this.rumbleOsc.frequency.setTargetAtTime(rumbleFreq, this.ctx.currentTime, 0.08);
+        
+        const rumbleVol = (0.04 + Math.min(speed / 10, 1.0) * 0.12) * proximityGain;
+        this.rumbleGain.gain.setTargetAtTime(rumbleVol, this.ctx.currentTime, 0.08);
       }
     }
   }
@@ -225,9 +313,7 @@ class SoundSystem {
   playFootstepSound(x, deltaX) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
     
     // ホワイトノイズソース
     const noise = this.ctx.createBufferSource();
@@ -237,40 +323,29 @@ class SoundSystem {
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
     
-    // 速度が速いほど高い摩擦音（キュッ）、遅いほど低いカサカサ音にする
+    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
     const speedRatio = Math.min(deltaX / 7.0, 1.0);
-    // 左右の位置(panVal: -1〜1)によって微妙に音色を変化させる（右に行くほど少し高く、中央で基準音）
-    // また、中央(panVal=0)の周辺はピッチの変化を滑らかにし、定位を直感的にわかりやすくする
     const positionShift = panVal * 400; // -400Hz(左) 〜 +400Hz(右)
     
-    const targetFreq = 1500 + (1200 * speedRatio) + positionShift; // 約1100Hz 〜 3100Hz
+    const targetFreq = 1500 + (1200 * speedRatio) + positionShift;
     filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
     
-    // 中央付近ではQ値を少し上げて音をクリアにし、中央位置をよりわかりやすくする
-    const centerProximity = 1.0 - Math.abs(panVal); // 端=0, 中央=1
+    const centerProximity = 1.0 - Math.abs(panVal);
     const targetQ = 2.0 + (2.0 * speedRatio) + (1.5 * centerProximity);
     filter.Q.setValueAtTime(targetQ, this.ctx.currentTime);
     
     const gain = this.ctx.createGain();
-    // 速度に比例した音量設定 (最大0.18)
     const targetVolume = 0.03 + (0.15 * speedRatio);
-    // 速度が速いほど摩擦音もわずかに長く響く
-    const duration = 0.04 + (0.06 * speedRatio); // 40ms 〜 100ms
+    const duration = 0.04 + (0.06 * speedRatio);
     
     gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
     gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
     
-    if (panner) {
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     noise.start();
     noise.stop(this.ctx.currentTime + duration);
@@ -283,29 +358,20 @@ class SoundSystem {
   playSwingSound(x) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-    
+    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
-    osc.type = 'triangle'; // 三角波で丸みのある低音にする
-    // 周波数を240Hzから60Hzへと急速にスウィープ
+    osc.type = 'triangle';
     osc.frequency.setValueAtTime(240, this.ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(60, this.ctx.currentTime + 0.12);
     
     gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.14);
     
-    if (panner) {
-      osc.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     osc.start();
     osc.stop(this.ctx.currentTime + 0.15);
@@ -314,37 +380,34 @@ class SoundSystem {
   /**
    * 打球音 (木製ラケットの「コン」という乾いた音) を合成します。
    * @param {number} x 衝突したX座標 (パン用)
+   * @param {number} y 衝突したY座標 (デフォルト: Y_DEFENSE_P1)
    */
-  playHitSound(x) {
+  playHitSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
     
-    // パンナーを作成して位置を固定
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    const panner = this.create3DPanner(x, y);
     
     // 1. オシレーター（打球音の本体 - 基本波）
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
-    osc.type = 'sine'; // 澄んだ「コン」という響きを作るサイン波
-    // 周波数を550Hzから180Hzへスウィープさせて打球感を作る
+    osc.type = 'sine';
     osc.frequency.setValueAtTime(550, this.ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(180, this.ctx.currentTime + 0.09);
     
-    gain.gain.setValueAtTime(1.0, this.ctx.currentTime); // 最大ゲインを1.0に増加 (以前は0.7)
-    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.16); // 減衰時間を0.16秒に伸ばし、余韻をはっきりさせる
+    gain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.16);
     
     // 2. 2次倍音オシレーター（打球の「カツッ」という硬い質感と明瞭さを加える）
     const osc2 = this.ctx.createOscillator();
     const gain2 = this.ctx.createGain();
     
     osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(1100, this.ctx.currentTime); // メインの約2倍の周波数
+    osc2.frequency.setValueAtTime(1100, this.ctx.currentTime);
     osc2.frequency.exponentialRampToValueAtTime(360, this.ctx.currentTime + 0.07);
     
-    gain2.gain.setValueAtTime(0.25, this.ctx.currentTime); // メイン音にブレンド
-    gain2.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08); // 早めに減衰させて打球のアタック感のみを強調
+    gain2.gain.setValueAtTime(0.25, this.ctx.currentTime);
+    gain2.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
     
     // 3. アタックノイズ (打球時の瞬間的な木製アタック音)
     const noise = this.ctx.createBufferSource();
@@ -355,33 +418,20 @@ class SoundSystem {
     noiseFilter.frequency.setValueAtTime(1800, this.ctx.currentTime);
     
     const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.55, this.ctx.currentTime); // ゲインを0.55に強化 (以前は0.4)
-    noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.03); // 30msで消音
+    noiseGain.gain.setValueAtTime(0.55, this.ctx.currentTime);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.03);
     
-    // 接続
-    if (panner) {
-      osc.connect(gain);
-      gain.connect(panner);
-      
-      osc2.connect(gain2);
-      gain2.connect(panner);
-      
-      noise.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(panner);
-      
-      panner.connect(this.ctx.destination);
-    } else {
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      
-      osc2.connect(gain2);
-      gain2.connect(this.ctx.destination);
-      
-      noise.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(this.ctx.destination);
-    }
+    osc.connect(gain);
+    gain.connect(panner);
+    
+    osc2.connect(gain2);
+    gain2.connect(panner);
+    
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(panner);
+    
+    panner.connect(this.ctx.destination);
     
     osc.start();
     osc2.start();
@@ -396,26 +446,21 @@ class SoundSystem {
    * プレイヤーが打ち返した時の正解音（チャイム）
    * @param {number} x 衝突したX座標 (パン用)
    * @param {boolean} isEasy 初級編かどうか
+   * @param {number} y 衝突したY座標
    */
-  playSuccessChime(x, isEasy = false) {
+  playSuccessChime(x, isEasy = false, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
 
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-
-    // キラキラしたベル音（サイン波ベース）
+    const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
     osc.type = 'sine';
     
-    // 初級編の場合はより高く明るい音（1200Hz）、通常は少し控えめ（900Hz）
     const baseFreq = isEasy ? 1200 : 900;
     osc.frequency.setValueAtTime(baseFreq, this.ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, this.ctx.currentTime + 0.1);
 
-    // 初級編の場合は音を大きく・長くする
     const peakGain = isEasy ? 0.6 : 0.3;
     const duration = isEasy ? 0.4 : 0.2;
 
@@ -423,14 +468,9 @@ class SoundSystem {
     gain.gain.linearRampToValueAtTime(peakGain, this.ctx.currentTime + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
 
-    if (panner) {
-      osc.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
 
     osc.start();
     osc.stop(this.ctx.currentTime + duration + 0.1);
@@ -438,34 +478,26 @@ class SoundSystem {
 
   /**
    * フレーム衝突音 (サイド/エンドフレームに当たった時の「カツ」という高い音)
-   * @param {number} x 衝突したX座標 (パン用)
+   * @param {number} x 衝突したX座標
+   * @param {number} y 衝突したY座標
    */
-  playFrameSound(x) {
+  playFrameSound(x, y = Y_NET) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-    
+    const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
     osc.type = 'sine';
-    // 高めの周波数で素早い減衰により、フレームの硬い木製音をシミュレート
     osc.frequency.setValueAtTime(750, this.ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(200, this.ctx.currentTime + 0.05);
     
     gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.06);
     
-    if (panner) {
-      osc.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     osc.start();
     osc.stop(this.ctx.currentTime + 0.07);
@@ -474,52 +506,41 @@ class SoundSystem {
   /**
    * ネット衝突音 (布に当たった時の「ポス」というこもった音)
    * @param {number} x 衝突したX座標
+   * @param {number} y 衝突したY座標
    */
-  playNetSound(x) {
+  playNetSound(x, y = Y_NET) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-    
-    // ネットの音はノイズ＋ローパスフィルターで表現
+    const panner = this.create3DPanner(x, y);
     const bufferSource = this.ctx.createBufferSource();
     bufferSource.buffer = this.noiseBuffer;
     
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(350, this.ctx.currentTime); // 低周波のみ通す
+    filter.frequency.setValueAtTime(350, this.ctx.currentTime);
     
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0.6, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
     
-    if (panner) {
-      bufferSource.connect(filter);
-      filter.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      bufferSource.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    bufferSource.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     bufferSource.start();
     bufferSource.stop(this.ctx.currentTime + 0.16);
   }
 
   /**
-   * アウト / 失敗音 (低いブザー音のような合成音に、パンニング処理を追加) (Feature #5)
+   * アウト / 失敗音 (低いブザー音のような合成音に、3Dパンニング処理を追加)
    * @param {number} x ボールのX座標
+   * @param {number} y ボールのY座標
    */
-  playMissSound(x = CANVAS_WIDTH / 2) {
+  playMissSound(x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-
+    const panner = this.create3DPanner(x, y);
     const osc1 = this.ctx.createOscillator();
     const osc2 = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -528,21 +549,15 @@ class SoundSystem {
     osc2.type = 'sawtooth';
     
     osc1.frequency.setValueAtTime(130, this.ctx.currentTime);
-    osc2.frequency.setValueAtTime(133, this.ctx.currentTime); // デチューンで濁らせる
+    osc2.frequency.setValueAtTime(133, this.ctx.currentTime);
     
     gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
     
-    if (panner) {
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     osc1.start();
     osc2.start();
@@ -554,12 +569,11 @@ class SoundSystem {
   /**
    * ボール停止時の「コトン」という位置音を合成します。(Feature #6)
    * @param {number} x 停止したX座標
+   * @param {number} y 停止したY座標
    */
-  playBallStopSound(x) {
+  playBallStopSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
+    const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
@@ -567,11 +581,9 @@ class SoundSystem {
     osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.15);
     gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
-    if (panner) {
-      osc.connect(gain); gain.connect(panner); panner.connect(this.ctx.destination);
-    } else {
-      osc.connect(gain); gain.connect(this.ctx.destination);
-    }
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     osc.start();
     osc.stop(this.ctx.currentTime + 0.22);
   }
@@ -584,34 +596,30 @@ class SoundSystem {
   playCheerSound() {
     if (!this.ctx || this.isMuted) return;
 
-    const duration = 4.0; // 4秒かけてフェードアウト
+    const duration = 4.0;
     const now = this.ctx.currentTime;
 
-    // 観客のノイズソース（ホワイトノイズを使用）
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
     noise.loop = true;
 
-    // 低音域を削り、中高音域を強調するフィルター（拍手と歓声の帯域）
     const bandpass = this.ctx.createBiquadFilter();
     bandpass.type = 'bandpass';
     bandpass.frequency.setValueAtTime(800, now);
     bandpass.Q.setValueAtTime(0.5, now);
 
-    // 音の揺らぎ（歓声のざわめき）を作るLFO
     const lfo = this.ctx.createOscillator();
     lfo.type = 'sine';
-    lfo.frequency.setValueAtTime(4.0, now); // 4Hzの揺らぎ
+    lfo.frequency.setValueAtTime(4.0, now);
     const lfoGain = this.ctx.createGain();
-    lfoGain.gain.setValueAtTime(100, now); // 中心周波数を±100Hz揺らす
+    lfoGain.gain.setValueAtTime(100, now);
 
     lfo.connect(lfoGain);
     lfoGain.connect(bandpass.frequency);
 
     const gain = this.ctx.createGain();
-    // ボリュームのエンベロープ（徐々に盛り上がり、フェードアウトする）
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.4, now + 0.5); // 0.5秒でピーク
+    gain.gain.linearRampToValueAtTime(0.4, now + 0.5);
     gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
     noise.connect(bandpass);
@@ -627,10 +635,13 @@ class SoundSystem {
   /**
    * サーブチャージ中の上昇音を合成します。(Feature #2)
    * @param {number} chargeRatio チャージ率 0.0〜1.0
+   * @param {number} x ラケットX座標
+   * @param {number} y ラケットY座標
    */
-  playChargeBeep(chargeRatio) {
+  playChargeBeep(chargeRatio, x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
-    const freq = 400 + (chargeRatio * 800); // 400Hz〜1200Hz
+    const panner = this.create3DPanner(x, y);
+    const freq = 400 + (chargeRatio * 800);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
@@ -638,7 +649,8 @@ class SoundSystem {
     gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06);
     osc.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     osc.start();
     osc.stop(this.ctx.currentTime + 0.07);
   }
@@ -649,38 +661,29 @@ class SoundSystem {
   playCpuMoveSound(x, deltaX) {
     if (!this.ctx || this.isMuted) return;
     
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const panner = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-    if (panner) panner.pan.setValueAtTime(panVal, this.ctx.currentTime);
-    
+    const panner = this.create3DPanner(x, Y_DEFENSE_P2);
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
     
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
     const speedRatio = Math.min(deltaX / 7.0, 1.0);
-    const targetFreq = 2800 + (1200 * speedRatio); // 高めのシュッという音
+    const targetFreq = 2800 + (1200 * speedRatio);
     filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+    filter.Q.setValueAtTime(3.0, this.ctx.currentTime);
     
     const gain = this.ctx.createGain();
-    const targetVolume = 0.02 + (0.10 * speedRatio);
+    const targetVolume = 0.02 + (0.08 * speedRatio);
     const duration = 0.04 + (0.05 * speedRatio);
     
     gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.01);
+    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
     
-    if (panner) {
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(panner);
-      panner.connect(this.ctx.destination);
-    } else {
-      noise.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.ctx.destination);
-    }
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
     
     noise.start();
     noise.stop(this.ctx.currentTime + duration);
@@ -1979,31 +1982,36 @@ class GameEngine {
       sounds.playMissSound(this.ball.x);
     }
     
-    // 得点の理由案内テキスト
+    // 得点の理由案内テキスト (STT公式ルールブック「審判法 1. 主審の宣告用語」に準拠)
     let reasonText = "";
     switch (reason) {
-      case 'miss':
-        reasonText = "リターンミス";
-        break;
       case 'safe':
-        reasonText = "セーフ（得点）";
-        break;
-      case 'serve_fault':
-        reasonText = "サービスフォルト";
+        reasonText = "セーフ";
         break;
       case 'out':
         reasonText = "アウト";
         break;
+      case 'miss':
+        reasonText = "リターンミス";
+        break;
       case 'stop':
-        reasonText = "守備コート外での停止";
+        reasonText = "ストップボール";
+        break;
+      case 'front_stop':
+        reasonText = "前コートストップ";
+        break;
+      case 'serve_fault':
+        reasonText = "フォルト";
         break;
       case 'overtime':
-        reasonText = "制限時間オーバー";
+        reasonText = "オーバータイム";
         break;
+      default:
+        reasonText = reason || "ポイント";
     }
     
-    // コール発声: 「ポイント [P1/P2]」
-    // 改善⑥: CPU戦では「プレイヤー 2」でなく「CPU」と読み上げる
+    // コール発声: [終了の理由] → 「ポイント」 → [選手名] → [スコア]
+    // STTルールブック審判法（27ページ）の順序に準拠
     const winnerName = this.mode === 'cpu'
       ? (winner === 1 ? 'プレイヤー' : 'CPU')
       : (winner === 1 ? 'プレイヤー 1' : 'プレイヤー 2');
@@ -2028,7 +2036,7 @@ class GameEngine {
     }
 
     // Feature #3: リターンミス時のミス方向音声アナウンス
-    if (reason === 'miss') {
+    if (reason === 'miss' || reason === 'safe') {
       const sideText = this.ball.x < CANVAS_WIDTH / 3 ? '左を通りました' : (this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右を通りました' : '中央を通りました');
       try {
         const srEl = document.getElementById('sr-announcer');
@@ -2041,7 +2049,8 @@ class GameEngine {
       } catch (e) {}
     }
 
-    const scoreAnnounce = `${reasonText}。ポイント、${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
+    // 主審の宣告コール（例:「セーフ、ポイント プレイヤー。 1 対 0。」 / 「アウト、ポイント CPU。 0 対 1。」）
+    const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     narrator.speak(scoreAnnounce, true);
     
     // 改善⑧: インターバル中にスキップ可能なことをスクリーンリーダーで案内（2秒後）
@@ -2534,48 +2543,55 @@ class GameEngine {
         }
       }
 
-      // --- 得点・アウト・停止などの判定 (どちらか一方がミスした場合) ---
+      // --- 得点・セーフ・アウト・停止判定 (STT公式ルールブック 1.7.12, 1.9.1, 1.9.2 に準拠) ---
       
-      // 1. 自分側 (P1) のエンドライン到達
+      // 1. 自分側 (P1) のエンドフレーム到達
       if (this.ball.y > CANVAS_HEIGHT) {
         if (Math.abs(this.ball.vy) > 13) {
-          // 強すぎてエンドフレームを越えた -> P1の得点 (P2のアウト)
+          // 強すぎてエンドフレームを越えて飛び出た -> P2のアウト、P1の得点
           this.awardPointTo(1, 'out');
         } else {
-          // エンドフレーム到達（即失点） -> P2の得点
-          sounds.playHitSound(this.ball.x);
-          this.awardPointTo(2, 'miss');
+          // エンドフレームの内側面に当たりコート内（セーフ） -> P2の得点
+          sounds.playHitSound(this.ball.x, CANVAS_HEIGHT);
+          this.awardPointTo(2, 'safe');
         }
       }
       
-      // 2. 相手側 (P2) のエンドライン到達
+      // 2. 相手側 (P2) のエンドフレーム到達
       else if (this.ball.y < 0) {
         if (Math.abs(this.ball.vy) > 13) {
-          // 強すぎてエンドフレームを越えた -> P2の得点 (P1のアウト)
+          // 強すぎてエンドフレームを越えて飛び出た -> P1のアウト、P2の得点
           this.awardPointTo(2, 'out');
         } else {
-          // エンドフレーム到達（即失点） -> P1の得点
-          sounds.playHitSound(this.ball.x);
-          this.awardPointTo(1, 'miss');
+          // エンドフレームの内側面に当たりコート内（セーフ） -> P1の得点
+          sounds.playHitSound(this.ball.x, 0);
+          this.awardPointTo(1, 'safe');
         }
       }
 
-      // 3. ボールの摩擦停止判定 (守備ライン手前で停止した場合は失点)
+      // 3. ボールの摩擦停止判定 (守備コート内停止＝ストップボール、前コート停止＝前コートストップ)
       const ballSpeed = Math.sqrt(this.ball.vx * this.ball.vx + this.ball.vy * this.ball.vy);
       if (ballSpeed < 0.12) {
-        // ボールが止まった
         this.ball.vx = 0;
         this.ball.vy = 0;
-        sounds.playBallStopSound(this.ball.x); // Feature #6: ボール停止位置音の再生
+        sounds.playBallStopSound(this.ball.x, this.ball.y);
         sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
         
-        // 停止したコートの位置によってポイントを決定
-        if (this.ball.y > Y_NET) {
-          // 自分(P1)のコート内で停止した -> 相手(P2)のポイント
+        if (this.ball.y >= Y_DEFENSE_P1) {
+          // プレイヤー1の守備コート内で停止 -> プレイヤー2のストップボール得点
           this.awardPointTo(2, 'stop');
-        } else {
-          // 相手(P2)のコート内で停止した -> 自分(P1)のポイント
+        } else if (this.ball.y <= Y_DEFENSE_P2) {
+          // プレイヤー2の守備コート内で停止 -> プレイヤー1のストップボール得点
           this.awardPointTo(1, 'stop');
+        } else {
+          // 前コート（ネット付近）で停止 -> 打球者の前コートストップ失点
+          if (this.ball.y > Y_NET) {
+            // P1側前コートで失速・停止 -> P1の失点、P2の得点
+            this.awardPointTo(2, 'front_stop');
+          } else {
+            // P2側前コートで失速・停止 -> P2の失点、P1の得点
+            this.awardPointTo(1, 'front_stop');
+          }
         }
       }
     }

@@ -218,19 +218,35 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			}
 		}
 
-		// --- Endline / Out & Score detection ---
+		// --- Endline / Safe / Out & Score detection (STT rulebook compliant) ---
 		if ballY > CanvasHeight {
-			events = append(events, map[string]interface{}{
-				"type":   "score",
-				"winner": 2,
-				"reason": "miss",
-			})
+			if math.Abs(ballVy) > 13.0 {
+				events = append(events, map[string]interface{}{
+					"type":   "score",
+					"winner": 1,
+					"reason": "out",
+				})
+			} else {
+				events = append(events, map[string]interface{}{
+					"type":   "score",
+					"winner": 2,
+					"reason": "safe",
+				})
+			}
 		} else if ballY < 0 {
-			events = append(events, map[string]interface{}{
-				"type":   "score",
-				"winner": 1,
-				"reason": "miss",
-			})
+			if math.Abs(ballVy) > 13.0 {
+				events = append(events, map[string]interface{}{
+					"type":   "score",
+					"winner": 2,
+					"reason": "out",
+				})
+			} else {
+				events = append(events, map[string]interface{}{
+					"type":   "score",
+					"winner": 1,
+					"reason": "safe",
+				})
+			}
 		} else {
 			// Stopping detection (loss by friction)
 			ballSpeed := math.Sqrt(ballVx*ballVx + ballVy*ballVy)
@@ -238,16 +254,27 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				ballVx = 0.0
 				ballVy = 0.0
 				ballActive = false // Deactivate ball
+				
 				var winner int
-				if ballY > YNet {
+				var reason string
+				if ballY >= YDefenseP1 {
 					winner = 2
-				} else {
+					reason = "stop"
+				} else if ballY <= YDefenseP2 {
 					winner = 1
+					reason = "stop"
+				} else {
+					if ballY > YNet {
+						winner = 2
+					} else {
+						winner = 1
+					}
+					reason = "front_stop"
 				}
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": winner,
-					"reason": "stop",
+					"reason": reason,
 				})
 			}
 		}

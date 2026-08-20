@@ -482,6 +482,45 @@ body {
   margin-top: 10px;
 }
 
+.quit-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.quit-confirm-dialog {
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 2px solid var(--color-danger);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+  box-shadow: 0 0 28px rgba(255, 0, 127, 0.38);
+  text-align: center;
+}
+
+.quit-confirm-dialog h2 {
+  margin: 0 0 12px;
+  color: var(--color-danger);
+}
+
+.quit-confirm-dialog p {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.quit-confirm-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+
 /* 9. ヘルプとルール説明 */
 .help-content {
   text-align: left;
@@ -715,6 +754,22 @@ body {
     font-size: 0.8rem;
     margin-bottom: 10px;
     padding: 0 10px;
+  }
+
+  /* モバイルのプレイ中は、戻るボタンだけを表示して操作に集中できるようにする */
+  #screen-play .scoreboard,
+  #screen-play .referee-call,
+  #screen-play .play-instructions,
+  #screen-play #btn-calibrate-tilt {
+    display: none !important;
+  }
+
+  #screen-play .play-controls {
+    margin-top: 12px;
+  }
+
+  .quit-confirm-dialog {
+    padding: 24px 20px;
   }
 
   /* ヘルプコンテンツ */

@@ -1004,6 +1004,10 @@ class GameEngine {
     this.tiltSpeed = 0;          // updatePhysics で参照する速度 (互換性維持)
     this.handleMotionBound = null;
 
+    // 戻る確認ダイアログ表示中は、ゲームを完全に停止する
+    this.isGameplayPaused = false;
+    this.gameplayPausedAt = 0;
+
 
     // イベントリスナーのバインド
     this.setupEventListeners();
@@ -1080,7 +1084,8 @@ class GameEngine {
 
     // プレイ画面全体のタップハンドラ (アクションボタン類は除外)
     const handlePlayAreaAction = (e) => {
-      const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY];
+      if (this.isGameplayPaused) return;
+      const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
 
       // ボタン・リンク・input 要素のクリックは除外する（誤爆防止）
@@ -1096,6 +1101,7 @@ class GameEngine {
 
     // スマホ向けのタッチイベント（touchend で click より早く応答）(Feature #4: STATE_POINT_WON を追加)
     document.addEventListener('touchend', (e) => {
+      if (this.isGameplayPaused) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
 
@@ -1108,6 +1114,7 @@ class GameEngine {
 
     // スマホ用のtouchstartでチャージ開始 (Feature #2)
     document.addEventListener('touchstart', (e) => {
+      if (this.isGameplayPaused) return;
       const activeStates = [STATE_SERVE_WAITING];
       if (!activeStates.includes(this.state)) return;
 
@@ -1316,13 +1323,24 @@ class GameEngine {
       this.changeScreen('menu');
     });
 
-    // 8. ゲームプレイ中断
+    // 8. ゲームプレイ中断（確認ダイアログを表示）
     document.getElementById('btn-quit-game').addEventListener('click', () => {
-      this.quitGame();
+      this.showQuitConfirmation();
+    });
+    document.getElementById('btn-confirm-quit').addEventListener('click', () => {
+      this.confirmQuitGame();
+    });
+    document.getElementById('btn-cancel-quit').addEventListener('click', () => {
+      this.resumeGameplay();
     });
 
     // キーボード入力の監視 (Feature #2: スペースキー長押しによるサーブチャージ)
     window.addEventListener('keydown', (e) => {
+      if (this.isGameplayPaused) {
+        e.preventDefault();
+        return;
+      }
+
       // プレイ中は矢印キーのデフォルト挙動 (スクロール) を防止して連打・長押しを円滑にする
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code) || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         if (this.state !== STATE_MENU) {
@@ -1355,12 +1373,13 @@ class GameEngine {
       // Escキーによる中断
       if (e.code === 'Escape') {
         if (this.state !== STATE_MENU) {
-          this.quitGame();
+          this.showQuitConfirmation();
         }
       }
     });
 
     window.addEventListener('keyup', (e) => {
+      if (this.isGameplayPaused) return;
       this.keys[e.code] = false;
       
       if (e.code === 'Space') {
@@ -1415,6 +1434,7 @@ class GameEngine {
    * ゲームを安全に終了し、メニューに戻ります。
    */
   quitGame() {
+    this.isGameplayPaused = false;
     this.net.disconnect();
     this.state = STATE_MENU;
     this.stopLoop(); // アニメーションループを確実に停止
@@ -1439,6 +1459,58 @@ class GameEngine {
 
 
     narrator.speak("ゲームを終了し、メニューに戻りました。");
+  }
+
+  /**
+   * 戻る確認を表示し、確認中のゲーム処理・音響・入力を停止します。
+   */
+  showQuitConfirmation() {
+    if (this.isGameplayPaused || this.screens.play.classList.contains('hidden')) return;
+
+    this.isGameplayPaused = true;
+    this.gameplayPausedAt = Date.now();
+    this.stopLoop();
+    this.isCharging = false;
+    if (this.chargeInterval) {
+      clearInterval(this.chargeInterval);
+      this.chargeInterval = null;
+    }
+    this.keys['ArrowLeft'] = false;
+    this.keys['ArrowRight'] = false;
+    this.keys['KeyA'] = false;
+    this.keys['KeyD'] = false;
+    this.motionSpeed = 0;
+    this.tiltSpeed = 0;
+    sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+
+    const overlay = document.getElementById('quit-confirm-overlay');
+    overlay.classList.remove('hidden');
+    narrator.speak("プレイを停止しました。メニューに戻りますか？ OKで戻る、キャンセルでプレイを再開します。", true);
+    document.getElementById('btn-confirm-quit').focus();
+  }
+
+  /**
+   * 戻る確認を取り消し、停止時点のゲーム状態から再開します。
+   */
+  resumeGameplay() {
+    if (!this.isGameplayPaused) return;
+
+    const pausedDuration = Date.now() - this.gameplayPausedAt;
+    this.stateStartTime += pausedDuration;
+    this.isGameplayPaused = false;
+    this.gameplayPausedAt = 0;
+    document.getElementById('quit-confirm-overlay').classList.add('hidden');
+    this.startLoop();
+    this.canvas.focus();
+    narrator.speak("プレイを再開しました。");
+  }
+
+  /**
+   * 戻る確認を確定し、ゲームを終了します。
+   */
+  confirmQuitGame() {
+    document.getElementById('quit-confirm-overlay').classList.add('hidden');
+    this.quitGame();
   }
 
   handleNetworkDisconnect() {
@@ -2254,6 +2326,7 @@ class GameEngine {
    * ゲームの物理アップデート (1フレームごとの処理)。
    */
   updatePhysics() {
+    if (this.isGameplayPaused) return;
     try {
       // サービス前のボール吸着処理 (物理演算呼び出し前に行う)
       if (this.state === STATE_PRE_SERVE_READY || 

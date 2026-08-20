@@ -198,6 +198,17 @@
           <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">ラケット位置をリセット（中央に戻す）</button>
           <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
         </div>
+
+        <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
+          <div class="quit-confirm-dialog">
+            <h2 id="quit-confirm-title">プレイを停止しました</h2>
+            <p id="quit-confirm-message">メニューに戻りますか？</p>
+            <div class="quit-confirm-buttons">
+              <button id="btn-confirm-quit" class="btn btn-danger">OK</button>
+              <button id="btn-cancel-quit" class="btn btn-secondary">キャンセル</button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 6. ヘルプ・ルール説明画面 -->

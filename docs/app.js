@@ -998,10 +998,11 @@ class GameEngine {
       || ('ontouchstart' in window) 
       || (navigator.maxTouchPoints > 0);
     this.useTilt = false;
-    this.tiltCalibrationAngle = 0;
-    this.currentRawTilt = 0;
-    this.tiltSpeed = 0; // チルト比例速度 (0.0〜1.0)
-    this.handleOrientationBound = null;
+    // 加速度センサー（DeviceMotion）による体移動操作
+    this.motionAccelX = 0;       // 現在の横方向加速度 (m/s²)
+    this.motionSpeed = 0;        // 正規化されたラケット速度 (0.0〜1.0)
+    this.tiltSpeed = 0;          // updatePhysics で参照する速度 (互換性維持)
+    this.handleMotionBound = null;
 
 
     // イベントリスナーのバインド
@@ -1035,32 +1036,39 @@ class GameEngine {
       });
     }
 
-    // チルト切り替えチェックボックスの変更監視 (Feature #17: 保存)
+    // 体移動操作切り替えチェックボックスの変更監視 (Feature #17: 保存)
     const useTiltCheckbox = document.getElementById('chk-use-tilt');
     if (useTiltCheckbox) {
       useTiltCheckbox.addEventListener('change', (e) => {
         localStorage.setItem('stt_use_tilt', e.target.checked);
         if (e.target.checked) {
-          this.requestDeviceOrientationPermission();
+          this.requestDeviceMotionPermission();
         } else {
           this.useTilt = false;
+          // DeviceMotion リスナーを解除
+          if (this.handleMotionBound) {
+            window.removeEventListener('devicemotion', this.handleMotionBound);
+            this.handleMotionBound = null;
+          }
           // キー状態のクリア
           this.keys['ArrowLeft'] = false;
           this.keys['ArrowRight'] = false;
           this.keys['KeyA'] = false;
           this.keys['KeyD'] = false;
+          this.motionSpeed = 0;
+          this.tiltSpeed = 0;
           document.getElementById('btn-calibrate-tilt').classList.add('hidden');
           this.updateCanvasAriaLabel();
         }
       });
     }
 
-    // チルト調整ボタンのクリック
+    // ラケット位置リセットボタンのクリック
     const btnCalibrate = document.getElementById('btn-calibrate-tilt');
     if (btnCalibrate) {
       btnCalibrate.addEventListener('click', () => {
-        this.calibrateTilt();
-        narrator.speak("チルトの中心位置を調整しました。");
+        this.resetPaddlePosition();
+        narrator.speak("ラケット位置を中央にリセットしました。");
       });
     }
 
@@ -1123,7 +1131,7 @@ class GameEngine {
     document.getElementById('btn-enable-audio').addEventListener('click', () => {
       sounds.init();
       
-      // Feature #17: 設定からチルト復元
+      // Feature #17: 設定から体移動操作設定を復元
       const useTiltCheckbox = document.getElementById('chk-use-tilt');
       if (useTiltCheckbox) {
         const savedTilt = localStorage.getItem('stt_use_tilt') === 'true';
@@ -1134,7 +1142,7 @@ class GameEngine {
 
       const useTilt = useTiltCheckbox ? useTiltCheckbox.checked : false;
       if (this.isMobile && useTilt) {
-        this.requestDeviceOrientationPermission();
+        this.requestDeviceMotionPermission();
       }
 
       this.changeScreen('menu');
@@ -1170,61 +1178,103 @@ class GameEngine {
     });
 
     // 3. モード選択: オンライン戦 (Feature #17: サーバーアドレスの復元)
-    document.getElementById('btn-mode-online').addEventListener('click', () => {
-      this.mode = 'online';
-      this.changeScreen('lobby');
-      narrator.speak("オンラインロビーです。サーバーアドレスとルームIDを入力して、ルームに入るボタンを押してください。");
+    // 3. モード選択: オンライン対戦 — 🚧 工事中 (500 Internal Error)
+    const btnOnline = document.getElementById('btn-mode-online');
+    if (btnOnline) {
+      // ボタンを視覚的に無効化 (disabled 属性は付けず aria-disabled で管理)
+      btnOnline.setAttribute('aria-disabled', 'true');
+      btnOnline.setAttribute('title', '現在このモードは工事中です (500)');
+      btnOnline.style.opacity = '0.4';
+      btnOnline.style.cursor = 'not-allowed';
+      btnOnline.style.filter = 'grayscale(80%)';
 
-      // 現在のアクセス元を検出してヒントを表示
-      const addrDetected = document.getElementById('server-addr-detected');
-      const addrInput = document.getElementById('input-server-addr');
-      if (addrInput) {
-        // Feature #17: サーバーアドレスの復元
-        const savedAddr = localStorage.getItem('stt_server_addr') || '';
-        addrInput.value = savedAddr;
-        addrInput.addEventListener('change', () => {
-          localStorage.setItem('stt_server_addr', addrInput.value.trim());
-        });
-      }
+      btnOnline.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-      if (addrDetected && addrInput) {
-        const currentHost = window.location.host;
-        const isLocal = currentHost === 'localhost:8080' || currentHost === '127.0.0.1:8080';
-        const isGitHubPages = window.location.hostname.includes('github.io');
-        // LAN IP直アクセス（スマホからstt.exeのIPで開いた場合）
-        const isLanAccess = !isLocal && !isGitHubPages && /^\d+\.\d+\.\d+\.\d+/.test(window.location.hostname);
+        // 500 Internal Error ダイアログを表示
+        narrator.speak("500 インターナルエラー。オンライン対戦は現在工事中です。しばらくお待ちください。");
 
-        if (isLocal) {
-          // ローカルのstt.exeから開いているケース → 空白でOK
-          addrDetected.textContent = '✅ ローカルサーバー経由で接続中。空白のままで接続できます。';
-          addrDetected.style.color = '#39ff14';
-        } else if (isLanAccess) {
-          // LAN上のIPアドレス直アクセス（スマホからstt.exeのIPで開いた場合）→ 空白でOK、スマホ同士の場合の説明を追加
-          addrDetected.textContent = `✅ ${currentHost} 経由で接続中。アドレス欄は空白のままで接続できます。📱スマホ同士の対戦の場合、相手のスマホも同じURL「http://${currentHost}」を開いて、同じルームIDを入力してください。`;
-          addrDetected.style.color = '#39ff14';
-        } else if (isGitHubPages) {
-          // GitHub Pages経由 → https:// から ws:// への接続はブラウザのMixed Contentポリシーでブロックされるため接続不可
-          addrDetected.innerHTML = `
-            <strong>❌ このURL（GitHub Pages）からはオンライン対戦できません。</strong><br><br>
-            理由: ブラウザのセキュリティ制限（Mixed Content）により、
-            <code>https://</code> のページから <code>ws://</code>（暗号化なし）の
-            サーバーへの接続が自動的にブロックされます。<br><br>
-            <strong>✅ オンライン対戦・スマホ同士の対戦をするには:</strong><br>
-            ① PCで <code>stt.exe</code> を起動する<br>
-            ② 起動ログに表示される <code>http://192.168.x.x:8080</code> をスマホのブラウザで開く<br>
-            ③ このページ（github.io）ではなく、そちらのURLから「オンライン対戦」を選ぶ
+        // 既存のエラーオーバーレイがあれば再利用、なければ生成
+        let overlay = document.getElementById('error-overlay-500');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.id = 'error-overlay-500';
+          overlay.setAttribute('role', 'alertdialog');
+          overlay.setAttribute('aria-modal', 'true');
+          overlay.setAttribute('aria-labelledby', 'error-overlay-500-title');
+          overlay.style.cssText = [
+            'position:fixed', 'inset:0', 'z-index:9999',
+            'display:flex', 'align-items:center', 'justify-content:center',
+            'background:rgba(0,0,0,0.75)', 'backdrop-filter:blur(4px)',
+          ].join(';');
+
+          overlay.innerHTML = `
+            <div style="
+              background:#1a1a2e;
+              border:2px solid #ff4444;
+              border-radius:12px;
+              padding:2rem 2.5rem;
+              max-width:420px;
+              width:90%;
+              text-align:center;
+              color:#fff;
+              font-family:inherit;
+              box-shadow:0 0 40px rgba(255,68,68,0.4);
+            ">
+              <div style="font-size:3rem;margin-bottom:0.5rem;">🚧</div>
+              <h2 id="error-overlay-500-title" style="
+                color:#ff4444;
+                font-size:1.4rem;
+                margin:0 0 0.5rem;
+                letter-spacing:1px;
+              ">500 Internal Error</h2>
+              <p style="margin:0 0 0.4rem;font-size:0.95rem;color:#ccc;">
+                オンライン対戦は現在 <strong style="color:#ffaa00;">工事中</strong> です。
+              </p>
+              <p style="margin:0 0 1.5rem;font-size:0.8rem;color:#888;">
+                This feature is temporarily unavailable.<br>Please check back later.
+              </p>
+              <button id="error-overlay-500-close" style="
+                background:#ff4444;
+                color:#fff;
+                border:none;
+                border-radius:8px;
+                padding:0.6rem 2rem;
+                font-size:1rem;
+                cursor:pointer;
+                font-family:inherit;
+              ">閉じる</button>
+            </div>
           `;
-          addrDetected.style.color = '#ff4444';
+
+          document.body.appendChild(overlay);
+
+          // 閉じるボタン
+          overlay.querySelector('#error-overlay-500-close').addEventListener('click', () => {
+            overlay.style.display = 'none';
+          });
+          // オーバーレイ背景クリックでも閉じる
+          overlay.addEventListener('click', (ev) => {
+            if (ev.target === overlay) overlay.style.display = 'none';
+          });
+          // Escキーでも閉じる
+          document.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Escape' && overlay.style.display !== 'none') {
+              overlay.style.display = 'none';
+            }
+          });
         } else {
-          // その他（file://等）
-          addrDetected.textContent = `⚠️ サーバーアドレスを入力してください。stt.exeが動いているPCのIPアドレスを入力します（例: http://192.168.1.15:8080）。`;
-          addrDetected.style.color = '#ffaa00';
-          addrInput.focus();
+          overlay.style.display = 'flex';
         }
-      } else {
-        document.getElementById('input-room-id').focus();
-      }
-    });
+
+        // フォーカスを閉じるボタンに移す（アクセシビリティ）
+        setTimeout(() => {
+          const closeBtn = document.getElementById('error-overlay-500-close');
+          if (closeBtn) closeBtn.focus();
+        }, 50);
+      });
+    }
 
     // 4. ロビー: 接続開始
     document.getElementById('btn-join-room').addEventListener('click', () => {
@@ -1379,6 +1429,8 @@ class GameEngine {
     this.keys['ArrowRight'] = false;
     this.keys['KeyA'] = false;
     this.keys['KeyD'] = false;
+    this.motionSpeed = 0;
+    this.tiltSpeed = 0;
     this.updateCanvasAriaLabel();
 
     // play-instructions を元の表示状態に戻す (次回プレイ開始まで非表示のまま)
@@ -1642,11 +1694,8 @@ class GameEngine {
     // UIの切り替え
     this.changeScreen('play');
 
-    // モバイルのチルト自動調整および調整ボタンの表示制御
+    // 体移動操作（DeviceMotion）の調整ボタン表示制御
     if (this.isMobile && this.useTilt) {
-      setTimeout(() => {
-        this.calibrateTilt();
-      }, 500); // 手の傾きが安定するまで少し待って自動調整
       const btnCalibrate = document.getElementById('btn-calibrate-tilt');
       if (btnCalibrate) btnCalibrate.classList.remove('hidden');
     } else {
@@ -2991,112 +3040,151 @@ class GameEngine {
   // 11. モバイル・アクセシビリティ（チルト操作等）の処理
   // ==========================================================================
 
-  requestDeviceOrientationPermission() {
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-      DeviceOrientationEvent.requestPermission()
+  /**
+   * DeviceMotion（加速度センサー）の使用許可を要求します。
+   * - iOS 13+: DeviceMotionEvent.requestPermission() によるダイアログ表示が必要
+   * - Android / その他: 自動的に有効化
+   * - Windows PC / 非対応端末: センサー非対応として無効化
+   */
+  requestDeviceMotionPermission() {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      // iOS 13+ — ユーザー操作のコンテキストで呼ぶ必要がある
+      DeviceMotionEvent.requestPermission()
         .then(permissionState => {
           if (permissionState === 'granted') {
-            this.enableTiltControl();
+            this.enableMotionControl();
           } else {
-            console.log("DeviceOrientation permission denied.");
+            console.log("DeviceMotion permission denied.");
             const chk = document.getElementById('chk-use-tilt');
             if (chk) chk.checked = false;
             this.useTilt = false;
-            narrator.speak("センサーのアクセス許可が得られなかったため、チルト操作は無効化されました。Bluetoothキーボードをお使いください。");
+            narrator.speak("センサーのアクセス許可が得られなかったため、体移動操作は無効化されました。Bluetoothキーボードをお使いください。");
           }
         })
         .catch(err => {
-          console.error("DeviceOrientation permission error:", err);
+          console.error("DeviceMotion permission error:", err);
           const chk = document.getElementById('chk-use-tilt');
           if (chk) chk.checked = false;
           this.useTilt = false;
         });
+    } else if (typeof DeviceMotionEvent !== 'undefined' && ('ondevicemotion' in window || window.DeviceMotionEvent)) {
+      // Android / 非iOS — 許可ダイアログ不要、そのまま有効化
+      this.enableMotionControl();
     } else {
-      if ('ondeviceorientation' in window || 'DeviceOrientationEvent' in window) {
-        this.enableTiltControl();
-      } else {
-        console.log("DeviceOrientation is not supported on this device.");
-        const chk = document.getElementById('chk-use-tilt');
-        if (chk) chk.checked = false;
-        this.useTilt = false;
-        narrator.speak("この端末はチルト操作用のセンサーに対応していません。");
-      }
+      // Windows PC またはセンサー非搭載端末 — キーボード操作のみ
+      console.log("DeviceMotion is not supported on this device (PC or no sensor).");
+      const chk = document.getElementById('chk-use-tilt');
+      if (chk) chk.checked = false;
+      this.useTilt = false;
+      narrator.speak("この端末は加速度センサーに対応していないため、キーボードで操作してください。");
     }
   }
 
-  enableTiltControl() {
+  /**
+   * DeviceMotion（加速度センサー）イベントリスナーを登録し、体移動操作を有効化します。
+   */
+  enableMotionControl() {
     this.useTilt = true;
-    
+
     if (this.state !== STATE_MENU && !this.screens.play.classList.contains('hidden')) {
       const btnCalibrate = document.getElementById('btn-calibrate-tilt');
       if (btnCalibrate) btnCalibrate.classList.remove('hidden');
     }
-    
-    if (this.handleOrientationBound) {
-      window.removeEventListener('deviceorientation', this.handleOrientationBound);
+
+    // 既存リスナーの重複登録を防ぐ
+    if (this.handleMotionBound) {
+      window.removeEventListener('devicemotion', this.handleMotionBound);
     }
-    this.handleOrientationBound = (e) => this.handleDeviceOrientation(e);
-    window.addEventListener('deviceorientation', this.handleOrientationBound);
-    
+    this.handleMotionBound = (e) => this.handleDeviceMotion(e);
+    window.addEventListener('devicemotion', this.handleMotionBound);
+
     this.updateCanvasAriaLabel();
-    console.log("Tilt control successfully initialized.");
+    console.log("DeviceMotion (body movement) control successfully initialized.");
   }
 
-  handleDeviceOrientation(event) {
+  /**
+   * DeviceMotionEvent を受け取り、横方向加速度をラケット速度に変換します。
+   *
+   * 座標系（端末を縦向き/横向きに関わらず統一）:
+   *  - 縦向き (portrait)   : accelerationIncludingGravity.x が左右軸
+   *  - 横向き90° (右が上)  : accelerationIncludingGravity.y が左右軸（符号反転）
+   *  - 横向き-90° (左が上) : accelerationIncludingGravity.y が左右軸（符号そのまま）
+   *
+   * デッドゾーン  : ±1.5 m/s²（微細な手ブレを無視）
+   * フルスケール  : ±8.0 m/s² でラケット最大速度
+   *
+   * @param {DeviceMotionEvent} event
+   */
+  handleDeviceMotion(event) {
     if (!this.useTilt) return;
-    
-    let tilt = 0;
-    const orientation = window.orientation || (screen.orientation && screen.orientation.angle) || 0;
-    
+
+    const accel = event.accelerationIncludingGravity;
+    if (!accel) return;
+
+    // 画面の向きに応じて左右加速度軸を選択
+    const orientation = window.orientation
+      || (screen.orientation && screen.orientation.angle)
+      || 0;
+
+    let rawX = 0;
     if (orientation === 90) {
-      tilt = event.beta;
-    } else if (orientation === -90) {
-      tilt = -event.beta;
+      // 右が上になる横向き: Y軸が左右、正方向が右
+      rawX = -(accel.y || 0);
+    } else if (orientation === -90 || orientation === 270) {
+      // 左が上になる横向き: Y軸が左右、正方向が左
+      rawX = (accel.y || 0);
     } else {
-      tilt = event.gamma;
+      // 縦向き (0° / 180°): X軸が左右
+      rawX = (accel.x || 0);
     }
-    
-    if (tilt === null || tilt === undefined) return;
-    
-    this.currentRawTilt = tilt;
-    
-    // キャリブレーション後の傾き角度
-    const calibratedTilt = tilt - this.tiltCalibrationAngle;
-    
-    // デッドゾーン: ±4度以内は静止と見なす
-    const deadzone = 4.0;
-    // フルスケール: ±30度で最大速度に達する
-    const maxTilt = 30.0;
-    
-    // デッドゾーン外の傾き量を 0〜1 の比率に正規化（30度でclamping）
-    let tiltRatio = 0;
-    if (Math.abs(calibratedTilt) > deadzone) {
-      const effectiveTilt = Math.abs(calibratedTilt) - deadzone;
-      const effectiveRange = maxTilt - deadzone;
-      tiltRatio = Math.min(effectiveTilt / effectiveRange, 1.0);
+
+    this.motionAccelX = rawX;
+
+    // デッドゾーンと最大スケールを適用して 0.0〜1.0 に正規化
+    const deadzone = 1.5;  // m/s²: これ以下の加速度は無視
+    const maxAccel = 8.0;  // m/s²: これ以上でラケット最大速度
+
+    let ratio = 0;
+    if (Math.abs(rawX) > deadzone) {
+      const effective = Math.abs(rawX) - deadzone;
+      const range = maxAccel - deadzone;
+      ratio = Math.min(effective / range, 1.0);
     }
-    
-    // 傾き比率をラケット速度(px/frame)に変換し、keys の代わりに tiltSpeed として格納
-    // updatePhysics 内で keys['ArrowLeft/Right'] のオン/オフも維持するが、
-    // 比例速度は this.tiltSpeed で管理する
-    this.tiltSpeed = tiltRatio; // 0.0 〜 1.0
-    
-    if (calibratedTilt < -deadzone) {
-      this.keys['ArrowLeft'] = true;
-      this.keys['ArrowRight'] = false;
-    } else if (calibratedTilt > deadzone) {
+
+    this.motionSpeed = ratio; // 0.0〜1.0
+    this.tiltSpeed = ratio;   // updatePhysics の既存コードと互換
+
+    // キー状態に反映（updatePhysics で keys['ArrowLeft/Right'] を参照しているため）
+    if (rawX < -deadzone) {
+      // 右向き加速度（体が右に動く → ラケットを右へ）
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = true;
+    } else if (rawX > deadzone) {
+      // 左向き加速度（体が左に動く → ラケットを左へ）
+      this.keys['ArrowLeft'] = true;
+      this.keys['ArrowRight'] = false;
     } else {
+      // デッドゾーン内 → 静止
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = false;
+      this.motionSpeed = 0;
       this.tiltSpeed = 0;
     }
   }
 
-  calibrateTilt() {
-    this.tiltCalibrationAngle = this.currentRawTilt;
-    console.log("Calibrated tilt center offset to: " + this.tiltCalibrationAngle);
+  /**
+   * ラケット位置を画面中央にリセットします。
+   * 加速度ドリフト等でラケットが端に寄った場合のリカバリ用。
+   */
+  resetPaddlePosition() {
+    const paddle = this.role === 1 ? this.p1 : this.p2;
+    if (paddle) {
+      paddle.x = (CANVAS_WIDTH - PADDLE_WIDTH) / 2;
+      if (this.mode === 'online') {
+        this.syncPaddlePosition(paddle.x);
+      }
+    }
+    console.log("Paddle position reset to center.");
   }
 
   updateCanvasAriaLabel() {
@@ -3105,7 +3193,7 @@ class GameEngine {
     
     if (this.isMobile) {
       if (this.useTilt) {
-        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを左右に傾けてラケットを操作します。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを水平に持ち、体ごと左右に動いてラケットを操作します。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
       } else {
         canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。接続されたキーボード、または画面をダブルタップしてアクションを行います。");
       }

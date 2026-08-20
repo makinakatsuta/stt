@@ -40,10 +40,10 @@
         <div id="mobile-settings-panel" class="mobile-settings-panel hidden">
           <div class="checkbox-container">
             <input type="checkbox" id="chk-use-tilt" checked>
-            <label for="chk-use-tilt">スマートフォンの傾き（チルト）で操作する</label>
+            <label for="chk-use-tilt">体を左右に動かしてラケットを操作する（加速度センサー）</label>
           </div>
           <p class="mobile-hint-text">
-            ※端末を左右に傾けてラケットを動かし、画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
+            ※スマホを水平に持ち、体ごと左右に動いてラケットを移動させます。ラケットは傾けず、正式ルール同様に平行移動で操作します。画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
           </p>
         </div>
 
@@ -195,7 +195,7 @@
         </div>
 
         <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-          <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">チルトをリセット（水平にする）</button>
+          <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">ラケット位置をリセット（中央に戻す）</button>
           <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
         </div>
       </section>

@@ -64,7 +64,15 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	p2X := jsP2.Get("x").Float()
 
 	// 1. Player paddle movement (Keys)
+	// Normal / Hard はラリー中にボール速度が上がるため、移動量ではなく
+	// ラケットの移動速度を難易度に応じて上げ、左右の深い球にも追いつけるようにする。
 	paddleSpeed := 7.0
+	switch difficulty {
+	case "normal":
+		paddleSpeed = 8.0
+	case "hard":
+		paddleSpeed = 9.0
+	}
 	if role == 1 {
 		if getBoolSafe(jsKeys, "ArrowLeft") {
 			p1X -= paddleSpeed

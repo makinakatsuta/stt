@@ -2503,9 +2503,11 @@ class GameEngine {
     }
 
     // 1. プレイヤーのラケット移動 (矢印キー / A,Dキー / チルト比例制御)
-    // チルト操作時: 傾き比率 (0〜1) × 最大速度(7px) で比例移動
-    // キーボード操作時: 固定速度 7px/frame
-    const maxSpeed = 7;
+    // チルト操作時: 傾き比率 (0〜1) × 難易度別の最大速度で比例移動
+    // キーボード操作時: 難易度別の最大速度で移動
+    // ボール速度の上昇に合わせ、Normal / Hard ではラケットの移動速度も上げる。
+    // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
+    const maxSpeed = this.difficulty === 'hard' ? 9 : this.difficulty === 'normal' ? 8 : 7;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     
     if (this.keys['ArrowLeft']) {

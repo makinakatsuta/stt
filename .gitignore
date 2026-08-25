@@ -9,3 +9,9 @@ STT_rulebook_all.html
 .antigravitycli/
 .DS_Store
 Thumbs.db
+
+# 著作権保護対象の音源ファイル
+sounds/
+*.m4a
+*.mp3
+*.wav

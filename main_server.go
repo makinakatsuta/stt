@@ -517,6 +517,10 @@ func main() {
 	fs := http.FileServer(http.Dir("./docs"))
 	http.Handle("/", fs)
 
+	// サウンドファイルの配信設定 (sounds ディレクトリ)
+	soundsFs := http.StripPrefix("/sounds/", http.FileServer(http.Dir("./sounds")))
+	http.Handle("/sounds/", soundsFs)
+
 	// WebSocket エンドポイントの登録
 	http.HandleFunc("/ws", serveWs)
 

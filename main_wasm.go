@@ -36,6 +36,25 @@ func getBoolSafe(v js.Value, key string) bool {
 	return false
 }
 
+func predictedBallX(x, y, vx, vy, defenseY float64) float64 {
+	if math.Abs(vy) < 0.01 {
+		return x
+	}
+	frames := (defenseY - y) / vy
+	if frames < 0 {
+		frames = 0
+	}
+	// 800px の横幅とボール半径を使った折り返し座標で壁反射を先読みする。
+	minX := BallRadius
+	span := (CanvasWidth - BallRadius) - minX
+	target := x + vx*frames
+	reflected := math.Mod(math.Mod(target-minX, span*2)+span*2, span*2)
+	if reflected > span {
+		reflected = span*2 - reflected
+	}
+	return minX + reflected
+}
+
 func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	if len(args) < 9 {
 		return nil
@@ -108,8 +127,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 		switch difficulty {
 		case "easy":
-			cpuSpeed = 3.0
-			targetOffset = math.Sin(timeMs/150.0) * 45.0
+			cpuSpeed = 5.0
+			targetOffset = math.Sin(timeMs/600.0) * 8.0
 		case "normal":
 			cpuSpeed = 5.2
 			targetOffset = math.Sin(timeMs/300.0) * 15.0
@@ -118,7 +137,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			targetOffset = 0.0
 		}
 
-		cpuTarget := ballX - PaddleWidth/2.0 + targetOffset
+		// CPU も現在位置ではなく、ラケット到達時の玉の位置を追う。
+		predictedX := predictedBallX(ballX, ballY, ballVx, ballVy, YDefenseP2)
+		cpuTarget := predictedX - PaddleWidth/2.0 + targetOffset
 
 		if p2X < cpuTarget {
 			p2X += cpuSpeed
@@ -188,8 +209,17 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				if hitPaddle {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					ballVx = relativeHitPos * 4.0
-					ballVy = -math.Abs(ballVy) * 1.05
+					cpuVxFactor := 4.0
+					cpuVyBoost := 1.05
+					if difficulty == "easy" {
+						cpuVxFactor = 1.5
+						cpuVyBoost = 1.02
+					} else if difficulty == "hard" {
+						cpuVxFactor = 6.0
+						cpuVyBoost = 1.12
+					}
+					ballVx = relativeHitPos * cpuVxFactor
+					ballVy = -math.Abs(ballVy) * cpuVyBoost
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -211,8 +241,17 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				if hitPaddle {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					ballVx = relativeHitPos * 4.0
-					ballVy = math.Abs(ballVy) * 1.05
+					cpuVxFactor := 4.0
+					cpuVyBoost := 1.05
+					if difficulty == "easy" {
+						cpuVxFactor = 1.5
+						cpuVyBoost = 1.02
+					} else if difficulty == "hard" {
+						cpuVxFactor = 6.0
+						cpuVyBoost = 1.12
+					}
+					ballVx = relativeHitPos * cpuVxFactor
+					ballVy = math.Abs(ballVy) * cpuVyBoost
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -262,7 +301,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				ballVx = 0.0
 				ballVy = 0.0
 				ballActive = false // Deactivate ball
-				
+
 				var winner int
 				var reason string
 				if ballY >= YDefenseP1 {

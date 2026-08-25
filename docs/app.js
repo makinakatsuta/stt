@@ -35,15 +35,19 @@ const STATE_POINT_WON = 'POINT_WON';             // 得点発生・一時停止
 class SoundSystem {
   constructor() {
     this.ctx = null;
-    this.noiseBuffer = null;
-    this.ballRollSource = null;
-    this.ballRollGain = null;
     this.ballRollFilter = null;
-    this.panner = null;
+    this.panner = null; // PannerNode for mono sound assets
     this.isMuted = false;
-    this.rattleLfo = null;
-    this.rumbleOsc = null;
-    this.rumbleGain = null;
+    this.assetsOnly = true; // sounds/ 配下の実音源だけを再生する
+
+    // 本物の実録音源バッファ
+    this.realRollBuffer = null;
+    this.realRollSource = null;
+    this.realRollGain = null;
+    this.serveBuffers = {}; // { easy: Buffer, normal: Buffer, hard: Buffer, list: [] }
+    this.audioLoaded = false;
+    this.noiseBuffer = null;
+    this.lastBallY = null;
   }
 
   /**
@@ -57,14 +61,8 @@ class SoundSystem {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AudioContextClass();
     
-    // HRTF 3D空間オーディオ用のPannerNodeを作成 (3次元定位・奥行き表現用)
-    this.panner = this.ctx.createPanner();
-    this.panner.panningModel = 'HRTF';
-    this.panner.distanceModel = 'inverse';
-    this.panner.refDistance = 1.0;
-    this.panner.maxDistance = 10.0;
-    this.panner.rolloffFactor = 1.2;
-    this.panner.coneInnerAngle = 360;
+    // Decode sound assets to mono first, then apply simple left/right positioning.
+    this.panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
 
     // リスナー（プレイヤーの耳の位置）の設定
     if (this.ctx.listener) {
@@ -85,25 +83,162 @@ class SoundSystem {
       }
     }
     
-    // ボールの転がり音用のローパスフィルターを作成 (空気吸収・距離感の音色変化用)
+    // ボール転がり音用のローパスフィルターを作成 (空気吸収・距離感の音色変化用)
     this.ballRollFilter = this.ctx.createBiquadFilter();
     this.ballRollFilter.type = 'lowpass';
     this.ballRollFilter.frequency.setValueAtTime(4000, this.ctx.currentTime);
     
-    // ボールの転がり音用のゲインノードを作成 (音量調整用)
-    this.ballRollGain = this.ctx.createGain();
-    this.ballRollGain.gain.setValueAtTime(0, this.ctx.currentTime);
-    
-    // 音響ルートの接続: 転がり音 -> フィルター -> ゲイン -> 3Dパンナー -> 出力
-    this.ballRollFilter.connect(this.ballRollGain);
-    this.ballRollGain.connect(this.panner);
+    // 音響ルートの接続: フィルター -> HRTF PannerNode -> 出力
+    this.ballRollFilter.connect(this.panner);
     this.panner.connect(this.ctx.destination);
-    
-    // ホワイトノイズのバッファを作成
+
+    // 足音などの短い摩擦音に使うノイズ素材を用意します。
     this.createNoiseBuffer();
     
-    // ボール転がり音のループ再生を開始
-    this.startBallRollLoop();
+    // 実音源ファイル (drop down.m4a, serve1~3.m4a) の非同期読み込み
+    this.loadAudioFiles();
+  }
+
+  /**
+   * 実録音源ファイルを非同期でフェッチ＆デコードします。
+   */
+  async loadAudioFiles() {
+    const fetchAudio = async (url) => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        const arrayBuffer = await response.arrayBuffer();
+        const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+        return this.toMonoBuffer(decoded);
+      } catch (err) {
+        console.warn('Audio load skipped for ' + url + ':', err);
+        return null;
+      }
+    };
+
+    try {
+      const [rollBuf, s1, s2, s3] = await Promise.all([
+        fetchAudio('/sounds/drop down.m4a'),
+        fetchAudio('/sounds/serve1.m4a'),
+        fetchAudio('/sounds/serve2.m4a'),
+        fetchAudio('/sounds/serve3.m4a')
+      ]);
+
+      if (rollBuf) {
+        this.realRollBuffer = rollBuf;
+        this.startRealRollLoop();
+      }
+
+      // 難易度別の対応付け:
+      // serve1.m4a: 初級用 (Easy)
+      // serve2.m4a: 中級用 (Normal)
+      // serve3.m4a: 応用・上級用 (Hard)
+      this.serveBuffers = {
+        easy: s1,
+        normal: s2,
+        hard: s3,
+        list: [s1, s2, s3].filter(b => b !== null)
+      };
+      this.audioLoaded = true;
+      console.log('Loaded real sounds: roll=' + (!!this.realRollBuffer) + ', serves=' + this.serveBuffers.list.length);
+    } catch (e) {
+      console.warn('Failed to load audio files:', e);
+    }
+  }
+
+  /**
+   * 再生音源を1チャンネルへダウンミックスします。
+   * モノラル化した音源でも、そのまま再生できる共通の入口にします。
+   */
+  toMonoBuffer(buffer) {
+    if (!buffer || buffer.numberOfChannels === 1) return buffer;
+
+    const mono = this.ctx.createBuffer(1, buffer.length, buffer.sampleRate);
+    const output = mono.getChannelData(0);
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const input = buffer.getChannelData(channel);
+      for (let i = 0; i < buffer.length; i++) {
+        output[i] += input[i] / buffer.numberOfChannels;
+      }
+    }
+    return mono;
+  }
+
+  createNoiseBuffer() {
+    const length = Math.max(1, Math.floor(this.ctx.sampleRate * 2));
+    this.noiseBuffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  /** 移動時のシューズの床摩擦音を再生します。 */
+  playFootstepSound(x, deltaX = 1) {
+    if (!this.ctx || this.isMuted || !this.noiseBuffer) return;
+
+    const now = this.ctx.currentTime;
+    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.noiseBuffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    const speedRatio = Math.min(Math.abs(deltaX) / 8, 1);
+    const pan = (x / CANVAS_WIDTH) * 2 - 1;
+    filter.frequency.setValueAtTime(1700 + speedRatio * 1000 + pan * 350, now);
+    filter.Q.setValueAtTime(2.5 + speedRatio * 1.5, now);
+
+    const gain = this.ctx.createGain();
+    const duration = 0.06 + speedRatio * 0.04;
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.045 + speedRatio * 0.08, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
+    source.start(now);
+    source.stop(now + duration + 0.01);
+  }
+
+  /** 球がネットを越えて自陣へ入ったことを、球の位置から知らせます。 */
+  playBallApproachCue(x, y) {
+    if (!this.ctx || this.isMuted || !this.realRollBuffer) return;
+
+    const now = this.ctx.currentTime;
+    const panner = this.create3DPanner(x, y);
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.realRollBuffer;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.32, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    source.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
+    source.start(now, 0, 0.2);
+  }
+
+  /**
+   * drop down.m4a の実録転がり音ループを開始します。
+   */
+  startRealRollLoop() {
+    if (!this.realRollBuffer || !this.ctx) return;
+    try {
+      this.realRollSource = this.ctx.createBufferSource();
+      this.realRollSource.buffer = this.realRollBuffer;
+      this.realRollSource.loop = true;
+
+      this.realRollGain = this.ctx.createGain();
+      this.realRollGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+
+      this.realRollSource.connect(this.realRollGain);
+      this.realRollGain.connect(this.ballRollFilter);
+
+      this.realRollSource.start(0);
+    } catch (e) {
+      console.warn('Error starting real roll loop:', e);
+    }
   }
 
   /**
@@ -138,7 +273,7 @@ class SoundSystem {
   }
 
   /**
-   * 単発効果音用の 3D PannerNode を作成します。
+   * 単発効果音用の3D PannerNodeを作成します。
    * @param {number} x キャンバスX座標
    * @param {number} y キャンバスY座標 (デフォルト: ネット中央)
    */
@@ -149,7 +284,8 @@ class SoundSystem {
     panner.refDistance = 1.0;
     panner.maxDistance = 10.0;
     panner.rolloffFactor = 1.2;
-    
+    panner.coneInnerAngle = 360;
+
     const coords = this.get3DCoords(x, y);
     if (panner.positionX) {
       panner.positionX.setValueAtTime(coords.x, this.ctx.currentTime);
@@ -162,84 +298,8 @@ class SoundSystem {
   }
 
   /**
-   * ホワイトノイズの2秒分のバッファを生成します。
-   */
-  createNoiseBuffer() {
-    const bufferSize = this.ctx.sampleRate * 2;
-    this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = this.noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
-  }
-
-  /**
-   * 金属球が入ったボールの「シャラシャラ」という転がり音を生成・ループ再生します。
-   */
-  startBallRollLoop() {
-    // 1. ノイズソース（シャラシャラ音のベース）
-    this.ballRollSource = this.ctx.createBufferSource();
-    this.ballRollSource.buffer = this.noiseBuffer;
-    this.ballRollSource.loop = true;
-    
-    // ホワイトノイズを金属音らしくするためのマルチバンドパス（共鳴フィルター）
-    // STT球の中の4つの金属球がぶつかり合う高い「チリン」「シャリ」という音を再現
-    const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.6, this.ctx.currentTime);
-
-    const freqs = [3200, 4800, 7200]; // 金属球の共鳴周波数帯
-    const biquads = freqs.map(freq => {
-      const bp = this.ctx.createBiquadFilter();
-      bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(freq, this.ctx.currentTime);
-      bp.Q.setValueAtTime(4.0, this.ctx.currentTime); // 鋭く共鳴させる
-      return bp;
-    });
-
-    // 各バンドパスにノイズを分配
-    biquads.forEach(bp => {
-      this.ballRollSource.connect(bp);
-      bp.connect(noiseGain);
-    });
-    
-    // シャラシャラ感を出すためのLFO（音量を断続的に揺らして粒立ちを作る）
-    this.rattleLfo = this.ctx.createOscillator();
-    this.rattleLfo.type = 'sawtooth'; // ノコギリ波でパーカッシブな「シャッ」という刻みを連続させる
-    this.rattleLfo.frequency.setValueAtTime(15, this.ctx.currentTime);
-    
-    const rattleGain = this.ctx.createGain();
-    rattleGain.gain.setValueAtTime(0.5, this.ctx.currentTime); // 揺れの深さ
-    
-    this.rattleLfo.connect(rattleGain);
-    
-    // noiseGainの音量をLFOで揺らすためのマスターゲイン
-    const masterNoiseGain = this.ctx.createGain();
-    masterNoiseGain.gain.setValueAtTime(0.5, this.ctx.currentTime); // LFOのベース
-    rattleGain.connect(masterNoiseGain.gain);
-    
-    noiseGain.connect(masterNoiseGain);
-    masterNoiseGain.connect(this.ballRollFilter);
-
-    // 2. プラスチックの空洞音（ゴロゴロ・コトコト音）
-    this.rumbleOsc = this.ctx.createOscillator();
-    this.rumbleOsc.type = 'triangle';
-    this.rumbleOsc.frequency.setValueAtTime(120, this.ctx.currentTime);
-    
-    this.rumbleGain = this.ctx.createGain();
-    this.rumbleGain.gain.setValueAtTime(0.08, this.ctx.currentTime); 
-    
-    this.rumbleOsc.connect(this.rumbleGain);
-    this.rumbleGain.connect(this.ballRollFilter);
-    
-    // 再生開始
-    this.ballRollSource.start(0);
-    this.rattleLfo.start(0);
-    this.rumbleOsc.start(0);
-  }
-
-  /**
    * ボールのリアルタイムな位置と速度に応じて、3D空間定位・距離減衰・空気吸収フィルター・
-   * およびボールが手元に迫る時間間隔（ラトル周期）を動的に更新します。
+   * および実録音源 (drop down.m4a) の再生音量を動的に更新します。
    * @param {number} x ボールのX座標 (0〜800)
    * @param {number} y ボールのY座標 (0〜500)
    * @param {number} vx ボールのX方向速度
@@ -249,24 +309,33 @@ class SoundSystem {
     if (!this.ctx || this.isMuted) return;
     
     const speed = Math.sqrt(vx * vx + vy * vy);
+
+    // ネット通過時だけ、球の現在位置から短い3Dキューを出します。
+    if (speed < 0.1) {
+      this.lastBallY = null;
+    } else if (this.lastBallY !== null &&
+      ((this.lastBallY < Y_NET && y >= Y_NET && vy > 0) ||
+       (this.lastBallY > Y_NET && y <= Y_NET && vy < 0))) {
+      this.playBallApproachCue(x, y);
+    }
+    this.lastBallY = y;
     
-    // 1. HRTF 3D空間座標 (X, Y, Z) のリアルタイム追従
+    // 1. 画面上のX座標を左右パンへリアルタイム反映
     const coords = this.get3DCoords(x, y);
     this.setPannerPosition(this.panner, coords.x, coords.y, coords.z);
     
     // 2. 距離比率 (0.0: 自分守備ライン 〜 1.0: 相手コート奥)
     const distRatio = Math.max(0, Math.min(1, (Y_DEFENSE_P1 - y) / Y_DEFENSE_P1));
-    const isApproaching = vy > 0; // 自分に向かって迫ってくる進行方向か
     
     // 3. 奥行き（空気吸収・距離感）に応じたローパスフィルター
     // 相手コート奥 (distRatio=1.0) では 650Hz (こもった遠方の音)
     // ネット付近 (distRatio=0.4) では約 3500Hz
-    // 自分守備手前 (distRatio=0.0) では 14000Hz (金属球のきらめき・粒立ちが完全に開く)
+    // 自分守備手前 (distRatio=0.0) では 14000Hz (本物のピン球のきらめき・粒立ちが完全に開く)
     const targetFreq = 650 + (13350 * Math.pow(1 - distRatio, 1.8)); 
     this.ballRollFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.04);
     
     // 4. 音量設定（対数スケール + 距離ダイナミクス）
-    let baseVolume = Math.log1p(speed * 0.8) / Math.log1p(8) * 0.55;
+    let baseVolume = Math.log1p(speed * 0.8) / Math.log1p(8) * 0.75;
     if (baseVolume > 1.0) baseVolume = 1.0;
     
     // 手前に近づくほど音圧が高まり、迫力と近接感が生まれる
@@ -275,90 +344,108 @@ class SoundSystem {
     
     if (speed < 0.1) targetVolume = 0; // 停止時は消音
     
-    this.ballRollGain.gain.setTargetAtTime(targetVolume, this.ctx.currentTime, 0.04);
-
-    // 5. 【ボールの来る間隔（テンポ・リズム感）の動的変調】
-    // ボール内部の金属球が転がる刻み（ラトル周期 LFO）と空洞音
-    if (this.rattleLfo && this.rumbleOsc && this.rumbleGain) {
-      if (speed > 0.1) {
-        // 基本の速度連動 (8Hz 〜 24Hz)
-        let rattleFreq = 8 + Math.min(speed, 20) * 1.2;
-        
-        // 迫ってくる時（isApproaching）は、残距離が近くなるほど刻みのピッチとパルス密度が加速
-        // これにより「タタタタ…」という間隔が耳で測れ、手元に来るタイミングが直感化される
-        if (isApproaching) {
-          const approachFactor = Math.pow(1 - distRatio, 2.0) * 12.0; // 0 〜 +12Hz
-          rattleFreq += approachFactor;
-        }
-        
-        this.rattleLfo.frequency.setTargetAtTime(rattleFreq, this.ctx.currentTime, 0.08);
-
-        // ゴロゴロ空洞音も接近に伴い鮮明化
-        const rumbleFreq = 90 + Math.min(speed, 15) * 3.5 + (isApproaching ? (1 - distRatio) * 40 : 0);
-        this.rumbleOsc.frequency.setTargetAtTime(rumbleFreq, this.ctx.currentTime, 0.08);
-        
-        const rumbleVol = (0.04 + Math.min(speed / 10, 1.0) * 0.12) * proximityGain;
-        this.rumbleGain.gain.setTargetAtTime(rumbleVol, this.ctx.currentTime, 0.08);
-      }
+    // 本物の実録ピン球音源 (drop down.m4a) のみを再生
+    if (this.realRollGain) {
+      this.realRollGain.gain.setTargetAtTime(targetVolume * 1.8, this.ctx.currentTime, 0.04);
     }
   }
 
 
   /**
-   * プレイヤーが移動したときの足音（シューズの床摩擦音）を合成します。
-   * 移動速度（deltaX）に応じて音量とトーンを変化させます。
-   * @param {number} x プレイヤーのX座標 (パン用)
-   * @param {number} deltaX 1フレームでの移動量
+   * ラケットが中央（X=350〜450）に合ったときに鳴る目印の確認音（ピピッ/カチッ）とバイブレーション
+   * @param {number} x ラケットの中央X座標
    */
-  playFootstepSound(x, deltaX) {
+  playCenterBeep(x = CANVAS_WIDTH / 2) {
     if (!this.ctx || this.isMuted) return;
-    
+
+    // 1. スマホ端末向けバイブレーション（難聴・触覚アクセシビリティ対応）
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate(25); // 25msの軽いパルス振動
+      } catch (e) {}
+    }
+
+    // 2. 音響での中央確認音（高音でクリアかつ控えめな2連チャイム音）
+    if (this.assetsOnly) return;
     const panner = this.create3DPanner(x, Y_DEFENSE_P1);
-    
-    // ホワイトノイズソース
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = this.noiseBuffer;
-    
-    // バンドパスフィルターで周波数帯を絞る
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    
-    const panVal = (x / CANVAS_WIDTH) * 2 - 1;
-    const speedRatio = Math.min(deltaX / 7.0, 1.0);
-    const positionShift = panVal * 400; // -400Hz(左) 〜 +400Hz(右)
-    
-    const targetFreq = 1500 + (1200 * speedRatio) + positionShift;
-    filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
-    
-    const centerProximity = 1.0 - Math.abs(panVal);
-    const targetQ = 2.0 + (2.0 * speedRatio) + (1.5 * centerProximity);
-    filter.Q.setValueAtTime(targetQ, this.ctx.currentTime);
-    
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
-    const targetVolume = 0.03 + (0.15 * speedRatio);
-    const duration = 0.04 + (0.06 * speedRatio);
-    
-    gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
-    
-    noise.connect(filter);
-    filter.connect(gain);
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1046.5, now); // C6 (1046.5Hz)
+    osc.frequency.setValueAtTime(1318.5, now + 0.03); // E6 (1318.5Hz)
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+    osc.connect(gain);
     gain.connect(panner);
     panner.connect(this.ctx.destination);
-    
-    noise.start();
-    noise.stop(this.ctx.currentTime + duration);
+
+    osc.start(now);
+    osc.stop(now + 0.08);
+  }
+
+  /**
+   * サーブ音 (実録音源 serve1.m4a〜serve3.m4a を難易度やランダムに応じて再生)
+   *  - 初級(easy): serve1.m4a（またはランダム）
+   *  - 中級(normal): serve2.m4a（またはランダム）
+   *  - 応用/上級(hard): serve3.m4a（またはランダム）
+   * @param {number} x 打球X座標
+   * @param {string|null} difficulty 難易度 ('easy' | 'normal' | 'hard') または null (完全ランダム)
+   * @param {number} y 打球Y座標
+   */
+  playServeSound(x, difficulty = null, y = Y_DEFENSE_P1) {
+    if (!this.ctx || this.isMuted) return;
+
+    if (this.serveBuffers) {
+      try {
+        let buffer = null;
+        if (difficulty && this.serveBuffers[difficulty]) {
+          // 指定難易度の音源を優先（80%）、20%の確率で他とランダムにしてバリエーションを演出
+          if (Math.random() < 0.8) {
+            buffer = this.serveBuffers[difficulty];
+          } else if (this.serveBuffers.list && this.serveBuffers.list.length > 0) {
+            const rIdx = Math.floor(Math.random() * this.serveBuffers.list.length);
+            buffer = this.serveBuffers.list[rIdx];
+          }
+        } else if (this.serveBuffers.list && this.serveBuffers.list.length > 0) {
+          const rIdx = Math.floor(Math.random() * this.serveBuffers.list.length);
+          buffer = this.serveBuffers.list[rIdx];
+        }
+
+        if (buffer) {
+          const panner = this.create3DPanner(x, y);
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(1.25, this.ctx.currentTime); // 実録サーブ音をクリアかつ最大限に響かせる
+          source.connect(gain);
+          gain.connect(panner);
+          panner.connect(this.ctx.destination);
+          source.start(0);
+          return;
+        }
+      } catch (e) {
+        console.warn('Error playing real serve sound:', e);
+      }
+    }
+
+    // サーブ音源がない場合は、別の音源へフォールバックしない
   }
 
   /**
    * ラケットを振ったときの風切り音（スイング音「ブン」）を合成します。
    * @param {number} x ラケットのX座標 (パン用)
    */
-  playSwingSound(x) {
+  playSwingSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     
-    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
+    const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     
@@ -384,6 +471,7 @@ class SoundSystem {
    */
   playHitSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     
     const panner = this.create3DPanner(x, y);
     
@@ -450,6 +538,7 @@ class SoundSystem {
    */
   playSuccessChime(x, isEasy = false, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
 
     const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
@@ -483,6 +572,7 @@ class SoundSystem {
    */
   playFrameSound(x, y = Y_NET) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     
     const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
@@ -510,6 +600,7 @@ class SoundSystem {
    */
   playNetSound(x, y = Y_NET) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     
     const panner = this.create3DPanner(x, y);
     const bufferSource = this.ctx.createBufferSource();
@@ -539,6 +630,7 @@ class SoundSystem {
    */
   playMissSound(x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     
     const panner = this.create3DPanner(x, y);
     const osc1 = this.ctx.createOscillator();
@@ -573,6 +665,7 @@ class SoundSystem {
    */
   playBallStopSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
     const panner = this.create3DPanner(x, y);
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -595,9 +688,11 @@ class SoundSystem {
    */
   playCheerSound() {
     if (!this.ctx || this.isMuted) return;
+    if (this.assetsOnly) return;
 
     const duration = 4.0;
     const now = this.ctx.currentTime;
+    const panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
 
     const noise = this.ctx.createBufferSource();
     noise.buffer = this.noiseBuffer;
@@ -624,7 +719,8 @@ class SoundSystem {
 
     noise.connect(bandpass);
     bandpass.connect(gain);
-    gain.connect(this.ctx.destination);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
 
     noise.start(now);
     lfo.start(now);
@@ -632,62 +728,6 @@ class SoundSystem {
     lfo.stop(now + duration);
   }
 
-  /**
-   * サーブチャージ中の上昇音を合成します。(Feature #2)
-   * @param {number} chargeRatio チャージ率 0.0〜1.0
-   * @param {number} x ラケットX座標
-   * @param {number} y ラケットY座標
-   */
-  playChargeBeep(chargeRatio, x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
-    if (!this.ctx || this.isMuted) return;
-    const panner = this.create3DPanner(x, y);
-    const freq = 400 + (chargeRatio * 800);
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-    gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.06);
-    osc.connect(gain);
-    gain.connect(panner);
-    panner.connect(this.ctx.destination);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.07);
-  }
-
-  /**
-   * CPUラケットの移動音（少し高いシュッという音、奥から立体パンニング）
-   */
-  playCpuMoveSound(x, deltaX) {
-    if (!this.ctx || this.isMuted) return;
-    
-    const panner = this.create3DPanner(x, Y_DEFENSE_P2);
-    const noise = this.ctx.createBufferSource();
-    noise.buffer = this.noiseBuffer;
-    
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    const speedRatio = Math.min(deltaX / 7.0, 1.0);
-    const targetFreq = 2800 + (1200 * speedRatio);
-    filter.frequency.setValueAtTime(targetFreq, this.ctx.currentTime);
-    filter.Q.setValueAtTime(3.0, this.ctx.currentTime);
-    
-    const gain = this.ctx.createGain();
-    const targetVolume = 0.02 + (0.08 * speedRatio);
-    const duration = 0.04 + (0.05 * speedRatio);
-    
-    gain.gain.setValueAtTime(0.0, this.ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(targetVolume, this.ctx.currentTime + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration - 0.005);
-    
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(panner);
-    panner.connect(this.ctx.destination);
-    
-    noise.start();
-    noise.stop(this.ctx.currentTime + duration);
-  }
 }
 
 const sounds = new SoundSystem();
@@ -959,9 +999,9 @@ class GameEngine {
     
     // 得点とゲーム設定
     this.scores = { p1: 0, p2: 0 };
-    this.gameScores = { p1: 0, p2: 0 }; // 各セット（ゲーム）の獲得数
+    this.gameScores = { p1: 0, p2: 0 }; // 各ゲームの獲得数
     this.serverRole = 1; // 現在のサーバー (1 or 2)
-    this.matchGames = 3; // 3ゲームス2セット先取マッチ
+    this.matchGames = 3; // 3ゲームマッチ、2ゲーム先取を維持
     this.maxScore = 11;  // 11点先取
     
     // タイムアウト管理 (公式5秒ルールなどのチェック用)
@@ -971,7 +1011,6 @@ class GameEngine {
     // Feature #2, #4: チャージサーブおよびインターバルスキップ用の状態管理変数
     this.chargeStartTime = 0;
     this.isCharging = false;
-    this.chargeInterval = null;
     this.intervalSkipCallback = null;
 
     // キー入力状態
@@ -979,8 +1018,11 @@ class GameEngine {
       ArrowLeft: false,
       ArrowRight: false
     };
-    this.lastFootstepTime = 0;
     this.lastMyPaddleX = 350;
+    this.lastFootstepTime = 0;
+    this.wasInCenter = false;
+    // 少し早めに押した返球入力を、次の物理フレームまで保持する。
+    this.pendingSwingUntil = 0;
     
     // 描画演出用のエフェクト配列 (波紋など)
     this.ripples = [];
@@ -1125,12 +1167,6 @@ class GameEngine {
         e.preventDefault();
         this.isCharging = true;
         this.chargeStartTime = Date.now();
-        if (this.chargeInterval) clearInterval(this.chargeInterval);
-        sounds.playChargeBeep(0);
-        this.chargeInterval = setInterval(() => {
-          const chargeRatio = Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0);
-          sounds.playChargeBeep(chargeRatio);
-        }, 150);
       }
     }, { passive: false });
 
@@ -1358,12 +1394,6 @@ class GameEngine {
             // サーブチャージ開始
             this.isCharging = true;
             this.chargeStartTime = Date.now();
-            if (this.chargeInterval) clearInterval(this.chargeInterval);
-            sounds.playChargeBeep(0);
-            this.chargeInterval = setInterval(() => {
-              const chargeRatio = Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0);
-              sounds.playChargeBeep(chargeRatio);
-            }, 150);
           } else {
             this.handleActionInput();
           }
@@ -1402,10 +1432,6 @@ class GameEngine {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.isCharging) {
         this.isCharging = false;
-        if (this.chargeInterval) {
-          clearInterval(this.chargeInterval);
-          this.chargeInterval = null;
-        }
       }
     });
   }
@@ -1471,10 +1497,6 @@ class GameEngine {
     this.gameplayPausedAt = Date.now();
     this.stopLoop();
     this.isCharging = false;
-    if (this.chargeInterval) {
-      clearInterval(this.chargeInterval);
-      this.chargeInterval = null;
-    }
     this.keys['ArrowLeft'] = false;
     this.keys['ArrowRight'] = false;
     this.keys['KeyA'] = false;
@@ -1689,7 +1711,7 @@ class GameEngine {
       // ビープ音によるボール接近通知が開始される
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
-      sounds.playHitSound(this.ball.x);
+      sounds.playServeSound(this.ball.x);
     } 
     else if (payload.actionType === 'ball_hit') {
       // 保留中の得点判定があればキャンセル
@@ -1744,7 +1766,7 @@ class GameEngine {
   // ==========================================================================
   
   /**
-   * 新しいマッチ(5ゲームマッチ)を開始します。
+   * 新しいマッチ(3ゲーム・2ゲーム先取)を開始します。
    */
   startNewMatch() {
     // Feature #17: 難易度を復元
@@ -1756,12 +1778,8 @@ class GameEngine {
     this.scores.p2 = 0;
     this.gameScores.p1 = 0;
     this.gameScores.p2 = 0;
-    // Feature #1: CPU戦のサーブ交代制 (easyならCPU固定(2)、normal/hardならプレイヤー先発(1))
-    if (this.mode === 'cpu') {
-      this.serverRole = 1; // 改善⑦: easy でも先攻サーブはプレイヤー（CPU固定を廃止）
-    } else {
-      this.serverRole = 1;
-    } 
+    // STT準拠: Easyを含む全難易度で、2ポイントごとにサーブ権を交替する。
+    this.serverRole = 1;
     
     // UIの切り替え
     this.changeScreen('play');
@@ -1843,6 +1861,7 @@ class GameEngine {
     this.state = STATE_PRE_SERVE_READY;
     this.stateStartTime = Date.now();
     this.ball.active = false;
+    this.pendingSwingUntil = 0;
 
     // プレイ集中モード: play-instructions テキストボックスを非表示にする
     // (スクリーンリーダーの sr-announcer 経由で音声で案内するため画面テキストは不要)
@@ -1934,51 +1953,61 @@ class GameEngine {
           // CPU戦かつCPUがサーバー（自分がレシーバー）の場合、一定時間後にCPUが自動でサーブを打つ
           if (this.serverRole === 2) {
             const cpuDelay = 1200 + Math.random() * 800;
-            const cpuChargeStartTime = Date.now();
-            
-            // Feature #2: CPUチャージビープ音のシミュレーション
-            const cpuChargeInterval = setInterval(() => {
-              if (this.state !== STATE_SERVE_WAITING) {
-                clearInterval(cpuChargeInterval);
-                return;
-              }
-              const elapsed = Date.now() - cpuChargeStartTime;
-              const ratio = Math.min(elapsed / cpuDelay, 0.8); // 最大0.8まで
-              sounds.playChargeBeep(ratio);
-            }, 150);
 
             setTimeout(() => {
-              clearInterval(cpuChargeInterval);
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.ball.active = true;
 
                 // 難易度に応じてサーブの速度や角度を調整
                 if (this.difficulty === 'easy') {
-                  this.ball.vx = (Math.random() * 0.8 - 0.4); // ±0.4 の微小なランダム横成分
-                  this.ball.vy = 3.5; // 通常より低速
-                } else {
-                  let speedMultiplier = 1.0;
-                  if (this.difficulty === 'hard') speedMultiplier = 1.15;
-                  
-                  // Feature #2 / 改善③: CPUチャージシミュレーションによる初速設定 + サーブバリエーション（直球/左/右）
-                  const chargeRatio = 0.3 + Math.random() * 0.5;
-                  const baseVy = (4.5 + chargeRatio * 3.5) * speedMultiplier;
-
-                  const serveType = Math.random();
-                  let cpuServeVx;
-                  if (serveType < 0.33) {
-                    cpuServeVx = (Math.random() * 1.0 - 0.5) * speedMultiplier; // 直球（横ほぼなし）
-                  } else if (serveType < 0.66) {
-                    cpuServeVx = -(1.5 + Math.random() * 2.5) * speedMultiplier; // 左流し
+                  // 初級: 打ち返しやすい安定した低速サーブ (中央付近へ)
+                  this.ball.vx = (Math.random() * 0.6 - 0.3);
+                  this.ball.vy = 3.3;
+                } else if (this.difficulty === 'normal') {
+                  // ノーマル: スローサーブ、通常速度サーブ、高速サーブをランダムに打ち分け
+                  const speedCategory = Math.random();
+                  let baseVy;
+                  if (speedCategory < 0.33) {
+                    // スローサーブ (ふわりと緩い球)
+                    baseVy = 3.8 + Math.random() * 0.5; // 3.8〜4.3
+                  } else if (speedCategory < 0.67) {
+                    // 通常速度サーブ
+                    baseVy = 5.2 + Math.random() * 0.8; // 5.2〜6.0
                   } else {
-                    cpuServeVx = (1.5 + Math.random() * 2.5) * speedMultiplier;  // 右流し
+                    // 高速サーブ (鋭く速い球)
+                    baseVy = 7.0 + Math.random() * 1.0; // 7.0〜8.0
+                  }
+
+                  const serveAngle = Math.random();
+                  let cpuServeVx;
+                  if (serveAngle < 0.4) {
+                    cpuServeVx = (Math.random() * 0.8 - 0.4); // 直球
+                  } else if (serveAngle < 0.7) {
+                    cpuServeVx = -(1.2 + Math.random() * 2.0); // 左流し
+                  } else {
+                    cpuServeVx = (1.2 + Math.random() * 2.0);  // 右流し
+                  }
+                  this.ball.vx = cpuServeVx;
+                  this.ball.vy = baseVy;
+                } else {
+                  // ハード: 強烈かつ鋭角な高速サーブ
+                  const chargeRatio = 0.5 + Math.random() * 0.5;
+                  const baseVy = (5.5 + chargeRatio * 3.5) * 1.15;
+                  const serveAngle = Math.random();
+                  let cpuServeVx;
+                  if (serveAngle < 0.33) {
+                    cpuServeVx = (Math.random() * 1.0 - 0.5) * 1.15;
+                  } else if (serveAngle < 0.66) {
+                    cpuServeVx = -(1.8 + Math.random() * 3.0) * 1.15;
+                  } else {
+                    cpuServeVx = (1.8 + Math.random() * 3.0) * 1.15;
                   }
                   this.ball.vx = cpuServeVx;
                   this.ball.vy = baseVy;
                 }
                 
-                sounds.playHitSound(this.ball.x);
+                sounds.playServeSound(this.ball.x, this.difficulty);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
             }, cpuDelay);
@@ -1992,7 +2021,6 @@ class GameEngine {
         // Feature #2: チャージ量を計算して初速に反映
         const chargeTime = this.isCharging ? Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0) : 0;
         this.isCharging = false;
-        if (this.chargeInterval) { clearInterval(this.chargeInterval); this.chargeInterval = null; }
         const chargeRatio = chargeTime;
         const baseVy = 4.5 + (chargeRatio * 3.5); // 4.5〜8.0
 
@@ -2018,7 +2046,7 @@ class GameEngine {
           this.ball.vy = baseVy;
         }
         
-        sounds.playHitSound(this.ball.x);
+        sounds.playServeSound(this.ball.x, this.difficulty);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
         
         if (this.mode === 'online') {
@@ -2034,50 +2062,8 @@ class GameEngine {
       }
     }
     else if (this.state === STATE_RALLY) {
-      // 4. ラリー中のスペースキー入力による打ち返し
-      const paddle = this.role === 1 ? this.p1 : this.p2;
-      const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
-      const isIncoming = (this.role === 1 && this.ball.vy > 0) || (this.role === 2 && this.ball.vy < 0);
-      
-      // Feature #3: 難易度別のヒットゾーン (easy: 50px, hard: 20px, normal: 30px)
-      const hitZone = this.difficulty === 'easy' ? 50 : this.difficulty === 'hard' ? 20 : 30;
-      const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
-      const hitPaddle = this.ball.x >= paddle.x - 15 && this.ball.x <= paddle.x + PADDLE_WIDTH + 15;
-      
-      // スイング音とスイング波紋エフェクトを即座に発生させる (ボールのヒットに関わらず連打可能)
-      sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2);
-      this.addRipple(paddle.x + PADDLE_WIDTH / 2, defenseY, 'swing');
-
-      if (isIncoming && isNearPaddle && hitPaddle) {
-        // 打ち返し成功！
-        this.ball.y = defenseY; // 位置補正
-        const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-        this.ball.vx = relativeHitPos * 7.5; // フレームショットで横に大きく逸れるように拡張
-        
-        if (this.role === 1) {
-          this.ball.vy = -Math.abs(this.ball.vy) * 1.05; // 上方向（-Y）へ打ち返す
-        } else {
-          this.ball.vy = Math.abs(this.ball.vy) * 1.05;  // 下方向（+Y）へ打ち返す
-        }
-        
-        sounds.playHitSound(this.ball.x);
-        sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy');
-        if (this.role === 1) {
-          this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
-        } else {
-          this.addRipple(this.ball.x, this.ball.y, 'hit');
-        }
-        
-        if (this.mode === 'online') {
-          this.net.send('action', { 
-            actionType: 'ball_hit', 
-            x: this.ball.x, 
-            y: this.ball.y, 
-            vx: this.ball.vx, 
-            vy: this.ball.vy 
-          });
-        }
-      }
+      this.pendingSwingUntil = Date.now() + 180;
+      this.tryPlayerReturn();
     }
   }
 
@@ -2198,8 +2184,8 @@ class GameEngine {
         this.gameScores[gameWinner === 1 ? 'p1' : 'p2']++;
         this.updateScoreboard();
         
-        // マッチ勝利条件（2セット先取）のチェック
-        const winThreshold = Math.ceil(this.matchGames / 2); // 3ゲームマッチなら2
+        // 3ゲームマッチの勝利条件（2ゲーム先取）
+        const winThreshold = Math.ceil(this.matchGames / 2);
         if (this.gameScores.p1 >= winThreshold || this.gameScores.p2 >= winThreshold) {
           // マッチ終了（全ゲームセット）
           this.finishMatch(this.gameScores.p1 > this.gameScores.p2 ? 1 : 2);
@@ -2223,15 +2209,11 @@ class GameEngine {
           }, 3000);
         }
       } else {
-        // 次のサーブ権の移行チェック
-        // Feature #1 / 改善⑦: 全難易度・全モードで共通のサーブ交代制（2点ごと交代、デュース時1点ごと）
-        {
-          const total = p1 + p2;
-          if (p1 >= 10 && p2 >= 10) {
-            this.serverRole = this.serverRole === 1 ? 2 : 1;
-          } else if (total > 0 && total % 2 === 0) {
-            this.serverRole = this.serverRole === 1 ? 2 : 1;
-          }
+        // 次のサーブ権の移行チェック（全難易度共通）
+        const total = p1 + p2;
+        const serviceChangePoints = p1 >= 10 && p2 >= 10 ? 1 : 2;
+        if (total > 0 && total % serviceChangePoints === 0) {
+          this.serverRole = this.serverRole === 1 ? 2 : 1;
         }
         
         this.prepareServeSequence();
@@ -2322,12 +2304,122 @@ class GameEngine {
   // 8. 物理エンジン & CPU AI
   // ==========================================================================
 
+  getBallAssistKeys() {
+    const keys = { ...this.keys };
+    if (!this.ball.active || this.state !== STATE_RALLY) return keys;
+
+    const isIncoming = this.role === 1
+      ? this.ball.vy > 0 && this.ball.y >= Y_NET
+      : this.ball.vy < 0 && this.ball.y <= Y_NET;
+    if (!isIncoming || keys.ArrowLeft || keys.ArrowRight) return keys;
+
+    const paddle = this.role === 1 ? this.p1 : this.p2;
+    const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
+
+    // ラケットに到達する頃の X 座標を先読みする。現在位置だけを追うと、
+    // 横に速い球や壁で反射する球に対してラケットが後手になる。
+    const framesToPaddle = Math.max(0, (defenseY - this.ball.y) / this.ball.vy);
+    let targetCenter = this.ball.x + this.ball.vx * framesToPaddle;
+    const maxX = CANVAS_WIDTH - BALL_RADIUS;
+    const minX = BALL_RADIUS;
+    const span = maxX - minX;
+    if (span > 0) {
+      // 壁反射を折り返し座標に変換して、実際に届く位置を求める。
+      let reflected = ((targetCenter - minX) % (span * 2) + span * 2) % (span * 2);
+      if (reflected > span) reflected = span * 2 - reflected;
+      targetCenter = minX + reflected;
+    }
+    const targetX = targetCenter - PADDLE_WIDTH / 2;
+    if (targetX < paddle.x - 2) keys.ArrowLeft = true;
+    if (targetX > paddle.x + 2) keys.ArrowRight = true;
+    return keys;
+  }
+
+  tryPlayerReturn() {
+    if (!this.ball.active || this.state !== STATE_RALLY) return false;
+
+    const paddle = this.role === 1 ? this.p1 : this.p2;
+    const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
+    const isIncoming = (this.role === 1 && this.ball.vy > 0) ||
+      (this.role === 2 && this.ball.vy < 0);
+    const hitZone = this.difficulty === 'easy' ? 130 : this.difficulty === 'hard' ? 30 : 45;
+    const paddleMargin = (this.difficulty === 'easy' ? 45 : 15) + BALL_RADIUS;
+    const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
+    const hitPaddle = this.ball.x >= paddle.x - paddleMargin &&
+      this.ball.x <= paddle.x + PADDLE_WIDTH + paddleMargin;
+
+    if (!isIncoming || !isNearPaddle || !hitPaddle) {
+      console.debug('[STT return rejected]', {
+        role: this.role,
+        ball: { x: this.ball.x, y: this.ball.y, vx: this.ball.vx, vy: this.ball.vy },
+        paddleX: paddle.x,
+        defenseY,
+        isIncoming,
+        isNearPaddle,
+        hitPaddle
+      });
+      return false;
+    }
+
+    this.pendingSwingUntil = 0;
+    this.ball.y = defenseY;
+    const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
+    this.ball.vx = relativeHitPos * 7.5;
+    this.ball.vy = this.role === 1
+      ? -Math.abs(this.ball.vy) * 1.05
+      : Math.abs(this.ball.vy) * 1.05;
+
+    sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2, defenseY);
+    sounds.playHitSound(this.ball.x, defenseY);
+    sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
+    this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
+    console.debug('[STT return success]', {
+      role: this.role,
+      x: this.ball.x,
+      y: this.ball.y,
+      vx: this.ball.vx,
+      vy: this.ball.vy
+    });
+
+    if (this.mode === 'online') {
+      this.net.send('action', {
+        actionType: 'ball_hit',
+        x: this.ball.x,
+        y: this.ball.y,
+        vx: this.ball.vx,
+        vy: this.ball.vy
+      });
+    }
+    return true;
+  }
+
+  processBufferedSwing() {
+    if (!this.pendingSwingUntil) return;
+
+    if (Date.now() > this.pendingSwingUntil || this.state !== STATE_RALLY) {
+      this.pendingSwingUntil = 0;
+      return;
+    }
+
+    // handleActionInput() が現在のボール位置で成功判定を行う。
+    // 成功すればそこで pendingSwingUntil がクリアされる。
+    const pendingUntil = this.pendingSwingUntil;
+    this.pendingSwingUntil = 0;
+    this.handleActionInput();
+
+    // まだ判定帯に届いていない場合は、残り時間だけ保留を継続する。
+    if (this.state === STATE_RALLY && this.pendingSwingUntil === 0 && Date.now() < pendingUntil) {
+      this.pendingSwingUntil = pendingUntil;
+    }
+  }
+
   /**
    * ゲームの物理アップデート (1フレームごとの処理)。
    */
   updatePhysics() {
     if (this.isGameplayPaused) return;
     try {
+      const physicsKeys = this.getBallAssistKeys();
       // サービス前のボール吸着処理 (物理演算呼び出し前に行う)
       if (this.state === STATE_PRE_SERVE_READY || 
           this.state === STATE_PRE_SERVE_HEARD || 
@@ -2347,7 +2439,7 @@ class GameEngine {
         this.ball,
         this.p1,
         this.p2,
-        this.keys,
+        physicsKeys,
         this.mode,
         this.state,
         this.role,
@@ -2368,19 +2460,20 @@ class GameEngine {
         const oppDeltaX = Math.abs(oppPaddleX - (this.lastOppPaddleX || oppPaddleX));
         
         const now = Date.now();
-        if (myDeltaX > 0.02) {
-          if (now - (this.lastFootstepTime || 0) > 60) { // 60ms 間隔
-            sounds.playFootstepSound(myPaddleX, myDeltaX);
-            this.lastFootstepTime = now;
-          }
+        if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
+          sounds.playFootstepSound(myPaddleX, myDeltaX);
+          this.lastFootstepTime = now;
         }
-        if (oppDeltaX > 0.02 && this.mode === 'cpu') {
-          if (now - (this.lastOppFootstepTime || 0) > 60) {
-            sounds.playCpuMoveSound(oppPaddleX, oppDeltaX);
-            this.lastOppFootstepTime = now;
-          }
+        // 中央判定 (コート中央 X=400 に対し、ラケット中心が 370〜430 の範囲内)
+        const myCenterPos = myPaddleX + PADDLE_WIDTH / 2;
+        const isInCenter = Math.abs(myCenterPos - (CANVAS_WIDTH / 2)) < 30;
+
+        // 中央に入った瞬間にピピッ/振動（目印音）を再生
+        if (isInCenter && !this.wasInCenter) {
+          sounds.playCenterBeep(myCenterPos);
         }
-        
+        this.wasInCenter = isInCenter;
+
         this.lastMyPaddleX = myPaddleX;
         this.lastOppPaddleX = oppPaddleX;
 
@@ -2420,6 +2513,13 @@ class GameEngine {
         // 立体音響のアップデート
         if (this.ball.active && this.state === STATE_RALLY) {
           sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
+        }
+        this.processBufferedSwing();
+
+        // ラケットが玉の到達位置に合っていれば、自動で返球してラリーを継続する。
+        // 手動のSpace/タップによる返球は tryPlayerReturn がそのまま担当する。
+        if (this.ball.active && this.state === STATE_RALLY) {
+          this.tryPlayerReturn();
         }
 
 
@@ -2509,18 +2609,20 @@ class GameEngine {
     // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
     const maxSpeed = this.difficulty === 'hard' ? 9 : this.difficulty === 'normal' ? 8 : 7;
     const paddle = this.role === 1 ? this.p1 : this.p2;
+    const isAssistMove = !this.keys['ArrowLeft'] && !this.keys['ArrowRight'] &&
+      (physicsKeys['ArrowLeft'] || physicsKeys['ArrowRight']);
     
-    if (this.keys['ArrowLeft']) {
+    if (physicsKeys['ArrowLeft']) {
       // チルト操作中は比例速度を使用、キーボードは最大速度
-      const speed = (this.useTilt && this.tiltSpeed !== undefined)
+      const speed = !isAssistMove && this.useTilt && this.tiltSpeed !== undefined
         ? maxSpeed * this.tiltSpeed
         : maxSpeed;
       paddle.x -= speed;
       if (paddle.x < 0) paddle.x = 0;
       this.syncPaddlePosition(paddle.x);
     }
-    if (this.keys['ArrowRight']) {
-      const speed = (this.useTilt && this.tiltSpeed !== undefined)
+    if (physicsKeys['ArrowRight']) {
+      const speed = !isAssistMove && this.useTilt && this.tiltSpeed !== undefined
         ? maxSpeed * this.tiltSpeed
         : maxSpeed;
       paddle.x += speed;
@@ -2529,6 +2631,15 @@ class GameEngine {
     }
 
     // 2. CPUのAI (CPU戦かつ相手のターン時)
+    const myPaddleX = paddle.x;
+    const myDeltaX = Math.abs(myPaddleX - this.lastMyPaddleX);
+    const now = Date.now();
+    if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
+      sounds.playFootstepSound(myPaddleX, myDeltaX);
+      this.lastFootstepTime = now;
+    }
+    this.lastMyPaddleX = myPaddleX;
+
     if (this.mode === 'cpu' && this.state === STATE_RALLY && this.ball.vy < 0) {
       // 難易度に応じたCPUの追従速度とブレを設定
       let cpuSpeed = 5.0;
@@ -2579,10 +2690,12 @@ class GameEngine {
         this.ball.vx = -this.ball.vx * 0.85;
       }
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
+      this.processBufferedSwing();
 
     }
     const shouldComputeBall = !(this.mode === 'online' && this.role === 2);
     if (shouldComputeBall && this.ball.active && this.state === STATE_RALLY) {
+      this.processBufferedSwing();
       // 摩擦による減速
       this.ball.vx *= TABLE_FRICTION;
       this.ball.vy *= TABLE_FRICTION;

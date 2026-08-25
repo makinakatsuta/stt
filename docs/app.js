@@ -38,7 +38,7 @@ class SoundSystem {
     this.ballRollFilter = null;
     this.panner = null; // PannerNode for mono sound assets
     this.isMuted = false;
-    this.assetsOnly = true; // sounds/ 配下の実音源だけを再生する
+    this.assetsOnly = true; // docs/sounds/ 配下の実音源だけを再生する
 
     // 本物の実録音源バッファ
     this.realRollBuffer = null;
@@ -118,10 +118,10 @@ class SoundSystem {
 
     try {
       const [rollBuf, s1, s2, s3] = await Promise.all([
-        fetchAudio('/sounds/drop down.m4a'),
-        fetchAudio('/sounds/serve1.m4a'),
-        fetchAudio('/sounds/serve2.m4a'),
-        fetchAudio('/sounds/serve3.m4a')
+        fetchAudio('sounds/drop down.m4a'),
+        fetchAudio('sounds/serve1.m4a'),
+        fetchAudio('sounds/serve2.m4a'),
+        fetchAudio('sounds/serve3.m4a')
       ]);
 
       if (rollBuf) {

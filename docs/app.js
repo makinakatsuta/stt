@@ -60,6 +60,11 @@ class SoundSystem {
     // クロスブラウザ対応で AudioContext を作成
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AudioContextClass();
+    // ブラウザの自動再生制限で suspended になっている場合に備え、
+    // ユーザー操作の直後に明示的に再開します。
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(err => console.warn('AudioContext resume failed:', err));
+    }
     
     // Decode sound assets to mono first, then apply simple left/right positioning.
     this.panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
@@ -95,7 +100,7 @@ class SoundSystem {
     // 足音などの短い摩擦音に使うノイズ素材を用意します。
     this.createNoiseBuffer();
     
-    // 実音源ファイル (drop down.m4a, serve1~3.m4a) の非同期読み込み
+    // 実音源ファイル (SMASH1.m4a, serve1~3.m4a) の非同期読み込み
     this.loadAudioFiles();
   }
 
@@ -105,7 +110,9 @@ class SoundSystem {
   async loadAudioFiles() {
     const fetchAudio = async (url) => {
       try {
-        const response = await fetch(url);
+        // GitHub Pages などのサブパス配下でも docs/sounds を正しく解決する。
+        const audioUrl = new URL(url, document.baseURI).href;
+        const response = await fetch(audioUrl);
         if (!response.ok) return null;
         const arrayBuffer = await response.arrayBuffer();
         const decoded = await this.ctx.decodeAudioData(arrayBuffer);
@@ -118,7 +125,7 @@ class SoundSystem {
 
     try {
       const [rollBuf, s1, s2, s3] = await Promise.all([
-        fetchAudio('sounds/drop down.m4a'),
+        fetchAudio('sounds/SMASH1.m4a'),
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a')
@@ -220,7 +227,7 @@ class SoundSystem {
   }
 
   /**
-   * drop down.m4a の実録転がり音ループを開始します。
+   * SMASH1.m4a の実録転がり音ループを開始します。
    */
   startRealRollLoop() {
     if (!this.realRollBuffer || !this.ctx) return;
@@ -299,7 +306,7 @@ class SoundSystem {
 
   /**
    * ボールのリアルタイムな位置と速度に応じて、3D空間定位・距離減衰・空気吸収フィルター・
-   * および実録音源 (drop down.m4a) の再生音量を動的に更新します。
+   * および実録音源 (SMASH1.m4a) の再生音量を動的に更新します。
    * @param {number} x ボールのX座標 (0〜800)
    * @param {number} y ボールのY座標 (0〜500)
    * @param {number} vx ボールのX方向速度
@@ -344,7 +351,7 @@ class SoundSystem {
     
     if (speed < 0.1) targetVolume = 0; // 停止時は消音
     
-    // 本物の実録ピン球音源 (drop down.m4a) のみを再生
+    // 本物の実録ピン球音源 (SMASH1.m4a) のみを再生
     if (this.realRollGain) {
       this.realRollGain.gain.setTargetAtTime(targetVolume * 1.8, this.ctx.currentTime, 0.04);
     }

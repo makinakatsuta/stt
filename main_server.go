@@ -8,7 +8,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -45,15 +47,15 @@ type Message struct {
 
 // Room は対戦が行われる部屋を表します。
 type Room struct {
-	id                  string             // 部屋ID
-	players             map[string]*Client // 部屋に参加しているプレイヤー（最大2名）
-	observers           map[string]*Client // 観戦者マップ（最大5名）
-	disconnectedPlayers map[string]*Client // 一時切断中のプレイヤー（再接続待ち）
+	id                  string                 // 部屋ID
+	players             map[string]*Client     // 部屋に参加しているプレイヤー（最大2名）
+	observers           map[string]*Client     // 観戦者マップ（最大5名）
+	disconnectedPlayers map[string]*Client     // 一時切断中のプレイヤー（再接続待ち）
 	reconnectTimers     map[string]*time.Timer // 再接続待ちタイマー
-	register            chan *Client       // 参加用チャネル
-	unregister          chan *Client       // 退出用チャネル
-	broadcast           chan []byte        // ブロードキャスト用チャネル
-	mu                  sync.Mutex         // 部屋内の排他制御用
+	register            chan *Client           // 参加用チャネル
+	unregister          chan *Client           // 退出用チャネル
+	broadcast           chan []byte            // ブロードキャスト用チャネル
+	mu                  sync.Mutex             // 部屋内の排他制御用
 }
 
 // NewRoom は新しい対戦部屋を作成します。
@@ -513,12 +515,23 @@ func openBrowser(url string) {
 }
 
 func main() {
+	// ダブルクリック起動時も、実行ファイルと同じ場所の docs を参照する。
+	baseDir, err := os.Getwd()
+	if exePath, exeErr := os.Executable(); exeErr == nil {
+		baseDir = filepath.Dir(exePath)
+	}
+	docsDir := filepath.Join(baseDir, "docs")
+	if _, err := os.Stat(docsDir); err != nil {
+		// go run など、実行ファイルの場所に docs がない場合は作業フォルダを使う。
+		docsDir = "docs"
+	}
+
 	// 静的ファイルの配信設定 (docs ディレクトリ以下をルートとしてサーブ)
-	fs := http.FileServer(http.Dir("./docs"))
+	fs := http.FileServer(http.Dir(docsDir))
 	http.Handle("/", fs)
 
 	// サウンドファイルの配信設定 (docs/sounds ディレクトリ)
-	soundsFs := http.StripPrefix("/sounds/", http.FileServer(http.Dir("./docs/sounds")))
+	soundsFs := http.StripPrefix("/sounds/", http.FileServer(http.Dir(filepath.Join(docsDir, "sounds"))))
 	http.Handle("/sounds/", soundsFs)
 
 	// WebSocket エンドポイントの登録
@@ -528,8 +541,19 @@ func main() {
 	go serverInstance.CleanEmptyRooms()
 
 	// サーバーの起動
-	port := ":8080"
-	log.Printf("STT Game Server starting on http://localhost%s", port)
+	// 8080 が使用中でも起動できるよう、空きポートへフォールバックする。
+	listener, err := net.Listen("tcp", ":8080")
+	if err != nil {
+		log.Printf("Port 8080 is unavailable; selecting a free port: %v", err)
+		listener, err = net.Listen("tcp", ":0")
+		if err != nil {
+			log.Fatal("Failed to find an available port: ", err)
+		}
+	}
+	defer listener.Close()
+	actualPort := listener.Addr().(*net.TCPAddr).Port
+	localURL := fmt.Sprintf("http://localhost:%d", actualPort)
+	log.Printf("STT Game Server starting on %s", localURL)
 
 	// LAN内のIPアドレスを取得してスマホ向けURLを表示
 	if ifaces, err := net.Interfaces(); err == nil {
@@ -556,7 +580,7 @@ func main() {
 				if ip == nil || ip.IsLoopback() || ip.To4() == nil {
 					continue
 				}
-				log.Printf("   👉 http://%s:8080", ip.String())
+				log.Printf("   👉 http://%s:%d", ip.String(), actualPort)
 			}
 		}
 		log.Println("==================================================")
@@ -565,10 +589,10 @@ func main() {
 	// サーバーが正常に起動してからブラウザを自動で開く (別スレッド)
 	go func() {
 		time.Sleep(200 * time.Millisecond) // サーバーソケットが完全にListenするのを待つ
-		openBrowser("http://localhost:8080")
+		openBrowser(localURL)
 	}()
 
-	if err := http.ListenAndServe(port, nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
+	if err := http.Serve(listener, nil); err != nil {
+		log.Fatal("HTTP server stopped: ", err)
 	}
 }

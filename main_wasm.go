@@ -77,6 +77,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	ballVx := jsBall.Get("vx").Float()
 	ballVy := jsBall.Get("vy").Float()
 	ballActive := jsBall.Get("active").Bool()
+	easyGuaranteedReturns := jsBall.Get("easyGuaranteedReturns").Int()
 
 	// Get paddle properties
 	p1X := jsP1.Get("x").Float()
@@ -122,18 +123,18 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 	// 2. CPU AI movement
 	if mode == "cpu" && state == "RALLY" && ballVy < 0 {
-		cpuSpeed := 5.0
+		cpuSpeed := 4.5
 		targetOffset := 0.0
 
 		switch difficulty {
 		case "easy":
-			cpuSpeed = 5.0
+			cpuSpeed = 4.05
 			targetOffset = math.Sin(timeMs/600.0) * 8.0
 		case "normal":
-			cpuSpeed = 5.2
+			cpuSpeed = 4.68
 			targetOffset = math.Sin(timeMs/300.0) * 15.0
 		case "hard":
-			cpuSpeed = 8.5
+			cpuSpeed = 7.65
 			targetOffset = 0.0
 		}
 
@@ -205,21 +206,33 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		if ballVy > 0 && ballY >= YDefenseP1 && ballY <= YDefenseP1+25 {
 			isP1Cpu := (mode == "cpu" && role == 2)
 			if isP1Cpu {
+				easyGuaranteeActive := difficulty == "easy" && easyGuaranteedReturns < 3
+				if easyGuaranteeActive {
+					p1X = math.Max(0, math.Min(CanvasWidth-PaddleWidth, ballX-PaddleWidth/2.0))
+				}
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
 				if hitPaddle {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					cpuVxFactor := 4.0
-					cpuVyBoost := 1.05
+					cpuVxFactor := 3.6
+					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.5
-						cpuVyBoost = 1.02
+						cpuVxFactor = 1.35
+						cpuVyBoost = 1.018
 					} else if difficulty == "hard" {
-						cpuVxFactor = 6.0
-						cpuVyBoost = 1.12
+						cpuVxFactor = 5.4
+						cpuVyBoost = 1.144
 					}
-					ballVx = relativeHitPos * cpuVxFactor
-					ballVy = -math.Abs(ballVy) * cpuVyBoost
+					easySpeedFactor := 1.0
+					if difficulty == "easy" {
+						easySpeedFactor = 0.8
+					}
+					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
+					ballVy = -math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
+					if easyGuaranteeActive {
+						easyGuaranteedReturns++
+						jsBall.Set("easyGuaranteedReturns", easyGuaranteedReturns)
+					}
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -237,21 +250,33 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		if ballVy < 0 && ballY <= YDefenseP2 && ballY >= YDefenseP2-25 {
 			isP2Cpu := (mode == "cpu" && role == 1)
 			if isP2Cpu {
+				easyGuaranteeActive := difficulty == "easy" && easyGuaranteedReturns < 3
+				if easyGuaranteeActive {
+					p2X = math.Max(0, math.Min(CanvasWidth-PaddleWidth, ballX-PaddleWidth/2.0))
+				}
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
 				if hitPaddle {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					cpuVxFactor := 4.0
-					cpuVyBoost := 1.05
+					cpuVxFactor := 3.6
+					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.5
-						cpuVyBoost = 1.02
+						cpuVxFactor = 1.35
+						cpuVyBoost = 1.018
 					} else if difficulty == "hard" {
-						cpuVxFactor = 6.0
-						cpuVyBoost = 1.12
+						cpuVxFactor = 5.4
+						cpuVyBoost = 1.144
 					}
-					ballVx = relativeHitPos * cpuVxFactor
-					ballVy = math.Abs(ballVy) * cpuVyBoost
+					easySpeedFactor := 1.0
+					if difficulty == "easy" {
+						easySpeedFactor = 0.8
+					}
+					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
+					ballVy = math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
+					if easyGuaranteeActive {
+						easyGuaranteedReturns++
+						jsBall.Set("easyGuaranteedReturns", easyGuaranteedReturns)
+					}
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",

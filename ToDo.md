@@ -514,3 +514,53 @@ Go 1.26 環境に対応し、フロントエンド・WebAssembly・サーバー�
   - CPU返球成功率98%、返球速度ブースト1.16倍に調整した。
 - [x] 43.4 **[確認] 構文・差分チェック**
   - `node --check docs/js/game-engine.js` と `git diff --check` を実施した。
+
+## [x] 44. 全難易度の難易度緩和 (2026-08-28)
+
+全体的にCPUが強くなりすぎていたため、Easy／Normal／Hardのすべてを従来比約10%緩和した。
+
+- [x] 44.1 **[ゲームロジック] CPUパラメータの緩和** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - CPU追従速度、返球率、返球横速度、返球時の縦加速を各難易度で約10%下げた。
+  - Easy／Normal／Hardの難易度差は維持した。
+- [x] 44.2 **[ゲームロジック] サーブ速度の緩和** (`docs/js/game-engine.js`)
+  - CPUおよびプレイヤーのサーブ速度を従来比90%に調整した。
+- [x] 44.3 **[配布・同期] WASM再ビルド** (`docs/main.wasm`)
+  - JavaScriptフォールバックとWASMのCPU難易度パラメータを同期した。
+- [x] 44.4 **[確認] 構文・ビルド・テスト**
+  - `node --check docs/js/game-engine.js`、`git diff --check`、`go test ./...`、WASMビルドを実施した。
+
+## [x] 45. Easyモードの初心者向けラリー保証と速度緩和 (2026-08-28)
+
+初めて遊ぶ人が操作に慣れるまでラリーを続けられるよう、Easyモードだけを調整した。Normal／Hardは変更していない。
+
+- [x] 45.1 **[ゲームロジック] Easyモードの最低5回ラリー保証** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - 各ラリーの最初の5回のCPU返球では、CPUラケットをボール位置へ補正して返球を保証する。
+  - 5回の保証後は通常のEasy難易度へ戻る。
+- [x] 45.2 **[ゲームロジック] Easyモードのボール速度緩和** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Easyモードのサーブ速度とラリー中のボール速度を、今回の基準値からさらに20%下げた。
+  - Normal／Hardの速度設定は変更していない。
+- [x] 45.3 **[配布・同期] WASM再ビルド** (`docs/main.wasm`)
+  - JavaScriptフォールバックとWASMのEasy専用ロジックを同期した。
+- [x] 45.4 **[確認] 構文・ビルド・テスト**
+  - `node --check docs/js/game-engine.js`、`git diff --check`、`go test ./...`、WASMビルドを実施した。
+
+## [x] 46. Easyモードのサーブ音・ラリー音フロー統一 (2026-08-28)
+
+Easyモードを初心者向けの転がりラリーとして分かりやすくするため、音源の選択と接触音の順序を整理した。
+
+- [x] 46.1 **[音源選択] Easyでserve3.m4aを不使用** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)
+  - Easyのサーブ音は`serve1.m4a`または`serve2.m4a`から選び、`serve3.m4a`を除外した。
+- [x] 46.2 **[音声フロー] 接触音と転がり音の統一** (`docs/js/game-engine.js`)
+  - Easyのサーブ・手動返球・CPU返球・オンライン受信で「コン」後に「ゴロゴロ」を再生する。
+- [x] 46.3 **[確認] 各再生経路の構文チェック**
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、`git diff --check`を実施した。
+
+## [x] 47. EasyモードのCPUラリー保証回数調整 (2026-08-28)
+
+Easyモードの初心者向け保証を3回成功までに短縮し、以降はランダムな返球ミスと既存のアウト判定へ戻す。
+
+- [x] 47.1 **[ゲームロジック] CPU返球保証を3回へ変更** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - 各ラリーの最初の3回だけCPUラケット位置を補正して返球を保証する。
+  - 4回目以降はEasyの返球成功率54%を使用する。
+- [x] 47.2 **[確認] Easy専用変更の検証**
+  - Normal／Hardの分岐を変更せず、JavaScript構文チェック、Goテスト、WASMビルドを実施する。

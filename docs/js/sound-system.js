@@ -466,7 +466,7 @@ export class SoundSystem {
 
   /**
    * サーブ音 (実録音源 serve1.m4a〜serve3.m4a を難易度やランダムに応じて再生)
-   *  - 初級(easy): serve1.m4a（またはランダム）
+   *  - 初級(easy): serve1.m4a / serve2.m4a（serve3.m4aは使用しない）
    *  - 中級(normal): serve2.m4a（またはランダム）
    *  - 応用/上級(hard): serve3.m4a（またはランダム）
    * @param {number} x 打球X座標
@@ -475,13 +475,16 @@ export class SoundSystem {
    */
   playServeSound(x, difficulty = null, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
-    // serve1/2/3 は難易度ではなく、毎回ランダムな速度バリエーションとして使う。
-    difficulty = null;
-
     if (this.serveBuffers) {
       try {
         let buffer = null;
-        if (difficulty && this.serveBuffers[difficulty]) {
+        if (difficulty === 'easy') {
+          // Easyではserve3.m4a（上級用）を使わない。
+          const easyBuffers = [this.serveBuffers.easy, this.serveBuffers.normal].filter(b => b !== null);
+          if (easyBuffers.length > 0) {
+            buffer = easyBuffers[Math.floor(Math.random() * easyBuffers.length)];
+          }
+        } else if (difficulty && this.serveBuffers[difficulty]) {
           // 指定難易度の音源を優先（80%）、20%の確率で他とランダムにしてバリエーションを演出
           if (Math.random() < 0.8) {
             buffer = this.serveBuffers[difficulty];

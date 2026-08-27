@@ -204,8 +204,14 @@ export class GameEngine {
     }, { passive: false });
 
     // 1. オーディオ有効化ボタン
-    document.getElementById('btn-enable-audio').addEventListener('click', () => {
-      sounds.init();
+    const btnEnableAudio = document.getElementById('btn-enable-audio');
+    if (btnEnableAudio) btnEnableAudio.addEventListener('click', () => {
+      try {
+        sounds.init();
+      } catch (error) {
+        // Audio failure must not prevent the game menu from opening.
+        console.warn('Audio initialization skipped:', error);
+      }
 
       // Feature #17: 設定から体移動操作設定を復元
       const useTiltCheckbox = document.getElementById('chk-use-tilt');
@@ -1035,7 +1041,6 @@ export class GameEngine {
                 } else {
                   // ハード: 強烈かつ鋭角な高速サーブ
                   // 90% は高速、10% だけ遅い変化球にする。
-                  const isSlowHardServe = Math.random() < 0.10;
                   const isSlowHardServe = Math.random() < 0.10;
                   const baseVy = isSlowHardServe
                     ? 4.0 + Math.random() * 0.8

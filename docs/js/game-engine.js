@@ -29,7 +29,7 @@ export class GameEngine {
     this.state = STATE_MENU;
 
     // ゲームオブジェクトのステート
-    this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyGuaranteedReturns: 0 };
+    this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0 };
     this.p1 = { x: 350, y: Y_DEFENSE_P1 + 50 }; // 手前 (自分)
     this.p2 = { x: 350, y: Y_DEFENSE_P2 - 50 }; // 奥 (相手 / CPU)
 
@@ -1013,7 +1013,7 @@ export class GameEngine {
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.ball.active = true;
-                this.ball.easyGuaranteedReturns = 0;
+                this.ball.easyPlayerReturns = 0;
 
                 // 難易度に応じてサーブの速度や角度を調整
                 if (this.difficulty === 'easy') {
@@ -1099,7 +1099,7 @@ export class GameEngine {
 
         this.state = STATE_RALLY;
         this.ball.active = true;
-        this.ball.easyGuaranteedReturns = 0;
+        this.ball.easyPlayerReturns = 0;
 
         // 音声のみでラリー開始を案内（テキストフィールドには書かない）
         // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
@@ -1470,6 +1470,11 @@ export class GameEngine {
     sounds.startRallyMusic();
     sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
     this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
+    // Easyの「3回ラリー」は、CPUの自動返球回数ではなく、
+    // プレイヤーが実際に成功させた返球回数で成立させる。
+    if (this.difficulty === 'easy') {
+      this.ball.easyPlayerReturns++;
+    }
     console.debug('[STT return success]', {
       role: this.role,
       x: this.ball.x,
@@ -1743,8 +1748,7 @@ export class GameEngine {
 
       switch (this.difficulty) {
         case 'easy':
-          // 【簡単モード】ラリー練習重視 — CPUは必ずボールを打ち返す設計
-          // 追従速度を上げてミスを減らし、ブレをほぼゼロにして長いラリーを維持できるようにする
+          // 【簡単モード】プレイヤーが3回返球できるよう、最初だけCPU返球を補助する
           cpuSpeed = 4.05; // 従来比90%
           targetOffset = Math.sin(Date.now() / 600) * 8; // 微小なブレのみ（自然な動きの演出用）
           break;
@@ -1803,15 +1807,18 @@ export class GameEngine {
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
 
 
-      // --- 左右サイド境界 (X=0, X=800) からの落下（アウト）判定 ---
-      if (this.ball.x - BALL_RADIUS <= 0 || this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
-        // テーブルの横から落ちる（アウト）
-        const hitter = this.ball.vy < 0 ? 1 : 2;
-        const winner = hitter === 1 ? 2 : 1;
-        const edgeX = this.ball.x - BALL_RADIUS <= 0 ? 0 : CANVAS_WIDTH;
-
-        this.addRipple(edgeX, this.ball.y, 'wall'); // 落ちたエフェクトとしてwallを利用
-        this.awardPointTo(winner, 'out');
+      // --- 左右サイド境界 (X=0, X=800) の壁反射 ---
+      // STTでは横端は壁。壁に当たっただけでは失点にせず、反射音を案内する。
+      if (this.ball.x - BALL_RADIUS <= 0) {
+        this.ball.x = BALL_RADIUS;
+        this.ball.vx = -this.ball.vx * 0.85;
+        sounds.playFrameSound(this.ball.x);
+        this.addRipple(this.ball.x, this.ball.y, 'wall');
+      } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
+        this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
+        this.ball.vx = -this.ball.vx * 0.85;
+        sounds.playFrameSound(this.ball.x);
+        this.addRipple(this.ball.x, this.ball.y, 'wall');
       }
 
       // --- ネット (Y=250) の通過判定 ---
@@ -1835,7 +1842,7 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const easyGuaranteeActive = this.difficulty === 'easy' &&
-            this.ball.easyGuaranteedReturns < EASY_GUARANTEED_RETURNS;
+            this.ball.easyPlayerReturns < EASY_GUARANTEED_RETURNS;
           if (easyGuaranteeActive) {
             this.p1.x = Math.max(0, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.ball.x - PADDLE_WIDTH / 2));
           }
@@ -1851,7 +1858,6 @@ export class GameEngine {
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
-            if (easyGuaranteeActive) this.ball.easyGuaranteedReturns++;
 
             sounds.playHitSound(this.ball.x);
             if (this.difficulty === 'easy') {
@@ -1869,7 +1875,7 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const easyGuaranteeActive = this.difficulty === 'easy' &&
-            this.ball.easyGuaranteedReturns < EASY_GUARANTEED_RETURNS;
+            this.ball.easyPlayerReturns < EASY_GUARANTEED_RETURNS;
           if (easyGuaranteeActive) {
             this.p2.x = Math.max(0, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.ball.x - PADDLE_WIDTH / 2));
           }
@@ -1885,7 +1891,6 @@ export class GameEngine {
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
-            if (easyGuaranteeActive) this.ball.easyGuaranteedReturns++;
 
             sounds.playHitSound(this.ball.x);
             if (this.difficulty === 'easy') {

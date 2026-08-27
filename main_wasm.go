@@ -14,7 +14,7 @@ const (
 	PaddleWidth   = 100.0
 	PaddleHeight  = 15.0
 	BallRadius    = 10.0
-	TableFriction = 0.992
+	TableFriction = 0.997
 	YNet          = 250.0
 	YDefenseP1    = 400.0
 	YDefenseP2    = 100.0

@@ -746,9 +746,11 @@ export class GameEngine {
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playServeSound(this.ball.x);
-      sounds.startRallyMusic();
+      sounds.playServeRollSound(this.ball.x, this.ball.y);
     }
     else if (payload.actionType === 'ball_hit') {
+      // 得点確定後に遅れて届いた打球通知でラリー音や球を再開しない。
+      if (this.state !== STATE_RALLY) return;
       // 保留中の得点判定があればキャンセル
       if (this.pendingScoreTimeout) {
         clearTimeout(this.pendingScoreTimeout);
@@ -763,6 +765,7 @@ export class GameEngine {
 
       // 衝突音と波紋
       sounds.playHitSound(this.ball.x);
+      sounds.startRallyMusic();
       if (this.ball.vy < 0) {
         this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
       } else {
@@ -893,6 +896,7 @@ export class GameEngine {
    * 画面全体タップでのアクション集中モードを有効にします。
    */
   prepareServeSequence() {
+    sounds.stopRallyMusic();
     this.state = STATE_PRE_SERVE_READY;
     this.stateStartTime = Date.now();
     this.ball.active = false;
@@ -906,9 +910,12 @@ export class GameEngine {
 
     // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
     if (this.serverRole === 1) {
+      // STT service area: the right half of the server's defensive court.
+      this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p1.x));
       this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
     } else {
+      this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p2.x));
       this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
     }
@@ -1027,8 +1034,12 @@ export class GameEngine {
                   this.ball.vy = baseVy;
                 } else {
                   // ハード: 強烈かつ鋭角な高速サーブ
-                  const chargeRatio = 0.5 + Math.random() * 0.5;
-                  const baseVy = (5.5 + chargeRatio * 3.5) * 1.15;
+                  // 90% は高速、10% だけ遅い変化球にする。
+                  const isSlowHardServe = Math.random() < 0.10;
+                  const isSlowHardServe = Math.random() < 0.10;
+                  const baseVy = isSlowHardServe
+                    ? 4.0 + Math.random() * 0.8
+                    : 8.0 + Math.random() * 2.0;
                   const serveAngle = Math.random();
                   let cpuServeVx;
                   if (serveAngle < 0.33) {
@@ -1042,8 +1053,10 @@ export class GameEngine {
                   this.ball.vy = baseVy;
                 }
 
+                // 通常ラリー用に、中央寄りへゆっくり出す。
+                this.ball.vx = Math.random() * 1.2 - 0.6;
                 sounds.playServeSound(this.ball.x, this.difficulty);
-                sounds.startRallyMusic();
+                sounds.playServeRollSound(this.ball.x, this.ball.y);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
             }, cpuDelay);
@@ -1058,7 +1071,14 @@ export class GameEngine {
         const chargeTime = this.isCharging ? Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0) : 0;
         this.isCharging = false;
         const chargeRatio = chargeTime;
-        const baseVy = 4.5 + (chargeRatio * 3.5); // 4.5〜8.0
+        let baseVy = 4.5 + (chargeRatio * 3.5); // 4.5〜8.0
+        if (this.difficulty === 'hard') {
+          // ハードはプレイヤーのサーブも高速主体、遅球は10%。
+          baseVy = Math.random() < 0.10
+          baseVy = Math.random() < 0.10
+            ? 4.0 + Math.random() * 0.8
+            : 8.0 + Math.random() * 2.0;
+        }
 
         this.state = STATE_RALLY;
         this.ball.active = true;
@@ -1082,8 +1102,10 @@ export class GameEngine {
           this.ball.vy = baseVy;
         }
 
+        // 通常ラリー用に、中央寄りへゆっくり出す。
+        this.ball.vx = Math.random() * 1.2 - 0.6;
         sounds.playServeSound(this.ball.x, this.difficulty);
-        sounds.startRallyMusic();
+        sounds.playServeRollSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
         if (this.mode === 'online') {
@@ -1110,6 +1132,9 @@ export class GameEngine {
    * @param {string} reason 理由 ('miss', 'serve_fault', 'out', 'stop', 'overtime')
    */
   awardPointTo(winner, reason) {
+    // A physics frame can report more than one terminal condition (for
+    // example, crossing an end line and stopping). Only one point is legal.
+    if (this.state === STATE_POINT_WON) return;
     this.state = STATE_POINT_WON;
     this.ball.active = false;
 
@@ -1117,9 +1142,15 @@ export class GameEngine {
     sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
     sounds.stopRallyMusic();
 
+    if (reason === 'out') {
+      sounds.playOutSound(this.ball.x, this.ball.y);
+    }
+
 
     // 効果音の再生
-    if (winner === this.role) {
+    if (reason === 'out') {
+      // playOutSound は上で再生済み。
+    } else if (winner === this.role) {
       // 自分の得点
       sounds.playFrameSound(CANVAS_WIDTH / 2);
     } else {
@@ -1344,6 +1375,9 @@ export class GameEngine {
   // ==========================================================================
 
   getBallAssistKeys() {
+    // 通常ラリーでは自動アシストを使わず、左右入力だけを使う。
+    // 返球は Space／タップから tryPlayerReturn() を呼んだ時だけ行う。
+    return { ...this.keys };
     const keys = { ...this.keys };
     if (!this.ball.active || this.state !== STATE_RALLY) return keys;
 
@@ -1381,8 +1415,8 @@ export class GameEngine {
     const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
     const isIncoming = (this.role === 1 && this.ball.vy > 0) ||
       (this.role === 2 && this.ball.vy < 0);
-    const hitZone = this.difficulty === 'easy' ? 130 : this.difficulty === 'hard' ? 30 : 45;
-    const paddleMargin = (this.difficulty === 'easy' ? 45 : 15) + BALL_RADIUS;
+    const hitZone = this.difficulty === 'easy' ? 130 : this.difficulty === 'hard' ? 60 : 90;
+    const paddleMargin = (this.difficulty === 'easy' ? 45 : 35) + BALL_RADIUS;
     const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
     const hitPaddle = this.ball.x >= paddle.x - paddleMargin &&
       this.ball.x <= paddle.x + PADDLE_WIDTH + paddleMargin;
@@ -1410,6 +1444,7 @@ export class GameEngine {
 
     sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2, defenseY);
     sounds.playHitSound(this.ball.x, defenseY);
+    sounds.startRallyMusic();
     sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
     this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
     console.debug('[STT return success]', {
@@ -1464,9 +1499,11 @@ export class GameEngine {
           this.state === STATE_PRE_SERVE_HEARD ||
           this.state === STATE_SERVE_WAITING) {
         if (this.serverRole === 1) {
+          this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p1.x));
           this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
         } else {
+          this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p2.x));
           this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
         }
@@ -1555,13 +1592,6 @@ export class GameEngine {
         }
         this.processBufferedSwing();
 
-        // ラケットが玉の到達位置に合っていれば、自動で返球してラリーを継続する。
-        // 手動のSpace/タップによる返球は tryPlayerReturn がそのまま担当する。
-        if (this.ball.active && this.state === STATE_RALLY) {
-          this.tryPlayerReturn();
-        }
-
-
         // イベントの処理 (音、エフェクト、得点、通信同期)
         if (result.events && result.events.length > 0) {
           result.events.forEach(evt => {
@@ -1573,6 +1603,7 @@ export class GameEngine {
               this.addRipple(evt.x, evt.y, 'net');
             } else if (evt.type === 'ball_hit') {
               sounds.playHitSound(evt.x);
+              sounds.startRallyMusic();
               if (evt.vy < 0 || evt.player === 1) {
                 this.addRipple(evt.x, evt.y, 'hit_p1');
               } else {
@@ -1778,16 +1809,19 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-          if (hitPaddle) {
+          const cpuReturnChance = this.difficulty === 'easy' ? 0.60
+            : this.difficulty === 'normal' ? 0.88 : 0.98;
+          if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 6.0 : 4.0;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.12 : this.difficulty === 'easy' ? 1.02 : 1.05;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.16 : this.difficulty === 'easy' ? 1.02 : 1.05;
             this.ball.vx = relativeHitPos * cpuVxFactor;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost;
 
             sounds.playHitSound(this.ball.x);
+            sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
           }
         }
@@ -1799,16 +1833,19 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-          if (hitPaddle) {
+          const cpuReturnChance = this.difficulty === 'easy' ? 0.60
+            : this.difficulty === 'normal' ? 0.88 : 0.98;
+          if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.5 : this.difficulty === 'hard' ? 6.0 : 4.0;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.12 : this.difficulty === 'easy' ? 1.02 : 1.05;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.16 : this.difficulty === 'easy' ? 1.02 : 1.05;
             this.ball.vx = relativeHitPos * cpuVxFactor;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost;
 
             sounds.playHitSound(this.ball.x);
+            sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit');
             // 改善⑤: CPU打球時のスクリーンリーダー向け通知
             try {

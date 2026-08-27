@@ -13,7 +13,7 @@ const CANVAS_HEIGHT = 500;
 const PADDLE_WIDTH = 100;
 const PADDLE_HEIGHT = 15;
 const BALL_RADIUS = 10;
-const TABLE_FRICTION = 0.992; // ボールの摩擦減衰率 (転がりのシミュレーション)
+const TABLE_FRICTION = 0.997; // ラリーを維持しやすい摩擦減衰率
 
 // STT コートのY座標定義
 const Y_NET = CANVAS_HEIGHT / 2;             // ネット中央 (Y=250)

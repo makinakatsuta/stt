@@ -16,6 +16,12 @@ export class SoundSystem {
     this.audioLoaded = false;
     this.noiseBuffer = null;
     this.lastBallY = null;
+
+    // ラリー中BGM (rally.m4a)
+    this.rallyBuffer = null;
+    this.rallySource = null;
+    this.rallyGain = null;
+    this.rallyPlaying = false;
   }
 
   /**
@@ -92,16 +98,22 @@ export class SoundSystem {
     };
 
     try {
-      const [rollBuf, s1, s2, s3] = await Promise.all([
+      const [rollBuf, s1, s2, s3, rallyBuf] = await Promise.all([
         fetchAudio('sounds/SMASH1.m4a'),
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
-        fetchAudio('sounds/serve3.m4a')
+        fetchAudio('sounds/serve3.m4a'),
+        fetchAudio('sounds/rally.m4a')
       ]);
 
       if (rollBuf) {
         this.realRollBuffer = rollBuf;
         this.startRealRollLoop();
+      }
+
+      // ラリー中BGM バッファ
+      if (rallyBuf) {
+        this.rallyBuffer = rallyBuf;
       }
 
       // 難易度別の対応付け:
@@ -115,7 +127,7 @@ export class SoundSystem {
         list: [s1, s2, s3].filter(b => b !== null)
       };
       this.audioLoaded = true;
-      console.log('Loaded real sounds: roll=' + (!!this.realRollBuffer) + ', serves=' + this.serveBuffers.list.length);
+      console.log('Loaded real sounds: roll=' + (!!this.realRollBuffer) + ', serves=' + this.serveBuffers.list.length + ', rally=' + (!!this.rallyBuffer));
     } catch (e) {
       console.warn('Failed to load audio files:', e);
     }
@@ -213,6 +225,61 @@ export class SoundSystem {
       this.realRollSource.start(0);
     } catch (e) {
       console.warn('Error starting real roll loop:', e);
+    }
+  }
+
+  /**
+   * ラリー中BGM (rally.m4a) のループ再生を開始します。
+   * すでに再生中の場合は何もしません。
+   */
+  startRallyMusic() {
+    if (!this.ctx || this.isMuted || !this.rallyBuffer) return;
+    if (this.rallyPlaying) return;
+    try {
+      this.rallyPlaying = true;
+
+      this.rallyGain = this.ctx.createGain();
+      this.rallyGain.gain.setValueAtTime(0.0, this.ctx.currentTime);
+      // フェードイン: 0.5秒かけてフルボリュームへ
+      this.rallyGain.gain.linearRampToValueAtTime(1.0, this.ctx.currentTime + 0.5);
+      this.rallyGain.connect(this.ctx.destination);
+
+      this.rallySource = this.ctx.createBufferSource();
+      this.rallySource.buffer = this.rallyBuffer;
+      this.rallySource.loop = true;
+      this.rallySource.connect(this.rallyGain);
+      this.rallySource.start(0);
+    } catch (e) {
+      console.warn('Error starting rally music:', e);
+      this.rallyPlaying = false;
+    }
+  }
+
+  /**
+   * ラリー中BGM (rally.m4a) を停止します。
+   * フェードアウト後に停止します。
+   */
+  stopRallyMusic() {
+    if (!this.rallyPlaying) return;
+    this.rallyPlaying = false;
+    try {
+      if (this.rallyGain && this.ctx) {
+        const now = this.ctx.currentTime;
+        // フェードアウト: 0.3秒かけて無音へ
+        this.rallyGain.gain.cancelScheduledValues(now);
+        this.rallyGain.gain.setValueAtTime(this.rallyGain.gain.value, now);
+        this.rallyGain.gain.linearRampToValueAtTime(0.0, now + 0.3);
+      }
+      if (this.rallySource) {
+        const src = this.rallySource;
+        this.rallySource = null;
+        // フェードアウト完了後に停止
+        setTimeout(() => {
+          try { src.stop(); } catch (e) {}
+        }, 350);
+      }
+    } catch (e) {
+      console.warn('Error stopping rally music:', e);
     }
   }
 

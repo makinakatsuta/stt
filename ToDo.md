@@ -444,3 +444,13 @@ Go 1.26 環境に対応し、フロントエンド・WebAssembly・サーバー�
 - [x] 38.2 **[入力]** ブラウザ上でゲーム操作ができることを確認した。
 - [x] 38.3 **[音響・読み上げ]** ブラウザ上でゲームに必要な機能が動作することを確認した。
 - [x] 38.4 **[公開前確認]** 実ブラウザでの起動・プレイ確認を完了した。
+
+## [x] 39. ラリー中BGM (rally.m4a) の実装 (2026-08-27)
+
+- [x] 39.1 **[音響] `rally.m4a` のロードと再生制御** (`docs/js/sound-system.js`)
+  - `loadAudioFiles()` に `sounds/rally.m4a` を追加し、`rallyBuffer` へ保存する。
+  - `startRallyMusic()` メソッドを追加。0.5秒フェードインでループ再生を開始し、二重起動を `rallyPlaying` フラグで防止する。
+  - `stopRallyMusic()` メソッドを追加。0.3秒フェードアウト後にバッファソースを停止する。
+- [x] 39.2 **[ゲームロジック] ラリー開始・終了への呼び出し追加** (`docs/js/game-engine.js`)
+  - オンライン受信サーブ・CPUサーブ・プレイヤーサーブの3箇所で `sounds.startRallyMusic()` を呼ぶ。
+  - `awardPointTo()`（得点確定時）、`quitGame()`（メニュー復帰時）、`finishMatch()`（試合終了時）の3箇所で `sounds.stopRallyMusic()` を呼ぶ。

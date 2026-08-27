@@ -498,6 +498,7 @@ export class GameEngine {
     this.state = STATE_MENU;
     this.stopLoop(); // アニメーションループを確実に停止
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
+    sounds.stopRallyMusic();
     narrator.stop();
     this.changeScreen('menu');
 
@@ -745,6 +746,7 @@ export class GameEngine {
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playServeSound(this.ball.x);
+      sounds.startRallyMusic();
     }
     else if (payload.actionType === 'ball_hit') {
       // 保留中の得点判定があればキャンセル
@@ -1041,6 +1043,7 @@ export class GameEngine {
                 }
 
                 sounds.playServeSound(this.ball.x, this.difficulty);
+                sounds.startRallyMusic();
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
             }, cpuDelay);
@@ -1080,6 +1083,7 @@ export class GameEngine {
         }
 
         sounds.playServeSound(this.ball.x, this.difficulty);
+        sounds.startRallyMusic();
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
         if (this.mode === 'online') {
@@ -1109,8 +1113,9 @@ export class GameEngine {
     this.state = STATE_POINT_WON;
     this.ball.active = false;
 
-    // 得点が入ってプレイが止まったらボールの転がり音をミュートする
+    // 得点が入ってプレイが止まったらボールの転がり音をミュートし、ラリーBGMも停止する
     sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+    sounds.stopRallyMusic();
 
 
     // 効果音の再生
@@ -1281,7 +1286,8 @@ export class GameEngine {
       : (matchWinner === 1 ? 'プレイヤー 1' : 'プレイヤー 2');
     narrator.speak(`マッチ終了！ 勝者は、${winnerName} です！おめでとうございます！`, true);
 
-    // 試合終了の歓声音を再生
+    // 試合終了の歓声音を再生（ラリーBGMは先に停止）
+    sounds.stopRallyMusic();
     sounds.playCheerSound();
 
     // play-instructions を再表示し、リザルト画面に書き換える (Feature #11)

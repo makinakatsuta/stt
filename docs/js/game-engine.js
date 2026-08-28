@@ -4,7 +4,12 @@ import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.8;
-const EASY_GUARANTEED_RETURNS = 3;
+// At 60 FPS with TABLE_FRICTION, this range crosses the 300 px court in
+// roughly 5-6 seconds. Easy serves deliberately drift left or right.
+const EASY_SERVE_VY_MIN = 1.35;
+const EASY_SERVE_VY_MAX = 1.45;
+const EASY_SERVE_VX_MIN = 0.65;
+const EASY_SERVE_VX_MAX = 0.85;
 
 export class GameEngine {
   constructor() {
@@ -29,6 +34,8 @@ export class GameEngine {
     this.state = STATE_MENU;
 
     // ゲームオブジェクトのステート
+    // Kept for compatibility with a previously cached WASM binary. The
+    // current game logic does not use this value to guarantee any rally.
     this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0 };
     this.p1 = { x: 350, y: Y_DEFENSE_P1 + 50 }; // 手前 (自分)
     this.p2 = { x: 350, y: Y_DEFENSE_P2 - 50 }; // 奥 (相手 / CPU)
@@ -1013,13 +1020,14 @@ export class GameEngine {
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.ball.active = true;
-                this.ball.easyPlayerReturns = 0;
 
                 // 難易度に応じてサーブの速度や角度を調整
                 if (this.difficulty === 'easy') {
                   // 初級: 打ち返しやすい安定した低速サーブ (中央付近へ)
-                  this.ball.vx = (Math.random() * 0.6 - 0.3);
-                  this.ball.vy = 2.64;
+                  this.ball.vx = (Math.random() < 0.5 ? -1 : 1) *
+                    (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN));
+                  this.ball.vy = EASY_SERVE_VY_MIN +
+                    Math.random() * (EASY_SERVE_VY_MAX - EASY_SERVE_VY_MIN);
                 } else if (this.difficulty === 'normal') {
                   // ノーマル: スローサーブ、通常速度サーブ、高速サーブをランダムに打ち分け
                   const speedCategory = Math.random();
@@ -1049,10 +1057,15 @@ export class GameEngine {
                 } else {
                   // ハード: 強烈かつ鋭角な高速サーブ
                   // 90% は高速、10% だけ遅い変化球にする。
-                  const isSlowHardServe = Math.random() < 0.10;
-                  const baseVy = isSlowHardServe
-                    ? 3.6 + Math.random() * 0.72
-                    : 7.2 + Math.random() * 1.8;
+                  const speedCategory = Math.random();
+                  let baseVy;
+                  if (speedCategory < 0.2) {
+                    baseVy = 3.6 + Math.random() * 0.72;
+                  } else if (speedCategory < 0.4) {
+                    baseVy = 5.4 + Math.random() * 0.9;
+                  } else {
+                    baseVy = 7.2 + Math.random() * 1.8;
+                  }
                   const serveAngle = Math.random();
                   let cpuServeVx;
                   if (serveAngle < 0.33) {
@@ -1067,8 +1080,10 @@ export class GameEngine {
                 }
 
                 // 通常ラリー用に、中央寄りへゆっくり出す。
-                this.ball.vx = Math.random() * 1.2 - 0.6;
-                sounds.playServeSound(this.ball.x, this.difficulty);
+                if (this.difficulty !== 'easy') {
+                  this.ball.vx = Math.random() * 1.2 - 0.6;
+                }
+                sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, true);
                 sounds.playHitSound(this.ball.x, this.ball.y);
                 sounds.playServeRollSound(this.ball.x, this.ball.y);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
@@ -1087,7 +1102,9 @@ export class GameEngine {
         const chargeRatio = chargeTime;
         let baseVy = 4.05 + (chargeRatio * 3.15); // 4.05〜7.2
         if (this.difficulty === 'easy') {
-          baseVy *= EASY_RALLY_SPEED_FACTOR;
+          // Keep Easy serves in the 5-6 second range, independent of charge.
+          baseVy = EASY_SERVE_VY_MIN +
+            Math.random() * (EASY_SERVE_VY_MAX - EASY_SERVE_VY_MIN);
         }
         if (this.difficulty === 'hard') {
           // ハードはプレイヤーのサーブも高速主体、遅球は10%。
@@ -1099,7 +1116,6 @@ export class GameEngine {
 
         this.state = STATE_RALLY;
         this.ball.active = true;
-        this.ball.easyPlayerReturns = 0;
 
         // 音声のみでラリー開始を案内（テキストフィールドには書かない）
         // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
@@ -1121,7 +1137,12 @@ export class GameEngine {
         }
 
         // 通常ラリー用に、中央寄りへゆっくり出す。
-        this.ball.vx = Math.random() * 1.2 - 0.6;
+        if (this.difficulty === 'easy') {
+          this.ball.vx = (Math.random() < 0.5 ? -1 : 1) *
+            (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN));
+        } else {
+          this.ball.vx = Math.random() * 1.2 - 0.6;
+        }
         sounds.playServeSound(this.ball.x, this.difficulty);
         sounds.playHitSound(this.ball.x, this.ball.y);
         sounds.playServeRollSound(this.ball.x, this.ball.y);
@@ -1470,11 +1491,6 @@ export class GameEngine {
     sounds.startRallyMusic();
     sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
     this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
-    // Easyの「3回ラリー」は、CPUの自動返球回数ではなく、
-    // プレイヤーが実際に成功させた返球回数で成立させる。
-    if (this.difficulty === 'easy') {
-      this.ball.easyPlayerReturns++;
-    }
     console.debug('[STT return success]', {
       role: this.role,
       x: this.ball.x,
@@ -1841,15 +1857,10 @@ export class GameEngine {
         // P1がCPUの場合のみ自動で打ち返す（人間プレイヤーの場合はSpaceキー入力でのみ打ち返せる）
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
-          const easyGuaranteeActive = this.difficulty === 'easy' &&
-            this.ball.easyPlayerReturns < EASY_GUARANTEED_RETURNS;
-          if (easyGuaranteeActive) {
-            this.p1.x = Math.max(0, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.ball.x - PADDLE_WIDTH / 2));
-          }
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? 0.54
             : this.difficulty === 'normal' ? 0.79 : 0.88;
-          if (hitPaddle && (easyGuaranteeActive || Math.random() < cpuReturnChance)) {
+          if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
@@ -1874,15 +1885,10 @@ export class GameEngine {
         // P2がCPUの場合のみ自動で打ち返す（人間プレイヤーの場合はSpaceキー入力でのみ打ち返せる）
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
-          const easyGuaranteeActive = this.difficulty === 'easy' &&
-            this.ball.easyPlayerReturns < EASY_GUARANTEED_RETURNS;
-          if (easyGuaranteeActive) {
-            this.p2.x = Math.max(0, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.ball.x - PADDLE_WIDTH / 2));
-          }
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? 0.54
             : this.difficulty === 'normal' ? 0.79 : 0.88;
-          if (hitPaddle && (easyGuaranteeActive || Math.random() < cpuReturnChance)) {
+          if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速

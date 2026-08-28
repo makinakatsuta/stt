@@ -574,3 +574,15 @@ Easyモードの初心者向け保証を3回成功までに短縮し、以降は
 
 - [x] 48.2 **[判定・音声] JavaScriptとWASMの左右端判定を統一** (`docs/js/game-engine.js`, `main_wasm.go`)
   - 左右端はアウトではなく壁反射として処理し、反射音と波紋を案内する。
+## [x] 49. Easyモードの通常ラリー化と初心者向け調整（2026-08-28）
+
+Easyモードの「最初の3回は必ず続く」保証を廃止し、毎回通常の返球判定でプレイできるようにした。
+
+- [x] 49.1 **3回ラリー保証の削除** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - `easyPlayerReturns` と `EASY_GUARANTEED_RETURNS` を削除。
+  - 保証中だけ行っていたCPUラケットの自動追従を削除。
+  - Easyでも、ラケット位置・ヒットゾーン・CPU返球率による通常判定を使用。
+- [x] 49.2 **初心者向けバランスの維持** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Easyの広いヒットゾーン、遅めのラリー速度、CPU返球率54%は維持。
+  - JavaScriptフォールバックとWASMでCPU返球率を統一。
+- [x] 49.3 **ドキュメント更新** (`README.md`, `release-notes.txt`)

@@ -14,6 +14,9 @@ export class SoundSystem {
     this.outBuffer = null;      // ball2.m4a
     this.realRollSource = null;
     this.realRollGain = null;
+    this.serveRollSource = null;
+    this.serveRollPanner = null;
+    this.serveRollStopTimer = null;
     this.serveBuffers = {}; // { easy: Buffer, normal: Buffer, hard: Buffer, list: [] }
     this.audioLoaded = false;
     this.noiseBuffer = null;
@@ -292,6 +295,7 @@ export class SoundSystem {
    */
   stopRallyMusic() {
     this.rallyRequested = false;
+    this.stopServeRollSound();
     if (!this.rallyPlaying) return;
     this.rallyPlaying = false;
     try {
@@ -465,33 +469,33 @@ export class SoundSystem {
   }
 
   /**
-   * サーブ音 (実録音源 serve1.m4a〜serve3.m4a を難易度やランダムに応じて再生)
-   *  - 初級(easy): serve1.m4a / serve2.m4a（serve3.m4aは使用しない）
-   *  - 中級(normal): serve2.m4a（またはランダム）
-   *  - 応用/上級(hard): serve3.m4a（またはランダム）
+   * サーブ音 (置き換え後の実録音源を難易度別に再生)
+   *  - 初級(easy): serve1.m4a
+   *  - 中級(normal): serve2.m4a
+   *  - 応用/上級(hard): serve3.m4a
    * @param {number} x 打球X座標
    * @param {string|null} difficulty 難易度 ('easy' | 'normal' | 'hard') または null (完全ランダム)
    * @param {number} y 打球Y座標
+   * @param {boolean} isCpuServe CPUサーブの場合はHardの音源を重み付きランダムで選ぶ
    */
-  playServeSound(x, difficulty = null, y = Y_DEFENSE_P1) {
+  playServeSound(x, difficulty = null, y = Y_DEFENSE_P1, isCpuServe = false) {
     if (!this.ctx || this.isMuted) return;
     if (this.serveBuffers) {
       try {
         let buffer = null;
-        if (difficulty === 'easy') {
-          // Easyではserve3.m4a（上級用）を使わない。
-          const easyBuffers = [this.serveBuffers.easy, this.serveBuffers.normal].filter(b => b !== null);
-          if (easyBuffers.length > 0) {
-            buffer = easyBuffers[Math.floor(Math.random() * easyBuffers.length)];
-          }
+        if (difficulty === 'hard' && isCpuServe) {
+          // Hard CPU: serve3 is the fast/strong serve (60%); serve1/2 are
+          // deliberately mixed in at 20% each.
+          const roll = Math.random();
+          buffer = roll < 0.2
+            ? this.serveBuffers.easy
+            : roll < 0.4
+              ? this.serveBuffers.normal
+              : this.serveBuffers.hard;
         } else if (difficulty && this.serveBuffers[difficulty]) {
-          // 指定難易度の音源を優先（80%）、20%の確率で他とランダムにしてバリエーションを演出
-          if (Math.random() < 0.8) {
-            buffer = this.serveBuffers[difficulty];
-          } else if (this.serveBuffers.list && this.serveBuffers.list.length > 0) {
-            const rIdx = Math.floor(Math.random() * this.serveBuffers.list.length);
-            buffer = this.serveBuffers.list[rIdx];
-          }
+          // Use the replaced difficulty-specific serve recording every time:
+          // Easy=serve1, Normal=serve2, Hard=serve3.
+          buffer = this.serveBuffers[difficulty];
         } else if (this.serveBuffers.list && this.serveBuffers.list.length > 0) {
           const rIdx = Math.floor(Math.random() * this.serveBuffers.list.length);
           buffer = this.serveBuffers.list[rIdx];
@@ -535,7 +539,60 @@ export class SoundSystem {
   }
 
   playServeRollSound(x, y = Y_NET) {
-    this.playBuffer(this.realRollBuffer, x, y, 0.8);
+    if (!this.ctx || this.isMuted || !this.realRollBuffer) return;
+
+    // Keep one rolling sound alive for the whole Easy serve/rally approach.
+    // A short recording is looped for a natural 5-6 second roll instead of
+    // being restarted on every collision.
+    if (this.serveRollSource) {
+      if (this.serveRollPanner) {
+        const coords = this.get3DCoords(x, y);
+        this.setPannerPosition(this.serveRollPanner, coords.x, coords.y, coords.z);
+      }
+      return;
+    }
+
+    try {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.realRollBuffer;
+      source.loop = true;
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.8, this.ctx.currentTime);
+      const panner = this.create3DPanner(x, y);
+      source.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+
+      this.serveRollSource = source;
+      this.serveRollPanner = panner;
+      const duration = 5 + Math.random();
+      this.serveRollStopTimer = setTimeout(() => this.stopServeRollSound(), duration * 1000);
+      source.onended = () => {
+        if (this.serveRollSource === source) {
+          this.serveRollSource = null;
+          this.serveRollPanner = null;
+          this.serveRollStopTimer = null;
+        }
+      };
+      source.start();
+    } catch (e) {
+      console.warn('Error playing rolling sound:', e);
+      this.serveRollSource = null;
+      this.serveRollPanner = null;
+    }
+  }
+
+  stopServeRollSound() {
+    if (this.serveRollStopTimer) {
+      clearTimeout(this.serveRollStopTimer);
+      this.serveRollStopTimer = null;
+    }
+    if (this.serveRollSource) {
+      try { this.serveRollSource.stop(); } catch (e) {}
+      this.serveRollSource = null;
+      this.serveRollPanner = null;
+    }
   }
 
   playSwingSound(x, y = Y_DEFENSE_P1) {

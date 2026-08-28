@@ -77,9 +77,6 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	ballVx := jsBall.Get("vx").Float()
 	ballVy := jsBall.Get("vy").Float()
 	ballActive := jsBall.Get("active").Bool()
-	// Easyの保証回数はCPU返球ではなく、プレイヤーの成功返球回数。
-	easyPlayerReturns := jsBall.Get("easyPlayerReturns").Int()
-
 	// Get paddle properties
 	p1X := jsP1.Get("x").Float()
 	p2X := jsP2.Get("x").Float()
@@ -207,12 +204,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		if ballVy > 0 && ballY >= YDefenseP1 && ballY <= YDefenseP1+25 {
 			isP1Cpu := (mode == "cpu" && role == 2)
 			if isP1Cpu {
-				easyGuaranteeActive := difficulty == "easy" && easyPlayerReturns < 3
-				if easyGuaranteeActive {
-					p1X = math.Max(0, math.Min(CanvasWidth-PaddleWidth, ballX-PaddleWidth/2.0))
-				}
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
-				if hitPaddle {
+				cpuReturnChance := 0.88
+				if difficulty == "easy" {
+					cpuReturnChance = 0.54
+				} else if difficulty == "normal" {
+					cpuReturnChance = 0.79
+				}
+				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					cpuVxFactor := 3.6
@@ -247,12 +246,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		if ballVy < 0 && ballY <= YDefenseP2 && ballY >= YDefenseP2-25 {
 			isP2Cpu := (mode == "cpu" && role == 1)
 			if isP2Cpu {
-				easyGuaranteeActive := difficulty == "easy" && easyPlayerReturns < 3
-				if easyGuaranteeActive {
-					p2X = math.Max(0, math.Min(CanvasWidth-PaddleWidth, ballX-PaddleWidth/2.0))
-				}
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
-				if hitPaddle {
+				cpuReturnChance := 0.88
+				if difficulty == "easy" {
+					cpuReturnChance = 0.54
+				} else if difficulty == "normal" {
+					cpuReturnChance = 0.79
+				}
+				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					cpuVxFactor := 3.6

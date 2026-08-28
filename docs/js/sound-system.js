@@ -9,9 +9,10 @@ export class SoundSystem {
     this.assetsOnly = true; // docs/sounds/ 配下の実音源だけを再生する
 
     // 本物の実録音源バッファ
-    this.realRollBuffer = null; // ball1.m4a
+    this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
-    this.outBuffer = null;      // ball2.m4a
+    this.outBuffer = null;      // out.m4a
+    this.smashBuffer = null;    // SMASH.m4a
     this.realRollSource = null;
     this.realRollGain = null;
     this.serveRollSource = null;
@@ -22,7 +23,7 @@ export class SoundSystem {
     this.noiseBuffer = null;
     this.lastBallY = null;
 
-    // ラリー中BGM (SMASH1.m4a)
+    // ラリー中BGM (rally.m4a)
     this.rallyBuffer = null;
     this.rallySource = null;
     this.rallyGain = null;
@@ -84,7 +85,8 @@ export class SoundSystem {
     // 足音などの短い摩擦音に使うノイズ素材を用意します。
     this.createNoiseBuffer();
 
-    // 実音源ファイル (SMASH1.m4a, serve1~3.m4a) の非同期読み込み
+    // 実音源ファイル (rally.m4a, racket.m4a, out.m4a, SMASH.m4a,
+    // serve1~3.m4a) の非同期読み込み
     this.loadAudioFiles();
   }
 
@@ -108,13 +110,14 @@ export class SoundSystem {
     };
 
     try {
-      const [s1, s2, s3, ball1, racket, ball2] = await Promise.all([
+      const [s1, s2, s3, rally, racket, out, smash] = await Promise.all([
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a'),
-        fetchAudio('sounds/ball1.m4a'),
+        fetchAudio('sounds/rally.m4a'),
         fetchAudio('sounds/racket.m4a'),
-        fetchAudio('sounds/ball2.m4a')
+        fetchAudio('sounds/out.m4a'),
+        fetchAudio('sounds/SMASH.m4a')
       ]);
 
       // 難易度別の対応付け:
@@ -127,10 +130,11 @@ export class SoundSystem {
         hard: s3,
         list: [s1, s2, s3].filter(b => b !== null)
       };
-      this.realRollBuffer = ball1;
-      this.rallyBuffer = ball1;
+      this.realRollBuffer = rally;
+      this.rallyBuffer = rally;
       this.racketBuffer = racket;
-      this.outBuffer = ball2;
+      this.outBuffer = out;
+      this.smashBuffer = smash;
       this.audioLoaded = true;
       console.log('Loaded serve sounds: ' + this.serveBuffers.list.length);
     } catch (e) {
@@ -144,7 +148,7 @@ export class SoundSystem {
 
     this.rallyLoadingPromise = (async () => {
       try {
-        const audioUrl = new URL('sounds/ball1.m4a', document.baseURI).href;
+        const audioUrl = new URL('sounds/rally.m4a', document.baseURI).href;
         const response = await fetch(audioUrl);
         if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
@@ -152,7 +156,7 @@ export class SoundSystem {
         this.rallyBuffer = this.toMonoBuffer(decoded);
         if (this.rallyRequested) this.startRallyMusic();
       } catch (err) {
-        console.warn('Audio load skipped for sounds/ball1.m4a:', err);
+        console.warn('Audio load skipped for sounds/rally.m4a:', err);
       } finally {
         this.rallyLoadingPromise = null;
       }
@@ -846,6 +850,11 @@ export class SoundSystem {
    */
   playOutSound(x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
     this.playBuffer(this.outBuffer, x, y, 1.0);
+  }
+
+  /** ポイント獲得時の SMASH.m4a を再生します。 */
+  playSmashSound(x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
+    this.playBuffer(this.smashBuffer, x, y, 1.0);
   }
 
   playCheerSound() {

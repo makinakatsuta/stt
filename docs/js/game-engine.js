@@ -37,6 +37,7 @@ export class GameEngine {
     // Kept for compatibility with a previously cached WASM binary. The
     // current game logic does not use this value to guarantee any rally.
     this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0 };
+    this.endFrameHits = 0;
     this.p1 = { x: 350, y: Y_DEFENSE_P1 + 50 }; // 手前 (自分)
     this.p2 = { x: 350, y: Y_DEFENSE_P2 - 50 }; // 奥 (相手 / CPU)
 
@@ -166,6 +167,8 @@ export class GameEngine {
     // プレーに集中できるよう画面のどこをタップ/ダブルタップしてもアクションを実行できるようにする
     const screenPlay = document.getElementById('screen-play');
     const canvasContainer = document.getElementById('canvas-container');
+    // Do not treat a swipe/drag used for movement as a swing on touchend.
+    let touchStartPoint = null;
 
     // プレイ画面全体のタップハンドラ (アクションボタン類は除外)
     const handlePlayAreaAction = (e) => {
@@ -194,17 +197,31 @@ export class GameEngine {
       if (excluded.includes(e.target.tagName)) return;
 
       e.preventDefault(); // 300ms の click 遅延と二重発火を防ぐ
+      const touch = e.changedTouches && e.changedTouches[0];
+      const moved = touchStartPoint && touch
+        ? Math.hypot(touch.clientX - touchStartPoint.x, touch.clientY - touchStartPoint.y) > 12
+        : false;
+      touchStartPoint = null;
+      if (moved) return;
+
       this.handleActionInput();
     }, { passive: false });
+
+    document.addEventListener('touchcancel', () => {
+      touchStartPoint = null;
+    }, { passive: true });
 
     // スマホ用のtouchstartでチャージ開始 (Feature #2)
     document.addEventListener('touchstart', (e) => {
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_SERVE_WAITING];
-      if (!activeStates.includes(this.state)) return;
 
       const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
       if (excluded.includes(e.target.tagName)) return;
+
+      const touch = e.touches && e.touches[0];
+      touchStartPoint = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      if (!activeStates.includes(this.state)) return;
 
       if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
         e.preventDefault();
@@ -762,7 +779,6 @@ export class GameEngine {
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playServeSound(this.ball.x, this.difficulty);
-      sounds.playHitSound(this.ball.x, this.ball.y);
       sounds.playServeRollSound(this.ball.x, this.ball.y);
     }
     else if (payload.actionType === 'ball_hit') {
@@ -921,6 +937,7 @@ export class GameEngine {
     this.stateStartTime = Date.now();
     this.ball.active = false;
     this.pendingSwingUntil = 0;
+    this.endFrameHits = 0;
 
     // プレイ集中モード: play-instructions テキストボックスを非表示にする
     // (スクリーンリーダーの sr-announcer 経由で音声で案内するため画面テキストは不要)
@@ -1084,7 +1101,6 @@ export class GameEngine {
                   this.ball.vx = Math.random() * 1.2 - 0.6;
                 }
                 sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, true);
-                sounds.playHitSound(this.ball.x, this.ball.y);
                 sounds.playServeRollSound(this.ball.x, this.ball.y);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
@@ -1144,7 +1160,6 @@ export class GameEngine {
           this.ball.vx = Math.random() * 1.2 - 0.6;
         }
         sounds.playServeSound(this.ball.x, this.difficulty);
-        sounds.playHitSound(this.ball.x, this.ball.y);
         sounds.playServeRollSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
@@ -1186,6 +1201,11 @@ export class GameEngine {
       sounds.playOutSound(this.ball.x, this.ball.y);
     }
 
+    // エンドフレーム2回成功の判定時だけ、SMASH.m4aを1回鳴らす。
+    if (reason === 'end_frame_success') {
+      sounds.playSmashSound(this.ball.x, this.ball.y);
+    }
+
 
     // 効果音の再生
     if (reason === 'out') {
@@ -1218,6 +1238,9 @@ export class GameEngine {
         break;
       case 'serve_fault':
         reasonText = "フォルト";
+        break;
+      case 'end_frame_success':
+        reasonText = "エンドフレーム成功";
         break;
       case 'overtime':
         reasonText = "オーバータイム";
@@ -1415,9 +1438,13 @@ export class GameEngine {
   // ==========================================================================
 
   getBallAssistKeys() {
+    // Paddle movement is manual only. Never steer it toward the ball.
+    return { ...this.keys };
+
     // 通常ラリーでは自動アシストを使わず、左右入力だけを使う。
     // 返球は Space／タップから tryPlayerReturn() を呼んだ時だけ行う。
     return { ...this.keys };
+    /*
     const keys = { ...this.keys };
     if (!this.ball.active || this.state !== STATE_RALLY) return keys;
 
@@ -1446,6 +1473,9 @@ export class GameEngine {
     if (targetX < paddle.x - 2) keys.ArrowLeft = true;
     if (targetX > paddle.x + 2) keys.ArrowRight = true;
     return keys;
+  }
+
+    */
   }
 
   tryPlayerReturn() {
@@ -1921,9 +1951,16 @@ export class GameEngine {
           // 強すぎてエンドフレームを越えて飛び出た -> P2のアウト、P1の得点
           this.awardPointTo(1, 'out');
         } else {
-          // エンドフレームの内側面に当たりコート内（セーフ） -> P2の得点
-          sounds.playHitSound(this.ball.x, CANVAS_HEIGHT);
-          this.awardPointTo(2, 'safe');
+          this.endFrameHits++;
+          sounds.playFrameSound(this.ball.x, CANVAS_HEIGHT);
+          if (this.endFrameHits >= 2) {
+            // 2回目もコート内に残った場合は成功扱いにする。
+            this.awardPointTo(2, 'end_frame_success');
+          } else {
+            // 1回目はコート内へ跳ね返し、2回目の接触を待つ。
+            this.ball.y = CANVAS_HEIGHT - BALL_RADIUS;
+            this.ball.vy = -Math.abs(this.ball.vy) * 0.75;
+          }
         }
       }
 
@@ -1933,9 +1970,16 @@ export class GameEngine {
           // 強すぎてエンドフレームを越えて飛び出た -> P1のアウト、P2の得点
           this.awardPointTo(2, 'out');
         } else {
-          // エンドフレームの内側面に当たりコート内（セーフ） -> P1の得点
-          sounds.playHitSound(this.ball.x, 0);
-          this.awardPointTo(1, 'safe');
+          this.endFrameHits++;
+          sounds.playFrameSound(this.ball.x, 0);
+          if (this.endFrameHits >= 2) {
+            // 2回目もコート内に残った場合は成功扱いにする。
+            this.awardPointTo(1, 'end_frame_success');
+          } else {
+            // 1回目はコート内へ跳ね返し、2回目の接触を待つ。
+            this.ball.y = BALL_RADIUS;
+            this.ball.vy = Math.abs(this.ball.vy) * 0.75;
+          }
         }
       }
 

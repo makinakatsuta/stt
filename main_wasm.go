@@ -9,15 +9,18 @@ import (
 )
 
 const (
-	CanvasWidth   = 800.0
-	CanvasHeight  = 500.0
-	PaddleWidth   = 100.0
-	PaddleHeight  = 15.0
-	BallRadius    = 10.0
-	TableFriction = 0.997
-	YNet          = 250.0
-	YDefenseP1    = 400.0
-	YDefenseP2    = 100.0
+	CanvasWidth          = 800.0
+	CanvasHeight         = 500.0
+	PaddleWidth          = 100.0
+	PaddleHeight         = 15.0
+	BallRadius           = 10.0
+	TableFriction        = 0.997
+	YNet                 = 250.0
+	YDefenseP1           = 400.0
+	YDefenseP2           = 100.0
+	NormalPaddleSpeed    = 8.0
+	HardDifficultyFactor = 0.9
+	NormalOutSpeed       = 13.0
 )
 
 func main() {
@@ -87,9 +90,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	paddleSpeed := 7.0
 	switch difficulty {
 	case "normal":
-		paddleSpeed = 8.0
+		paddleSpeed = NormalPaddleSpeed
 	case "hard":
-		paddleSpeed = 9.0
+		paddleSpeed = NormalPaddleSpeed * HardDifficultyFactor
 	}
 	if role == 1 {
 		if getBoolSafe(jsKeys, "ArrowLeft") {
@@ -286,7 +289,11 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 		// --- Endline / Safe / Out & Score detection (STT rulebook compliant) ---
 		if ballY > CanvasHeight {
-			if math.Abs(ballVy) > 13.0 {
+			outSpeed := NormalOutSpeed
+			if difficulty == "hard" {
+				outSpeed *= HardDifficultyFactor
+			}
+			if math.Abs(ballVy) > outSpeed {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 1,
@@ -300,7 +307,11 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				})
 			}
 		} else if ballY < 0 {
-			if math.Abs(ballVy) > 13.0 {
+			outSpeed := NormalOutSpeed
+			if difficulty == "hard" {
+				outSpeed *= HardDifficultyFactor
+			}
+			if math.Abs(ballVy) > outSpeed {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 2,

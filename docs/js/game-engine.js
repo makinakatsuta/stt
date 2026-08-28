@@ -4,6 +4,13 @@ import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.8;
+// Normal is the standard reference. Hard makes the player's timing and
+// movement 10% less forgiving than Normal.
+const NORMAL_PADDLE_SPEED = 8;
+const HARD_DIFFICULTY_FACTOR = 0.9;
+const NORMAL_HIT_ZONE = 90;
+const NORMAL_PADDLE_MARGIN = 35;
+const NORMAL_OUT_SPEED = 13;
 // At 60 FPS with TABLE_FRICTION, this range crosses the 300 px court in
 // roughly 5-6 seconds. Easy serves deliberately drift left or right.
 const EASY_SERVE_VY_MIN = 1.35;
@@ -169,9 +176,44 @@ export class GameEngine {
     const canvasContainer = document.getElementById('canvas-container');
     // Do not treat a swipe/drag used for movement as a swing on touchend.
     let touchStartPoint = null;
+    let pointerStartPoint = null;
+    // Pointer events provide one authoritative tap path and prevent the
+    // touchend + synthetic click pair from being interpreted twice.
+    const pointerExcludedTags = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
+    const pointerActiveStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
+
+    if (canvasContainer) {
+      canvasContainer.style.touchAction = 'none';
+      canvasContainer.addEventListener('pointerdown', (e) => {
+        if (this.isGameplayPaused || !e.isPrimary || pointerExcludedTags.includes(e.target.tagName)) return;
+        pointerStartPoint = { id: e.pointerId, x: e.clientX, y: e.clientY };
+        if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
+          e.preventDefault();
+          this.isCharging = true;
+          this.chargeStartTime = Date.now();
+        }
+      }, { passive: false });
+
+      canvasContainer.addEventListener('pointerup', (e) => {
+        if (this.isGameplayPaused || !e.isPrimary || !pointerStartPoint || pointerStartPoint.id !== e.pointerId) return;
+        const start = pointerStartPoint;
+        pointerStartPoint = null;
+        if (pointerExcludedTags.includes(e.target.tagName)) return;
+        const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12;
+        if (moved || !pointerActiveStates.includes(this.state)) return;
+        e.preventDefault();
+        this.handleActionInput();
+      }, { passive: false });
+
+      canvasContainer.addEventListener('pointercancel', () => {
+        pointerStartPoint = null;
+        this.isCharging = false;
+      }, { passive: true });
+    }
 
     // プレイ画面全体のタップハンドラ (アクションボタン類は除外)
     const handlePlayAreaAction = (e) => {
+      if (window.PointerEvent) return;
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
@@ -189,6 +231,7 @@ export class GameEngine {
 
     // スマホ向けのタッチイベント（touchend で click より早く応答）(Feature #4: STATE_POINT_WON を追加)
     document.addEventListener('touchend', (e) => {
+      if (window.PointerEvent) return;
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
@@ -213,6 +256,7 @@ export class GameEngine {
 
     // スマホ用のtouchstartでチャージ開始 (Feature #2)
     document.addEventListener('touchstart', (e) => {
+      if (window.PointerEvent) return;
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_SERVE_WAITING];
 
@@ -798,9 +842,7 @@ export class GameEngine {
 
       // 衝突音と波紋
       sounds.playHitSound(this.ball.x);
-      if (this.difficulty === 'easy') {
-        sounds.playServeRollSound(this.ball.x, this.ball.y);
-      }
+      sounds.playServeRollSound(this.ball.x, this.ball.y);
       sounds.startRallyMusic();
       if (this.ball.vy < 0) {
         this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
@@ -1176,7 +1218,9 @@ export class GameEngine {
       }
     }
     else if (this.state === STATE_RALLY) {
-      this.pendingSwingUntil = Date.now() + 180;
+      // A return must match the ball at the exact explicit input moment.
+      // Do not replay the action later from a buffered swing window.
+      this.pendingSwingUntil = 0;
       this.tryPlayerReturn();
     }
   }
@@ -1485,8 +1529,13 @@ export class GameEngine {
     const defenseY = this.role === 1 ? Y_DEFENSE_P1 : Y_DEFENSE_P2;
     const isIncoming = (this.role === 1 && this.ball.vy > 0) ||
       (this.role === 2 && this.ball.vy < 0);
-    const hitZone = this.difficulty === 'easy' ? 130 : this.difficulty === 'hard' ? 60 : 90;
-    const paddleMargin = (this.difficulty === 'easy' ? 45 : 35) + BALL_RADIUS;
+    const hitZone = this.difficulty === 'easy'
+      ? 130
+      : this.difficulty === 'hard' ? NORMAL_HIT_ZONE * HARD_DIFFICULTY_FACTOR : NORMAL_HIT_ZONE;
+    const normalPaddleMargin = NORMAL_PADDLE_MARGIN + BALL_RADIUS;
+    const paddleMargin = this.difficulty === 'easy'
+      ? 45 + BALL_RADIUS
+      : this.difficulty === 'hard' ? normalPaddleMargin * HARD_DIFFICULTY_FACTOR : normalPaddleMargin;
     const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
     const hitPaddle = this.ball.x >= paddle.x - paddleMargin &&
       this.ball.x <= paddle.x + PADDLE_WIDTH + paddleMargin;
@@ -1515,9 +1564,7 @@ export class GameEngine {
 
     sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2, defenseY);
     sounds.playHitSound(this.ball.x, defenseY);
-    if (this.difficulty === 'easy') {
-      sounds.playServeRollSound(this.ball.x, defenseY);
-    }
+    sounds.playServeRollSound(this.ball.x, defenseY);
     sounds.startRallyMusic();
     sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
     this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
@@ -1677,9 +1724,7 @@ export class GameEngine {
               this.addRipple(evt.x, evt.y, 'net');
             } else if (evt.type === 'ball_hit') {
               sounds.playHitSound(evt.x);
-              if (this.difficulty === 'easy') {
-                sounds.playServeRollSound(evt.x, evt.y);
-              }
+              sounds.playServeRollSound(evt.x, evt.y);
               sounds.startRallyMusic();
               if (evt.vy < 0 || evt.player === 1) {
                 this.addRipple(evt.x, evt.y, 'hit_p1');
@@ -1752,9 +1797,11 @@ export class GameEngine {
     // 1. プレイヤーのラケット移動 (矢印キー / A,Dキー / チルト比例制御)
     // チルト操作時: 傾き比率 (0〜1) × 難易度別の最大速度で比例移動
     // キーボード操作時: 難易度別の最大速度で移動
-    // ボール速度の上昇に合わせ、Normal / Hard ではラケットの移動速度も上げる。
+    // Normalを標準速度とし、Hardはその90%にして操作を厳しくする。
     // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
-    const maxSpeed = this.difficulty === 'hard' ? 9 : this.difficulty === 'normal' ? 8 : 7;
+    const maxSpeed = this.difficulty === 'hard'
+      ? NORMAL_PADDLE_SPEED * HARD_DIFFICULTY_FACTOR
+      : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 7;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     const isAssistMove = !this.keys['ArrowLeft'] && !this.keys['ArrowRight'] &&
       (physicsKeys['ArrowLeft'] || physicsKeys['ArrowRight']);
@@ -1901,9 +1948,7 @@ export class GameEngine {
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
             sounds.playHitSound(this.ball.x);
-            if (this.difficulty === 'easy') {
-              sounds.playServeRollSound(this.ball.x, this.ball.y);
-            }
+            sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
           }
@@ -1929,9 +1974,7 @@ export class GameEngine {
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
             sounds.playHitSound(this.ball.x);
-            if (this.difficulty === 'easy') {
-              sounds.playServeRollSound(this.ball.x, this.ball.y);
-            }
+            sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit');
             // 改善⑤: CPU打球時のスクリーンリーダー向け通知
@@ -1947,7 +1990,9 @@ export class GameEngine {
 
       // 1. 自分側 (P1) のエンドフレーム到達
       if (this.ball.y > CANVAS_HEIGHT) {
-        if (Math.abs(this.ball.vy) > 13) {
+        const outSpeed = this.difficulty === 'hard'
+          ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
+        if (Math.abs(this.ball.vy) > outSpeed) {
           // 強すぎてエンドフレームを越えて飛び出た -> P2のアウト、P1の得点
           this.awardPointTo(1, 'out');
         } else {
@@ -1966,7 +2011,9 @@ export class GameEngine {
 
       // 2. 相手側 (P2) のエンドフレーム到達
       else if (this.ball.y < 0) {
-        if (Math.abs(this.ball.vy) > 13) {
+        const outSpeed = this.difficulty === 'hard'
+          ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
+        if (Math.abs(this.ball.vy) > outSpeed) {
           // 強すぎてエンドフレームを越えて飛び出た -> P1のアウト、P2の得点
           this.awardPointTo(2, 'out');
         } else {

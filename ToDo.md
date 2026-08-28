@@ -603,3 +603,15 @@ Easyモードの「最初の3回は必ず続く」保証を廃止し、毎回通
   - Easyの広いヒットゾーン、遅めのラリー速度、CPU返球率54%は維持。
   - JavaScriptフォールバックとWASMでCPU返球率を統一。
 - [x] 49.3 **ドキュメント更新** (`README.md`, `release-notes.txt`)
+
+## [x] 50. Normal / Hardの難易度判定整理と配布構成確認 (2026-08-29)
+
+Easyの初心者向けコンセプトを基準に、Normalを標準値、HardをNormalより10%厳しい設定として、ゲームロジックと配布構成を整理した。
+- [x] 50.1 **[ゲームロジック] 難易度別ラケット・返球・アウト判定** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Normalはラケット速度8px/frame、打ち返し判定幅90px、アウト判定速度13を使用する。
+  - Hardはラケット速度・打ち返し判定幅・アウト判定速度をNormalの90%にする。
+- [x] 50.2 **[配布] WebAssembly再ビルドとexe構成確認** (`docs/main.wasm`, `main_server.go`)
+  - `docs/main.wasm`を再ビルドし、JavaScriptフォールバックとWASMを同期した。
+  - `stt.exe`は`docs`を外部参照する構成のため、今回の変更では再ビルド不要と確認した。
+- [x] 50.3 **[確認] 構文・ビルド・テスト**
+  - `node --check docs/js/game-engine.js`、`go test ./...`、`git diff --check`を実施した。

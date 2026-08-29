@@ -51,6 +51,19 @@ export class SoundSystem {
       this.ctx.resume().catch(err => console.warn('AudioContext resume failed:', err));
     }
 
+    // Android Chromeではresume()だけでは、後続の非同期イベントからの
+    // 音声再生が許可されない場合がある。ユーザー操作中に無音バッファを
+    // 一度再生して、AudioContextを確実にアンロックする。
+    try {
+      const unlockBuffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      const unlockSource = this.ctx.createBufferSource();
+      unlockSource.buffer = unlockBuffer;
+      unlockSource.connect(this.ctx.destination);
+      unlockSource.start(0);
+    } catch (err) {
+      console.warn('Audio unlock skipped:', err);
+    }
+
     // Decode sound assets to mono first, then apply simple left/right positioning.
     this.panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
 
@@ -227,6 +240,10 @@ export class SoundSystem {
   playPaddleMoveClick(x = CANVAS_WIDTH / 2) {
     if (!this.ctx || this.isMuted) return;
 
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(err => console.warn('AudioContext resume failed:', err));
+    }
+
     const now = this.ctx.currentTime;
     const panner = this.create3DPanner(x, Y_DEFENSE_P1);
     const osc = this.ctx.createOscillator();
@@ -236,7 +253,8 @@ export class SoundSystem {
     osc.frequency.setValueAtTime(1250, now);
     osc.frequency.exponentialRampToValueAtTime(760, now + 0.035);
     gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.16, now + 0.003);
+    // スマートフォンの内蔵スピーカーでも聞き取りやすい音量にする。
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.003);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
 
     osc.connect(gain);

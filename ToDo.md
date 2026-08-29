@@ -2,6 +2,23 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 52. スマートフォン音声・モーション操作のブラウザ対応 (2026-08-30)
+
+Android Chrome、iOS 18以降のSafari、iPhone版Chromeでチルト操作とラケット移動音を利用できるよう、表示・権限・音声初期化を整理した。iOS 26専用APIには依存しない。
+- [x] 52.1 **[モバイル判定] Android Chromeの設定表示改善** (`docs/js/game-engine.js`)
+  - UAだけに依存せず、タッチ入力、粗いポインター、DeviceMotionの有無も使ってモバイル判定する。
+  - スマートフォン設定パネルを表示し、チルト操作を選択できるようにする。
+- [x] 52.2 **[チルト設定] 初回起動と権限要求の修正** (`docs/js/game-engine.js`)
+  - 保存値がない初回起動では、チルト操作の初期値をONとして維持する。
+  - iOS 18以降のSafari / iPhone版Chromeでは、音声有効化ボタンの直接タップからモーションセンサー許可を要求する。iOS 26専用APIは使用しない。
+  - AndroidではDeviceMotionを許可不要の経路として初期化し、許可失敗時はチルト操作を無効化する。
+- [x] 52.3 **[音声] Android ChromeのAudioContext安定化** (`docs/js/sound-system.js`)
+  - 音声有効化タップ時に無音バッファを再生し、AudioContextをアンロックする。
+  - ラケット移動音の再生前に停止中のAudioContextを再開する。
+  - スマートフォンの内蔵スピーカー向けにクリック音量を調整する。
+- [x] 52.4 **[確認] 構文・ビルド・テスト**
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、`go test ./...`、`git diff --check`を実施した。
+
 ## [x] 51. ラリー・サーブ音源の最終整理と操作音の復活 (2026-08-29)
 
 - [x] 51.1 **ラリー音の継続再生と終了制御** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)

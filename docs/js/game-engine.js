@@ -87,9 +87,15 @@ export class GameEngine {
     this.pendingScoreTimeout = null;
 
     // モバイル・アクセシビリティ対応用変数
+    // Androidの「PC版サイト」や一部WebViewではUAにAndroidが出ないことが
+    // あるため、タッチ・粗いポインター・DeviceMotionもモバイル判定に使う。
+    const hasTouchInput = ('ontouchstart' in window)
+      || (navigator.maxTouchPoints > 0)
+      || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    const hasMotionSensor = typeof DeviceMotionEvent !== 'undefined';
     this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-      || ('ontouchstart' in window)
-      || (navigator.maxTouchPoints > 0);
+      || hasTouchInput
+      || hasMotionSensor;
     this.useTilt = false;
     // 加速度センサー（DeviceMotion）による体移動操作
     this.motionAccelX = 0;       // 現在の横方向加速度 (m/s²)
@@ -287,15 +293,18 @@ export class GameEngine {
       // Feature #17: 設定から体移動操作設定を復元
       const useTiltCheckbox = document.getElementById('chk-use-tilt');
       if (useTiltCheckbox) {
-        const savedTilt = localStorage.getItem('stt_use_tilt') === 'true';
-        useTiltCheckbox.checked = savedTilt;
-        // changeイベントをディスパッチして状態を適用させる
-        useTiltCheckbox.dispatchEvent(new Event('change'));
-      }
-
-      const useTilt = useTiltCheckbox ? useTiltCheckbox.checked : false;
-      if (this.isMobile && useTilt) {
-        this.requestDeviceMotionPermission();
+        const savedTilt = localStorage.getItem('stt_use_tilt');
+        // 初回起動時はHTMLの初期値（ON）を維持する。保存値がある場合だけ復元する。
+        useTiltCheckbox.checked = savedTilt === null ? true : savedTilt === 'true';
+        // iOS Safari / iPhone版Chromeでは、モーション許可要求がユーザーの
+        // 直接操作中である必要がある。音声ボタンのclickから直接呼び出す。
+        if (this.isMobile && useTiltCheckbox.checked) {
+          localStorage.setItem('stt_use_tilt', 'true');
+          this.requestDeviceMotionPermission();
+        } else {
+          // OFF設定だけは通常のchange処理で状態を反映する。
+          useTiltCheckbox.dispatchEvent(new Event('change'));
+        }
       }
 
       this.changeScreen('menu');

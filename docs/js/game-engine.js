@@ -1730,7 +1730,12 @@ export class GameEngine {
               sounds.playNetSound(evt.x);
               this.addRipple(evt.x, evt.y, 'net');
             } else if (evt.type === 'ball_hit') {
-              sounds.playHitSound(evt.x);
+              const isCpuHit = this.mode === 'cpu' && evt.player !== this.role;
+              if (isCpuHit) {
+                sounds.playCpuHitSound(evt.x, evt.y);
+              } else {
+                sounds.playHitSound(evt.x);
+              }
               sounds.playServeRollSound(evt.x, evt.y);
               sounds.startRallyMusic();
               if (evt.vy < 0 || evt.player === 1) {
@@ -1955,7 +1960,7 @@ export class GameEngine {
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
-            sounds.playHitSound(this.ball.x);
+            sounds.playCpuHitSound(this.ball.x, this.ball.y);
             sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
@@ -1981,7 +1986,7 @@ export class GameEngine {
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
-            sounds.playHitSound(this.ball.x);
+            sounds.playCpuHitSound(this.ball.x, this.ball.y);
             sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit');

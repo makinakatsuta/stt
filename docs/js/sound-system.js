@@ -735,6 +735,42 @@ export class SoundSystem {
     noise.stop(this.ctx.currentTime + 0.04);
   }
 
+  /** CPUの返球音。人間側の打球音より高域を抑えて、少しこもらせます。 */
+  playCpuHitSound(x, y = Y_DEFENSE_P1) {
+    if (!this.ctx || this.isMuted) return;
+
+    const panner = this.create3DPanner(x, y);
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(850, this.ctx.currentTime);
+    filter.Q.setValueAtTime(0.8, this.ctx.currentTime);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.78, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.18);
+    filter.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
+
+    if (this.racketBuffer) {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.racketBuffer;
+      source.connect(filter);
+      source.start();
+      return;
+    }
+    if (this.assetsOnly) return;
+
+    // 音源が未ロードのときも、CPU音だけは同じ音響特性で生成する。
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(420, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.13);
+    osc.connect(filter);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.18);
+  }
+
   /**
    * プレイヤーが打ち返した時の正解音（チャイム）
    * @param {number} x 衝突したX座標 (パン用)

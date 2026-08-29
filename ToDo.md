@@ -2,6 +2,15 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 53. CPU返球音のこもり音化 (2026-08-30)
+
+CPUの返球音をプレイヤーの打球音と聞き分けやすくするため、Web Audio APIのローパスフィルタで高域を抑え、音量を調整したこもった音に変更した。
+- [x] 53.1 **[音響] CPU返球音の差別化** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)
+  - `playCpuHitSound()` を追加し、CPU返球時だけローパスフィルタ（850Hz）と音量78%を適用する。
+  - WASM版・JavaScriptフォールバック版のCPU返球、およびCPU打球イベント処理に反映する。
+- [x] 53.2 **確認**
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、`git diff --check` を実施した。
+
 ## [x] 52. スマートフォン音声・モーション操作のブラウザ対応 (2026-08-30)
 
 Android Chrome、iOS 18以降のSafari、iPhone版Chromeでチルト操作とラケット移動音を利用できるよう、表示・権限・音声初期化を整理した。iOS 26専用APIには依存しない。

@@ -823,7 +823,6 @@ export class GameEngine {
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playServeSound(this.ball.x, this.difficulty);
-      sounds.playServeRollSound(this.ball.x, this.ball.y);
     }
     else if (payload.actionType === 'ball_hit') {
       // 得点確定後に遅れて届いた打球通知でラリー音や球を再開しない。
@@ -1143,7 +1142,6 @@ export class GameEngine {
                   this.ball.vx = Math.random() * 1.2 - 0.6;
                 }
                 sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, true);
-                sounds.playServeRollSound(this.ball.x, this.ball.y);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
             }, cpuDelay);
@@ -1202,7 +1200,6 @@ export class GameEngine {
           this.ball.vx = Math.random() * 1.2 - 0.6;
         }
         sounds.playServeSound(this.ball.x, this.difficulty);
-        sounds.playServeRollSound(this.ball.x, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
         if (this.mode === 'online') {
@@ -1245,9 +1242,9 @@ export class GameEngine {
       sounds.playOutSound(this.ball.x, this.ball.y);
     }
 
-    // エンドフレーム2回成功の判定時だけ、SMASH.m4aを1回鳴らす。
+    // エンドフレーム2回成功の判定時だけ、rally2.m4aを1回鳴らす。
     if (reason === 'end_frame_success') {
-      sounds.playSmashSound(this.ball.x, this.ball.y);
+      sounds.playEndFrameSuccessSound(this.ball.x, this.ball.y);
     }
 
 
@@ -1659,6 +1656,7 @@ export class GameEngine {
         const now = Date.now();
         if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
           sounds.playFootstepSound(myPaddleX, myDeltaX);
+          sounds.playPaddleMoveClick(myPaddleX);
           this.lastFootstepTime = now;
         }
         // 中央判定 (コート中央 X=400 に対し、ラケット中心が 370〜430 の範囲内)
@@ -1830,6 +1828,7 @@ export class GameEngine {
     const now = Date.now();
     if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
       sounds.playFootstepSound(myPaddleX, myDeltaX);
+      sounds.playPaddleMoveClick(myPaddleX);
       this.lastFootstepTime = now;
     }
     this.lastMyPaddleX = myPaddleX;

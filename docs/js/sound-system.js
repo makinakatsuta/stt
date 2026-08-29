@@ -11,8 +11,8 @@ export class SoundSystem {
     // 本物の実録音源バッファ
     this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
-    this.outBuffer = null;      // out.m4a
-    this.smashBuffer = null;    // SMASH.m4a
+    this.outBuffer = null;      // out.m4a (アウト)
+    this.rally2Buffer = null;   // rally2.m4a (エンドフレーム成功)
     this.realRollSource = null;
     this.realRollGain = null;
     this.serveRollSource = null;
@@ -85,7 +85,7 @@ export class SoundSystem {
     // 足音などの短い摩擦音に使うノイズ素材を用意します。
     this.createNoiseBuffer();
 
-    // 実音源ファイル (rally.m4a, racket.m4a, out.m4a, SMASH.m4a,
+    // 実音源ファイル (rally.m4a, racket.m4a, out.m4a, rally2.m4a,
     // serve1~3.m4a) の非同期読み込み
     this.loadAudioFiles();
   }
@@ -110,14 +110,14 @@ export class SoundSystem {
     };
 
     try {
-      const [s1, s2, s3, rally, racket, out, smash] = await Promise.all([
+      const [s1, s2, s3, rally, racket, out, rally2] = await Promise.all([
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a'),
         fetchAudio('sounds/rally.m4a'),
         fetchAudio('sounds/racket.m4a'),
         fetchAudio('sounds/out.m4a'),
-        fetchAudio('sounds/SMASH.m4a')
+        fetchAudio('sounds/rally2.m4a')
       ]);
 
       // 難易度別の対応付け:
@@ -134,8 +134,11 @@ export class SoundSystem {
       this.rallyBuffer = rally;
       this.racketBuffer = racket;
       this.outBuffer = out;
-      this.smashBuffer = smash;
+      this.rally2Buffer = rally2;
       this.audioLoaded = true;
+      // ラリー開始直後に非同期ロードが完了した場合も、継続中なら
+      // rally.m4a のループを確実に開始します。終了要求後は再生しません。
+      if (this.rallyRequested) this.startRallyMusic();
       console.log('Loaded serve sounds: ' + this.serveBuffers.list.length);
     } catch (e) {
       console.warn('Failed to load audio files:', e);
@@ -220,6 +223,29 @@ export class SoundSystem {
     source.stop(now + duration + 0.01);
   }
 
+  /** ラケット移動時の「かちかち」音を再生します。 */
+  playPaddleMoveClick(x = CANVAS_WIDTH / 2) {
+    if (!this.ctx || this.isMuted) return;
+
+    const now = this.ctx.currentTime;
+    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1250, now);
+    osc.frequency.exponentialRampToValueAtTime(760, now + 0.035);
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.16, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  }
+
   /** 球がネットを越えて自陣へ入ったことを、球の位置から知らせます。 */
   playBallApproachCue(x, y) {
     if (!this.ctx || this.isMuted || !this.realRollBuffer) return;
@@ -239,7 +265,7 @@ export class SoundSystem {
   }
 
   /**
-   * SMASH1.m4a の実録転がり音ループを開始します。
+   * rally.m4a の実録転がり音ループを開始します。
    */
   startRealRollLoop() {
     if (!this.realRollBuffer || !this.ctx) return;
@@ -261,7 +287,7 @@ export class SoundSystem {
   }
 
   /**
-   * ラリー中BGM (SMASH1.m4a) のループ再生を開始します。
+   * ラリー中BGM (rally.m4a) のループ再生を開始します。
    * すでに再生中の場合は何もしません。
    */
   startRallyMusic() {
@@ -294,7 +320,7 @@ export class SoundSystem {
   }
 
   /**
-   * ラリー中BGM (SMASH1.m4a) を停止します。
+   * ラリー中BGM (rally.m4a) を停止します。
    * フェードアウト後に停止します。
    */
   stopRallyMusic() {
@@ -382,7 +408,7 @@ export class SoundSystem {
 
   /**
    * ボールのリアルタイムな位置と速度に応じて、3D空間定位・距離減衰・空気吸収フィルター・
-   * および実録音源 (SMASH1.m4a) の再生音量を動的に更新します。
+   * および実録音源 (rally.m4a) の再生音量を動的に更新します。
    * @param {number} x ボールのX座標 (0〜800)
    * @param {number} y ボールのY座標 (0〜500)
    * @param {number} vx ボールのX方向速度
@@ -427,7 +453,7 @@ export class SoundSystem {
 
     if (speed < 0.1) targetVolume = 0; // 停止時は消音
 
-    // 本物の実録ピン球音源 (SMASH1.m4a) のみを再生
+    // 本物の実録ピン球音源 (rally.m4a) のみを再生
     if (this.realRollGain) {
       this.realRollGain.gain.setTargetAtTime(targetVolume * 1.8, this.ctx.currentTime, 0.04);
     }
@@ -480,20 +506,19 @@ export class SoundSystem {
    * @param {number} x 打球X座標
    * @param {string|null} difficulty 難易度 ('easy' | 'normal' | 'hard') または null (完全ランダム)
    * @param {number} y 打球Y座標
-   * @param {boolean} isCpuServe CPUサーブの場合はHardの音源を重み付きランダムで選ぶ
+   * @param {boolean} isCpuServe CPUサーブの場合は1〜3を低頻度でランダム選択する
    */
   playServeSound(x, difficulty = null, y = Y_DEFENSE_P1, isCpuServe = false) {
     if (!this.ctx || this.isMuted) return;
     if (this.serveBuffers) {
       try {
         let buffer = null;
-        if (difficulty === 'hard' && isCpuServe) {
-          // Hard CPU: serve3 is the fast/strong serve (60%); serve1/2 are
-          // deliberately mixed in at 20% each.
+        if (isCpuServe) {
+          // CPUはserve1を基本に、serve2/3を時々混ぜます。
           const roll = Math.random();
-          buffer = roll < 0.2
+          buffer = roll < 0.7
             ? this.serveBuffers.easy
-            : roll < 0.4
+            : roll < 0.9
               ? this.serveBuffers.normal
               : this.serveBuffers.hard;
         } else if (difficulty && this.serveBuffers[difficulty]) {
@@ -826,21 +851,7 @@ export class SoundSystem {
    * @param {number} y 停止したY座標
    */
   playBallStopSound(x, y = Y_DEFENSE_P1) {
-    if (!this.ctx || this.isMuted) return;
-    if (this.assetsOnly) return;
-    const panner = this.create3DPanner(x, y);
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(280, this.ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.2);
-    osc.connect(gain);
-    gain.connect(panner);
-    panner.connect(this.ctx.destination);
-    osc.start();
-    osc.stop(this.ctx.currentTime + 0.22);
+    this.playBuffer(this.rallyBuffer, x, y, 1.0);
   }
 
 
@@ -852,9 +863,9 @@ export class SoundSystem {
     this.playBuffer(this.outBuffer, x, y, 1.0);
   }
 
-  /** ポイント獲得時の SMASH.m4a を再生します。 */
-  playSmashSound(x = CANVAS_WIDTH / 2, y = Y_DEFENSE_P1) {
-    this.playBuffer(this.smashBuffer, x, y, 1.0);
+  /** 成功したエンドフレーム判定時の rally2.m4a を再生します。 */
+  playEndFrameSuccessSound(x = CANVAS_WIDTH / 2, y = Y_NET) {
+    this.playBuffer(this.rally2Buffer, x, y, 1.0);
   }
 
   playCheerSound() {

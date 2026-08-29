@@ -9,18 +9,19 @@ import (
 )
 
 const (
-	CanvasWidth          = 800.0
-	CanvasHeight         = 500.0
-	PaddleWidth          = 100.0
-	PaddleHeight         = 15.0
-	BallRadius           = 10.0
-	TableFriction        = 0.997
-	YNet                 = 250.0
-	YDefenseP1           = 400.0
-	YDefenseP2           = 100.0
-	NormalPaddleSpeed    = 8.0
-	HardDifficultyFactor = 0.9
-	NormalOutSpeed       = 13.0
+	CanvasWidth             = 800.0
+	CanvasHeight            = 500.0
+	PaddleWidth             = 100.0
+	PaddleHeight            = 15.0
+	BallRadius              = 10.0
+	TableFriction           = 0.997
+	YNet                    = 250.0
+	YDefenseP1              = 400.0
+	YDefenseP2              = 100.0
+	NormalPaddleSpeed       = 8.0
+	HardDifficultyFactor    = 0.9
+	NormalOutSpeed          = 13.0
+	EasyCPUDifficultyFactor = 1.05
 )
 
 func main() {
@@ -129,7 +130,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 		switch difficulty {
 		case "easy":
-			cpuSpeed = 4.05
+			cpuSpeed = 4.05 * EasyCPUDifficultyFactor
 			targetOffset = math.Sin(timeMs/600.0) * 8.0
 		case "normal":
 			cpuSpeed = 4.68
@@ -210,7 +211,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
-					cpuReturnChance = 0.54
+					cpuReturnChance = 0.54 * EasyCPUDifficultyFactor
 				} else if difficulty == "normal" {
 					cpuReturnChance = 0.79
 				}
@@ -220,8 +221,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					cpuVxFactor := 3.6
 					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.35
-						cpuVyBoost = 1.018
+						cpuVxFactor = 1.35 * EasyCPUDifficultyFactor
+						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
 					} else if difficulty == "hard" {
 						cpuVxFactor = 5.4
 						cpuVyBoost = 1.144
@@ -252,7 +253,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
-					cpuReturnChance = 0.54
+					cpuReturnChance = 0.54 * EasyCPUDifficultyFactor
 				} else if difficulty == "normal" {
 					cpuReturnChance = 0.79
 				}
@@ -262,8 +263,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					cpuVxFactor := 3.6
 					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.35
-						cpuVyBoost = 1.018
+						cpuVxFactor = 1.35 * EasyCPUDifficultyFactor
+						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
 					} else if difficulty == "hard" {
 						cpuVxFactor = 5.4
 						cpuVyBoost = 1.144

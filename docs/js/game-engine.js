@@ -4,6 +4,9 @@ import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.8;
+// Easy keeps its beginner-friendly serve and rally style, but the CPU is
+// tuned 5% stronger than before.
+const EASY_CPU_DIFFICULTY_FACTOR = 1.05;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
 const NORMAL_PADDLE_SPEED = 8;
@@ -1855,7 +1858,7 @@ export class GameEngine {
       switch (this.difficulty) {
         case 'easy':
           // 【簡単モード】プレイヤーが3回返球できるよう、最初だけCPU返球を補助する
-          cpuSpeed = 4.05; // 従来比90%
+          cpuSpeed = 4.05 * EASY_CPU_DIFFICULTY_FACTOR;
           targetOffset = Math.sin(Date.now() / 600) * 8; // 微小なブレのみ（自然な動きの演出用）
           break;
         case 'normal':
@@ -1948,14 +1951,14 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? 0.54
+          const cpuReturnChance = this.difficulty === 'easy' ? 0.54 * EASY_CPU_DIFFICULTY_FACTOR
             : this.difficulty === 'normal' ? 0.79 : 0.88;
           if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 : 1.045;
+            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
@@ -1974,14 +1977,14 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? 0.54
+          const cpuReturnChance = this.difficulty === 'easy' ? 0.54 * EASY_CPU_DIFFICULTY_FACTOR
             : this.difficulty === 'normal' ? 0.79 : 0.88;
           if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 : 1.045;
+            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
+            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
             this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;

@@ -657,3 +657,21 @@ Easyの初心者向けコンセプトを基準に、Normalを標準値、Hardを
   - `stt.exe`は`docs`を外部参照する構成のため、今回の変更では再ビルド不要と確認した。
 - [x] 50.3 **[確認] 構文・ビルド・テスト**
   - `node --check docs/js/game-engine.js`、`go test ./...`、`git diff --check`を実施した。
+
+## [x] 51. Easyモードの難易度5%引き上げとドキュメント更新（2026-08-30）
+
+Easyモードの初心者向けコンセプトとプレースタイルを維持したまま、CPUの強さだけを従来比5%引き上げた。Normal／Hardは変更していない。
+
+- [x] 51.1 **[ゲームロジック] Easy専用CPU強度の微調整** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Easy専用のCPU難易度係数を1.05に設定した。
+  - CPU追従速度、返球率、返球時の横速度・縦加速に係数を適用した。
+  - CPU返球率を54%から56.7%へ変更した。
+  - Easyの低速サーブ、サーブコース、ラリー速度、広いヒットゾーンは変更していない。
+- [x] 51.2 **[配布・同期] WASM更新とキャッシュ対策** (`docs/main.wasm`, `docs/index.html`)
+  - JavaScriptフォールバックとWASMのEasy専用パラメータを同期した。
+  - `main.wasm`のクエリ文字列を更新し、古いWASMがキャッシュされる問題を防いだ。
+- [x] 51.3 **[ドキュメント] 変更履歴・使い方の更新** (`README.md`, `release-notes.txt`, `ToDo.md`)
+  - Easyの変更範囲と、Normal／Hardを変更していないことを記載した。
+  - READMEの難易度説明と起動手順を読みやすく整理した。
+- [x] 51.4 **[確認] 構文・ビルド・テスト**
+  - `node --check docs/js/game-engine.js`、`go test ./...`、`git diff --check`、WASMビルドを実施した。

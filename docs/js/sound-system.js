@@ -206,6 +206,17 @@ export class SoundSystem {
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
   }
 
+  /**
+   * ブラウザやモバイルOSによって一時停止された AudioContext を、
+   * 次のユーザー操作・ゲームイベントで再開します。
+   * 初期化時に一度 resume() するだけでは、ラリー中の割り込み後に
+   * context が suspended に戻った場合、以後の打球音が無音になります。
+   */
+  ensureAudioRunning() {
+    if (!this.ctx || this.ctx.state !== 'suspended') return;
+    this.ctx.resume().catch(err => console.warn('AudioContext resume failed:', err));
+  }
+
   /** 移動時のシューズの床摩擦音を再生します。 */
   playFootstepSound(x, deltaX = 1) {
     if (!this.ctx || this.isMuted || !this.noiseBuffer) return;
@@ -574,6 +585,7 @@ export class SoundSystem {
    */
   playBuffer(buffer, x, y, volume = 1.0) {
     if (!this.ctx || this.isMuted || !buffer) return;
+    this.ensureAudioRunning();
     const panner = this.create3DPanner(x, y);
     const source = this.ctx.createBufferSource();
     const gain = this.ctx.createGain();
@@ -672,6 +684,7 @@ export class SoundSystem {
    */
   playHitSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    this.ensureAudioRunning();
     if (this.racketBuffer) {
       this.playBuffer(this.racketBuffer, x, y, 1.0);
       return;
@@ -738,6 +751,7 @@ export class SoundSystem {
   /** CPUの返球音。人間側の打球音より高域を抑えて、少しこもらせます。 */
   playCpuHitSound(x, y = Y_DEFENSE_P1) {
     if (!this.ctx || this.isMuted) return;
+    this.ensureAudioRunning();
 
     const panner = this.create3DPanner(x, y);
     const filter = this.ctx.createBiquadFilter();

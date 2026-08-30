@@ -675,3 +675,13 @@ Easyモードの初心者向けコンセプトとプレースタイルを維持�
   - READMEの難易度説明と起動手順を読みやすく整理した。
 - [x] 51.4 **[確認] 構文・ビルド・テスト**
   - `node --check docs/js/game-engine.js`、`go test ./...`、`git diff --check`、WASMビルドを実施した。
+
+## [x] 52. 全難易度のラリー中打球音復帰対応 (2026-08-31)
+
+Easy・Normal・Hardで、2〜3回ほどラリーした後にラケットへ当たっている打球音が聞こえなくなる可能性を確認し、音声コンテキストの復帰処理を共通化した。
+- [x] 52.1 **[音響] `AudioContext` 一時停止後の打球音復帰** (`docs/js/sound-system.js`)
+  - 打球音再生前に `AudioContext` が `suspended` 状態の場合は `resume()` を呼び出し、プレイヤー・CPUのラケット音を再開できるようにした。
+  - 難易度別のゲームロジックは変更せず、Easy・Normal・Hardの全モードに適用した。
+- [x] 52.2 **[確認] 全難易度の音声経路と構文・テスト確認**
+  - Easy・Normal・Hardが共通の打球音再生経路を使用していることを確認した。
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、`go test ./...`、`git diff --check`を実施した。

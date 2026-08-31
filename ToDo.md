@@ -2,6 +2,14 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 54. 全難易度のCPU返球音をcpuracket.m4aに統一 (2026-09-01)
+
+CPUが返球するときの「コン」を、Easy・Normal・Hardのすべてで`cpuracket.m4a`から直接再生するようにした。従来のローパス加工および合成音フォールバックを削除した。
+- [x] 54.1 **[音響] CPU返球音源の統一** (`docs/js/sound-system.js`)
+  - `playCpuHitSound()`から難易度に依存しない`cpuRacketBuffer`の直接再生を行う。
+- [x] 54.2 **確認**
+  - `node --check docs/js/sound-system.js`、`git diff --check`を実施した。
+
 ## [x] 53. CPU返球音のこもり音化 (2026-08-30)
 
 CPUの返球音をプレイヤーの打球音と聞き分けやすくするため、Web Audio APIのローパスフィルタで高域を抑え、音量を調整したこもった音に変更した。

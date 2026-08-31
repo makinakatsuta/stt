@@ -11,6 +11,7 @@ export class SoundSystem {
     // 本物の実録音源バッファ
     this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
+    this.cpuRacketBuffer = null; // cpuracket.m4a
     this.outBuffer = null;      // out.m4a (アウト)
     this.rally2Buffer = null;   // rally2.m4a (エンドフレーム成功)
     this.realRollSource = null;
@@ -123,12 +124,13 @@ export class SoundSystem {
     };
 
     try {
-      const [s1, s2, s3, rally, racket, out, rally2] = await Promise.all([
+      const [s1, s2, s3, rally, racket, cpuRacket, out, rally2] = await Promise.all([
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a'),
         fetchAudio('sounds/rally.m4a'),
         fetchAudio('sounds/racket.m4a'),
+        fetchAudio('sounds/cpuracket.m4a'),
         fetchAudio('sounds/out.m4a'),
         fetchAudio('sounds/rally2.m4a')
       ]);
@@ -146,6 +148,7 @@ export class SoundSystem {
       this.realRollBuffer = rally;
       this.rallyBuffer = rally;
       this.racketBuffer = racket;
+      this.cpuRacketBuffer = cpuRacket;
       this.outBuffer = out;
       this.rally2Buffer = rally2;
       this.audioLoaded = true;
@@ -766,9 +769,9 @@ export class SoundSystem {
     gain.connect(panner);
     panner.connect(this.ctx.destination);
 
-    if (this.racketBuffer) {
+    if (this.cpuRacketBuffer) {
       const source = this.ctx.createBufferSource();
-      source.buffer = this.racketBuffer;
+      source.buffer = this.cpuRacketBuffer;
       source.connect(filter);
       source.start();
       return;

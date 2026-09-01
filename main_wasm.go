@@ -21,7 +21,7 @@ const (
 	NormalPaddleSpeed       = 8.0
 	HardDifficultyFactor    = 0.9
 	NormalOutSpeed          = 13.0
-	EasyCPUDifficultyFactor = 1.05
+	EasyCPUDifficultyFactor = 1.07
 )
 
 func main() {

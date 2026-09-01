@@ -5,8 +5,8 @@ import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.8;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
-// tuned 5% stronger than before.
-const EASY_CPU_DIFFICULTY_FACTOR = 1.05;
+// tuned 7% stronger than before.
+const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
 const NORMAL_PADDLE_SPEED = 8;

@@ -2,6 +2,24 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 55. ゲーム速度・アウト判定・体育館音響の調整 (2026-09-01)
+
+全モードのゲームバランスと空間音響を調整し、ブラウザでのゲーム開始処理を安定化した。
+- [x] 55.1 **[ゲームロジック] Easy返球・サーブ速度の微調整** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Easyの返球速度係数を`0.8`から`0.8056`へ変更し、0.7%引き上げた。
+  - Easyのサーブ速度を3%引き上げた。
+- [x] 55.2 **[ゲームロジック] 難易度別ランダムアウト判定** (`docs/js/game-engine.js`, `main_wasm.go`)
+  - Easyはサイド10%／エンドフレーム12%、Normalはサイド15%／エンドフレーム18%、Hardはサイド20%／エンドフレーム24%に設定した。
+  - JavaScript版とWASM版の判定を同期し、`docs/main.wasm`を再ビルドした。
+- [x] 55.3 **[音響] ストップボールの停止順序と体育館の3D音響** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)
+  - ストップボール時にラリー音・転がり音を即時停止し、停止音の後に主審コールを行うようにした。
+  - 全モード共通で高天井の残響と控えめな体育館環境音を追加した。
+- [x] 55.4 **[安定性・配布] ブラウザ開始処理と実行ファイル** (`docs/js/game-engine.js`, `stt.exe`)
+  - 体育館音響が利用できない環境でもモード・難易度選択を継続できるよう防御処理を追加した。
+  - `stt.exe`を再ビルドした。
+- [x] 55.5 **確認**
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、WASMビルド、`go build -o stt.exe main_server.go`、`git diff --check`を実施した。
+
 ## [x] 54. 全難易度のCPU返球音をcpuracket.m4aに統一 (2026-09-01)
 
 CPUが返球するときの「コン」を、Easy・Normal・Hardのすべてで`cpuracket.m4a`から直接再生するようにした。従来のローパス加工および合成音フォールバックを削除した。

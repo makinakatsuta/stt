@@ -22,6 +22,13 @@ const (
 	HardDifficultyFactor    = 0.9
 	NormalOutSpeed          = 13.0
 	EasyCPUDifficultyFactor = 1.07
+	EasyRallySpeedFactor    = 0.8056
+	EasySideOutChance       = 0.10
+	EasyEndFrameOutChance   = 0.12
+	NormalSideOutChance     = 0.15
+	NormalEndFrameOutChance = 0.18
+	HardSideOutChance       = 0.20
+	HardEndFrameOutChance   = 0.24
 )
 
 func main() {
@@ -171,28 +178,59 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		ballY += ballVy
 
 		// --- Left/Right wall bounce ---
+		sideOut := false
 		if ballX-BallRadius <= 0 {
 			ballX = BallRadius
-			ballVx = -ballVx * 0.85
-			events = append(events, map[string]interface{}{
-				"type": "wall_hit",
-				"x":    ballX,
-				"y":    ballY,
-			})
+			sideOutChance := NormalSideOutChance
+			if difficulty == "easy" {
+				sideOutChance = EasySideOutChance
+			} else if difficulty == "hard" {
+				sideOutChance = HardSideOutChance
+			}
+			if rand.Float64() < sideOutChance {
+				sideOut = true
+				winner := 1
+				if ballVy < 0 {
+					winner = 2
+				}
+				events = append(events, map[string]interface{}{"type": "score", "winner": winner, "reason": "out"})
+			} else {
+				ballVx = -ballVx * 0.85
+				events = append(events, map[string]interface{}{
+					"type": "wall_hit",
+					"x":    ballX,
+					"y":    ballY,
+				})
+			}
 		} else if ballX+BallRadius >= CanvasWidth {
 			ballX = CanvasWidth - BallRadius
-			ballVx = -ballVx * 0.85
-			events = append(events, map[string]interface{}{
-				"type": "wall_hit",
-				"x":    ballX,
-				"y":    ballY,
-			})
+			sideOutChance := NormalSideOutChance
+			if difficulty == "easy" {
+				sideOutChance = EasySideOutChance
+			} else if difficulty == "hard" {
+				sideOutChance = HardSideOutChance
+			}
+			if rand.Float64() < sideOutChance {
+				sideOut = true
+				winner := 1
+				if ballVy < 0 {
+					winner = 2
+				}
+				events = append(events, map[string]interface{}{"type": "score", "winner": winner, "reason": "out"})
+			} else {
+				ballVx = -ballVx * 0.85
+				events = append(events, map[string]interface{}{
+					"type": "wall_hit",
+					"x":    ballX,
+					"y":    ballY,
+				})
+			}
 		}
 
 		// --- Net collision (chance-based bounce) ---
 		wasAboveNet := oldBallY < YNet
 		isBelowNet := ballY >= YNet
-		if wasAboveNet != isBelowNet && math.Abs(ballVx) > 8 {
+		if !sideOut && wasAboveNet != isBelowNet && math.Abs(ballVx) > 8 {
 			if rand.Float64() < 0.25 {
 				ballVy = -ballVy * 0.3
 				ballVx *= 0.5
@@ -205,7 +243,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		}
 
 		// --- Player 1 (Bottom/Self) Paddle hit ---
-		if ballVy > 0 && ballY >= YDefenseP1 && ballY <= YDefenseP1+25 {
+		if !sideOut && ballVy > 0 && ballY >= YDefenseP1 && ballY <= YDefenseP1+25 {
 			isP1Cpu := (mode == "cpu" && role == 2)
 			if isP1Cpu {
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
@@ -229,7 +267,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					}
 					easySpeedFactor := 1.0
 					if difficulty == "easy" {
-						easySpeedFactor = 0.8
+						easySpeedFactor = EasyRallySpeedFactor
 					}
 					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
 					ballVy = -math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
@@ -247,7 +285,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		}
 
 		// --- Player 2 (Top/Opponent) Paddle hit ---
-		if ballVy < 0 && ballY <= YDefenseP2 && ballY >= YDefenseP2-25 {
+		if !sideOut && ballVy < 0 && ballY <= YDefenseP2 && ballY >= YDefenseP2-25 {
 			isP2Cpu := (mode == "cpu" && role == 1)
 			if isP2Cpu {
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
@@ -271,7 +309,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					}
 					easySpeedFactor := 1.0
 					if difficulty == "easy" {
-						easySpeedFactor = 0.8
+						easySpeedFactor = EasyRallySpeedFactor
 					}
 					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
 					ballVy = math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
@@ -289,12 +327,18 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		}
 
 		// --- Endline / Safe / Out & Score detection (STT rulebook compliant) ---
-		if ballY > CanvasHeight {
+		if !sideOut && ballY > CanvasHeight {
 			outSpeed := NormalOutSpeed
+			endFrameOutChance := NormalEndFrameOutChance
+			if difficulty == "easy" {
+				endFrameOutChance = EasyEndFrameOutChance
+			} else if difficulty == "hard" {
+				endFrameOutChance = HardEndFrameOutChance
+			}
 			if difficulty == "hard" {
 				outSpeed *= HardDifficultyFactor
 			}
-			if math.Abs(ballVy) > outSpeed {
+			if math.Abs(ballVy) > outSpeed || rand.Float64() < endFrameOutChance {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 1,
@@ -307,12 +351,18 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					"reason": "safe",
 				})
 			}
-		} else if ballY < 0 {
+		} else if !sideOut && ballY < 0 {
 			outSpeed := NormalOutSpeed
+			endFrameOutChance := NormalEndFrameOutChance
+			if difficulty == "easy" {
+				endFrameOutChance = EasyEndFrameOutChance
+			} else if difficulty == "hard" {
+				endFrameOutChance = HardEndFrameOutChance
+			}
 			if difficulty == "hard" {
 				outSpeed *= HardDifficultyFactor
 			}
-			if math.Abs(ballVy) > outSpeed {
+			if math.Abs(ballVy) > outSpeed || rand.Float64() < endFrameOutChance {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 2,
@@ -325,7 +375,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					"reason": "safe",
 				})
 			}
-		} else {
+		} else if !sideOut {
 			// Stopping detection (loss by friction)
 			ballSpeed := math.Sqrt(ballVx*ballVx + ballVy*ballVy)
 			if ballSpeed < 0.12 {

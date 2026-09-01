@@ -3,7 +3,7 @@ import { sounds } from './sound-system.js';
 import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
-const EASY_RALLY_SPEED_FACTOR = 0.8;
+const EASY_RALLY_SPEED_FACTOR = 0.8056;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
@@ -20,6 +20,13 @@ const EASY_SERVE_VY_MIN = 1.35;
 const EASY_SERVE_VY_MAX = 1.45;
 const EASY_SERVE_VX_MIN = 0.65;
 const EASY_SERVE_VX_MAX = 0.85;
+const EASY_SERVE_SPEED_FACTOR = 1.03;
+const EASY_SIDE_OUT_CHANCE = 0.10;
+const EASY_END_FRAME_OUT_CHANCE = 0.12;
+const NORMAL_SIDE_OUT_CHANCE = 0.15;
+const NORMAL_END_FRAME_OUT_CHANCE = 0.18;
+const HARD_SIDE_OUT_CHANCE = 0.20;
+const HARD_END_FRAME_OUT_CHANCE = 0.24;
 
 export class GameEngine {
   constructor() {
@@ -588,6 +595,7 @@ export class GameEngine {
     this.stopLoop(); // アニメーションループを確実に停止
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     sounds.stopRallyMusic();
+    sounds.stopGymAmbience();
     narrator.stop();
     this.changeScreen('menu');
 
@@ -900,6 +908,11 @@ export class GameEngine {
     if (this.mode === 'cpu' && !this.difficulty) {
       this.difficulty = localStorage.getItem('stt_last_difficulty') || 'normal';
     }
+    try {
+      sounds.startGymAmbience();
+    } catch (e) {
+      console.warn('Gym ambience skipped:', e);
+    }
 
     this.scores.p1 = 0;
     this.scores.p2 = 0;
@@ -1095,9 +1108,11 @@ export class GameEngine {
                 if (this.difficulty === 'easy') {
                   // 初級: 打ち返しやすい安定した低速サーブ (中央付近へ)
                   this.ball.vx = (Math.random() < 0.5 ? -1 : 1) *
-                    (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN));
+                    (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN)) *
+                    EASY_SERVE_SPEED_FACTOR;
                   this.ball.vy = EASY_SERVE_VY_MIN +
                     Math.random() * (EASY_SERVE_VY_MAX - EASY_SERVE_VY_MIN);
+                  this.ball.vy *= EASY_SERVE_SPEED_FACTOR;
                 } else if (this.difficulty === 'normal') {
                   // ノーマル: スローサーブ、通常速度サーブ、高速サーブをランダムに打ち分け
                   const speedCategory = Math.random();
@@ -1173,6 +1188,7 @@ export class GameEngine {
           // Keep Easy serves in the 5-6 second range, independent of charge.
           baseVy = EASY_SERVE_VY_MIN +
             Math.random() * (EASY_SERVE_VY_MAX - EASY_SERVE_VY_MIN);
+          baseVy *= EASY_SERVE_SPEED_FACTOR;
         }
         if (this.difficulty === 'hard') {
           // ハードはプレイヤーのサーブも高速主体、遅球は10%。
@@ -1207,7 +1223,8 @@ export class GameEngine {
         // 通常ラリー用に、中央寄りへゆっくり出す。
         if (this.difficulty === 'easy') {
           this.ball.vx = (Math.random() < 0.5 ? -1 : 1) *
-            (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN));
+            (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN)) *
+            EASY_SERVE_SPEED_FACTOR;
         } else {
           this.ball.vx = Math.random() * 1.2 - 0.6;
         }
@@ -1248,7 +1265,7 @@ export class GameEngine {
 
     // 得点が入ってプレイが止まったらボールの転がり音をミュートし、ラリーBGMも停止する
     sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
-    sounds.stopRallyMusic();
+    sounds.stopRallyMusic(reason === 'stop');
 
     if (reason === 'out') {
       sounds.playOutSound(this.ball.x, this.ball.y);
@@ -1343,7 +1360,12 @@ export class GameEngine {
 
     // 主審の宣告コール（例:「セーフ、ポイント プレイヤー。 1 対 0。」 / 「アウト、ポイント CPU。 0 対 1。」）
     const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
-    narrator.speak(scoreAnnounce, true);
+    if (reason === 'stop') {
+      // 停止音の再生が終わってから、主審のコールを重ねる。
+      setTimeout(() => narrator.speak(scoreAnnounce, true), 250);
+    } else {
+      narrator.speak(scoreAnnounce, true);
+    }
 
     // 改善⑧: インターバル中にスキップ可能なことをスクリーンリーダーで案内（2秒後）
     setTimeout(() => {
@@ -1435,6 +1457,7 @@ export class GameEngine {
 
     // 試合終了の歓声音を再生（ラリーBGMは先に停止）
     sounds.stopRallyMusic();
+    sounds.stopGymAmbience();
     sounds.playCheerSound();
 
     // play-instructions を再表示し、リザルト画面に書き換える (Feature #11)
@@ -1920,14 +1943,28 @@ export class GameEngine {
       // STTでは横端は壁。壁に当たっただけでは失点にせず、反射音を案内する。
       if (this.ball.x - BALL_RADIUS <= 0) {
         this.ball.x = BALL_RADIUS;
-        this.ball.vx = -this.ball.vx * 0.85;
-        sounds.playFrameSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'wall');
+        const sideOutChance = this.difficulty === 'easy' ? EASY_SIDE_OUT_CHANCE
+          : this.difficulty === 'hard' ? HARD_SIDE_OUT_CHANCE : NORMAL_SIDE_OUT_CHANCE;
+        if (Math.random() < sideOutChance) {
+          this.awardPointTo(this.ball.vy < 0 ? 2 : 1, 'out');
+          return;
+        } else {
+          this.ball.vx = -this.ball.vx * 0.85;
+          sounds.playFrameSound(this.ball.x);
+          this.addRipple(this.ball.x, this.ball.y, 'wall');
+        }
       } else if (this.ball.x + BALL_RADIUS >= CANVAS_WIDTH) {
         this.ball.x = CANVAS_WIDTH - BALL_RADIUS;
-        this.ball.vx = -this.ball.vx * 0.85;
-        sounds.playFrameSound(this.ball.x);
-        this.addRipple(this.ball.x, this.ball.y, 'wall');
+        const sideOutChance = this.difficulty === 'easy' ? EASY_SIDE_OUT_CHANCE
+          : this.difficulty === 'hard' ? HARD_SIDE_OUT_CHANCE : NORMAL_SIDE_OUT_CHANCE;
+        if (Math.random() < sideOutChance) {
+          this.awardPointTo(this.ball.vy < 0 ? 2 : 1, 'out');
+          return;
+        } else {
+          this.ball.vx = -this.ball.vx * 0.85;
+          sounds.playFrameSound(this.ball.x);
+          this.addRipple(this.ball.x, this.ball.y, 'wall');
+        }
       }
 
       // --- ネット (Y=250) の通過判定 ---
@@ -2008,7 +2045,9 @@ export class GameEngine {
       if (this.ball.y > CANVAS_HEIGHT) {
         const outSpeed = this.difficulty === 'hard'
           ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
-        if (Math.abs(this.ball.vy) > outSpeed) {
+        const endFrameOutChance = this.difficulty === 'easy' ? EASY_END_FRAME_OUT_CHANCE
+          : this.difficulty === 'hard' ? HARD_END_FRAME_OUT_CHANCE : NORMAL_END_FRAME_OUT_CHANCE;
+        if (Math.abs(this.ball.vy) > outSpeed || Math.random() < endFrameOutChance) {
           // 強すぎてエンドフレームを越えて飛び出た -> P2のアウト、P1の得点
           this.awardPointTo(1, 'out');
         } else {
@@ -2029,7 +2068,9 @@ export class GameEngine {
       else if (this.ball.y < 0) {
         const outSpeed = this.difficulty === 'hard'
           ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
-        if (Math.abs(this.ball.vy) > outSpeed) {
+        const endFrameOutChance = this.difficulty === 'easy' ? EASY_END_FRAME_OUT_CHANCE
+          : this.difficulty === 'hard' ? HARD_END_FRAME_OUT_CHANCE : NORMAL_END_FRAME_OUT_CHANCE;
+        if (Math.abs(this.ball.vy) > outSpeed || Math.random() < endFrameOutChance) {
           // 強すぎてエンドフレームを越えて飛び出た -> P1のアウト、P2の得点
           this.awardPointTo(2, 'out');
         } else {

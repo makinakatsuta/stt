@@ -34,6 +34,12 @@ export class SoundSystem {
     this.rallyRequested = false;
     this.rallyStopTimer = null;
     this.rallyLoadingPromise = null;
+
+    // Shared gymnasium ambience and a short room impulse for all spatial sounds.
+    this.gymReverb = null;
+    this.gymReverbGain = null;
+    this.gymAmbienceSource = null;
+    this.gymAmbienceGain = null;
   }
 
   /**
@@ -64,6 +70,8 @@ export class SoundSystem {
     } catch (err) {
       console.warn('Audio unlock skipped:', err);
     }
+
+    this.createGymReverb();
 
     // Decode sound assets to mono first, then apply simple left/right positioning.
     this.panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
@@ -207,6 +215,73 @@ export class SoundSystem {
     this.noiseBuffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
     const data = this.noiseBuffer.getChannelData(0);
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  /** Creates a subtle high-ceiling impulse response for the gymnasium space. */
+  createGymReverb() {
+    const length = Math.floor(this.ctx.sampleRate * 1.25);
+    const impulse = this.ctx.createBuffer(2, length, this.ctx.sampleRate);
+    for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        const decay = Math.pow(1 - i / length, 2.4);
+        data[i] = (Math.random() * 2 - 1) * decay * 0.55;
+      }
+    }
+
+    this.gymReverb = this.ctx.createConvolver();
+    this.gymReverb.buffer = impulse;
+    this.gymReverbGain = this.ctx.createGain();
+    this.gymReverbGain.gain.setValueAtTime(0.16, this.ctx.currentTime);
+    this.gymReverb.connect(this.gymReverbGain);
+    this.gymReverbGain.connect(this.ctx.destination);
+  }
+
+  /** Starts a quiet, centered gym-room air tone for the duration of a match. */
+  startGymAmbience() {
+    if (!this.ctx || this.isMuted || !this.noiseBuffer || this.gymAmbienceSource) return;
+    try {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.noiseBuffer;
+      source.loop = true;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(420, this.ctx.currentTime);
+      filter.Q.setValueAtTime(0.45, this.ctx.currentTime);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0, this.ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.018, this.ctx.currentTime + 1.2);
+
+      const panner = this.create3DPanner(CANVAS_WIDTH / 2, Y_NET);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+      source.start();
+
+      this.gymAmbienceSource = source;
+      this.gymAmbienceGain = gain;
+    } catch (e) {
+      // Environmental audio must never prevent mode selection or gameplay.
+      console.warn('Gym ambience unavailable:', e);
+    }
+  }
+
+  stopGymAmbience() {
+    if (!this.gymAmbienceSource) return;
+    const source = this.gymAmbienceSource;
+    this.gymAmbienceSource = null;
+    if (this.gymAmbienceGain && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.gymAmbienceGain.gain.cancelScheduledValues(now);
+      this.gymAmbienceGain.gain.linearRampToValueAtTime(0, now + 0.12);
+    }
+    setTimeout(() => {
+      try { source.stop(); } catch (e) {}
+    }, 150);
+    this.gymAmbienceGain = null;
   }
 
   /**
@@ -355,27 +430,42 @@ export class SoundSystem {
    * ラリー中BGM (rally.m4a) を停止します。
    * フェードアウト後に停止します。
    */
-  stopRallyMusic() {
+  stopRallyMusic(immediate = false) {
     this.rallyRequested = false;
     this.stopServeRollSound();
+    if (immediate && this.realRollGain && this.ctx) {
+      const now = this.ctx.currentTime;
+      this.realRollGain.gain.cancelScheduledValues(now);
+      this.realRollGain.gain.setValueAtTime(0, now);
+    }
     if (!this.rallyPlaying) return;
     this.rallyPlaying = false;
     try {
       if (this.rallyGain && this.ctx) {
         const now = this.ctx.currentTime;
-        // フェードアウト: 0.3秒かけて無音へ
         this.rallyGain.gain.cancelScheduledValues(now);
-        this.rallyGain.gain.setValueAtTime(this.rallyGain.gain.value, now);
-        this.rallyGain.gain.linearRampToValueAtTime(0.0, now + 0.3);
+        if (immediate) {
+          this.rallyGain.gain.setValueAtTime(0.0, now);
+        } else {
+          // フェードアウト: 0.3秒かけて無音へ
+          this.rallyGain.gain.setValueAtTime(this.rallyGain.gain.value, now);
+          this.rallyGain.gain.linearRampToValueAtTime(0.0, now + 0.3);
+        }
       }
       if (this.rallySource) {
         const src = this.rallySource;
         this.rallySource = null;
-        // フェードアウト完了後に停止
-        this.rallyStopTimer = setTimeout(() => {
-          try { src.stop(); } catch (e) {}
+        if (immediate) {
+          if (this.rallyStopTimer) clearTimeout(this.rallyStopTimer);
           this.rallyStopTimer = null;
-        }, 350);
+          try { src.stop(); } catch (e) {}
+        } else {
+          // フェードアウト完了後に停止
+          this.rallyStopTimer = setTimeout(() => {
+            try { src.stop(); } catch (e) {}
+            this.rallyStopTimer = null;
+          }, 350);
+        }
       }
     } catch (e) {
       console.warn('Error stopping rally music:', e);
@@ -435,6 +525,7 @@ export class SoundSystem {
     } else {
       panner.setPosition(coords.x, coords.y, coords.z);
     }
+    if (this.gymReverb) panner.connect(this.gymReverb);
     return panner;
   }
 

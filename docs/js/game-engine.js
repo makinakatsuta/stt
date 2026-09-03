@@ -1689,9 +1689,11 @@ export class GameEngine {
         const oppDeltaX = Math.abs(oppPaddleX - (this.lastOppPaddleX || oppPaddleX));
 
         const now = Date.now();
-        if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
-          sounds.playFootstepSound(myPaddleX, myDeltaX);
+        if (myDeltaX > 0.1) {
+          sounds.startFootstepLoop(myPaddleX);
           this.lastFootstepTime = now;
+        } else if (myDeltaX <= 0.1) {
+          sounds.stopFootstepLoop();
         }
         // 中央判定 (コート中央 X=400 に対し、ラケット中心が 370〜430 の範囲内)
         const myCenterPos = myPaddleX + PADDLE_WIDTH / 2;
@@ -1865,9 +1867,11 @@ export class GameEngine {
     const myPaddleX = paddle.x;
     const myDeltaX = Math.abs(myPaddleX - this.lastMyPaddleX);
     const now = Date.now();
-    if (myDeltaX > 0.1 && now - this.lastFootstepTime >= 90) {
-      sounds.playFootstepSound(myPaddleX, myDeltaX);
+    if (myDeltaX > 0.1) {
+      sounds.startFootstepLoop(myPaddleX);
       this.lastFootstepTime = now;
+    } else if (myDeltaX <= 0.1) {
+      sounds.stopFootstepLoop();
     }
     this.lastMyPaddleX = myPaddleX;
 

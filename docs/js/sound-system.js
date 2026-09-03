@@ -144,7 +144,9 @@ export class SoundSystem {
         fetchAudio('sounds/rally.m4a'),
         fetchAudio('sounds/racket.m4a'),
         fetchAudio('sounds/cpuracket.m4a'),
-        fetchAudio('sounds/Footsteps.m4a'),
+        // Bump this when the binary asset is replaced so an already-open
+        // browser cannot keep using the previous (or silent) cached buffer.
+        fetchAudio('sounds/Footsteps.m4a?v=20260904-1'),
         fetchAudio('sounds/out.m4a'),
         fetchAudio('sounds/rally2.m4a')
       ]);
@@ -304,10 +306,7 @@ export class SoundSystem {
 
   /** 移動時のシューズの床摩擦音を再生します。 */
   playFootstepSound(x, deltaX = 1) {
-    if (!this.ctx || this.isMuted || !this.footstepBuffer) return;
-    // Play immediately for each actual movement update, at a subtle volume.
-    this.stopFootstepLoop(true);
-    this.playBuffer(this.footstepBuffer, x, Y_DEFENSE_P1, 0.08);
+    this.startFootstepLoop(x);
   }
 
   /** Starts the quiet Footsteps.m4a loop while the player is moving. */
@@ -329,7 +328,7 @@ export class SoundSystem {
       const gain = this.ctx.createGain();
       const now = this.ctx.currentTime;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.12, now + 0.03);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
 
       const panner = this.create3DPanner(x, Y_DEFENSE_P1);
       source.connect(gain);

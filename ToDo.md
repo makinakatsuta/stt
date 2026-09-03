@@ -2,6 +2,28 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 57. Windows 11・主要ブラウザ対応の明記 (2026-09-03)
+
+対応環境をドキュメントに整理した。
+- [x] 57.1 **[対応OS] Windows 11** (`README.md`, `release-notes.txt`)
+  - Windows 11で利用できることを明記した。
+- [x] 57.2 **[対応ブラウザ] Google Chrome・Microsoft Edge・Firefox** (`README.md`, `release-notes.txt`)
+  - デスクトップ版の主要ブラウザ3種類に対応していることを明記した。
+- [x] 57.3 **[確認] ドキュメント更新**
+  - `README.md`、`ToDo.md`、`release-notes.txt`の対応環境記載を確認した。
+
+## [x] 56. 移動音とストップボール音の改善 (2026-09-03)
+
+プレイヤーの移動に合わせた足音と、ストップボール時の音声停止を整理した。
+- [x] 56.1 **[音響] 移動時の足音再生** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)
+  - プレイヤーが移動した瞬間に `Footsteps.m4a` を再生する。
+  - 移動していない時や返球処理では足音を再生しない。
+  - ボール音を邪魔しない控えめな音量にする。
+- [x] 56.2 **[音響] ストップボール時の停止** (`docs/js/sound-system.js`, `docs/js/game-engine.js`)
+  - ストップボール判定時にボールの転がり音を即時停止する。
+- [x] 56.3 **確認**
+  - `node --check docs/js/game-engine.js`、`node --check docs/js/sound-system.js`、`git diff --check`を実施した。
+
 ## [x] 55. ゲーム速度・アウト判定・体育館音響の調整 (2026-09-01)
 
 全モードのゲームバランスと空間音響を調整し、ブラウザでのゲーム開始処理を安定化した。

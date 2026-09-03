@@ -12,6 +12,11 @@ export class SoundSystem {
     this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
     this.cpuRacketBuffer = null; // cpuracket.m4a
+    this.footstepBuffer = null; // Footsteps.m4a
+    this.footstepSource = null;
+    this.footstepGain = null;
+    this.footstepPanner = null;
+    this.footstepStopTimer = null;
     this.outBuffer = null;      // out.m4a (アウト)
     this.rally2Buffer = null;   // rally2.m4a (エンドフレーム成功)
     this.realRollSource = null;
@@ -132,13 +137,14 @@ export class SoundSystem {
     };
 
     try {
-      const [s1, s2, s3, rally, racket, cpuRacket, out, rally2] = await Promise.all([
+      const [s1, s2, s3, rally, racket, cpuRacket, footstep, out, rally2] = await Promise.all([
         fetchAudio('sounds/serve1.m4a'),
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a'),
         fetchAudio('sounds/rally.m4a'),
         fetchAudio('sounds/racket.m4a'),
         fetchAudio('sounds/cpuracket.m4a'),
+        fetchAudio('sounds/Footsteps.m4a'),
         fetchAudio('sounds/out.m4a'),
         fetchAudio('sounds/rally2.m4a')
       ]);
@@ -157,6 +163,7 @@ export class SoundSystem {
       this.rallyBuffer = rally;
       this.racketBuffer = racket;
       this.cpuRacketBuffer = cpuRacket;
+      this.footstepBuffer = footstep;
       this.outBuffer = out;
       this.rally2Buffer = rally2;
       this.audioLoaded = true;
@@ -297,32 +304,81 @@ export class SoundSystem {
 
   /** 移動時のシューズの床摩擦音を再生します。 */
   playFootstepSound(x, deltaX = 1) {
-    if (!this.ctx || this.isMuted || !this.noiseBuffer) return;
+    if (!this.ctx || this.isMuted || !this.footstepBuffer) return;
+    // Play immediately for each actual movement update, at a subtle volume.
+    this.stopFootstepLoop(true);
+    this.playBuffer(this.footstepBuffer, x, Y_DEFENSE_P1, 0.08);
+  }
 
-    const now = this.ctx.currentTime;
-    const panner = this.create3DPanner(x, Y_DEFENSE_P1);
-    const source = this.ctx.createBufferSource();
-    source.buffer = this.noiseBuffer;
+  /** Starts the quiet Footsteps.m4a loop while the player is moving. */
+  startFootstepLoop(x = CANVAS_WIDTH / 2) {
+    if (!this.ctx || this.isMuted || !this.footstepBuffer) return;
+    this.ensureAudioRunning();
 
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    const speedRatio = Math.min(Math.abs(deltaX) / 8, 1);
-    const pan = (x / CANVAS_WIDTH) * 2 - 1;
-    filter.frequency.setValueAtTime(1700 + speedRatio * 1000 + pan * 350, now);
-    filter.Q.setValueAtTime(2.5 + speedRatio * 1.5, now);
+    if (this.footstepSource) {
+      const coords = this.get3DCoords(x, Y_DEFENSE_P1);
+      this.setPannerPosition(this.footstepPanner, coords.x, coords.y, coords.z);
+      return;
+    }
 
-    const gain = this.ctx.createGain();
-    const duration = 0.06 + speedRatio * 0.04;
-    gain.gain.setValueAtTime(0.001, now);
-    gain.gain.linearRampToValueAtTime(0.045 + speedRatio * 0.08, now + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    try {
+      const source = this.ctx.createBufferSource();
+      source.buffer = this.footstepBuffer;
+      source.loop = true;
 
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(panner);
-    panner.connect(this.ctx.destination);
-    source.start(now);
-    source.stop(now + duration + 0.01);
+      const gain = this.ctx.createGain();
+      const now = this.ctx.currentTime;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.03);
+
+      const panner = this.create3DPanner(x, Y_DEFENSE_P1);
+      source.connect(gain);
+      gain.connect(panner);
+      panner.connect(this.ctx.destination);
+
+      this.footstepSource = source;
+      this.footstepGain = gain;
+      this.footstepPanner = panner;
+      source.start(now);
+    } catch (e) {
+      console.warn('Error starting footstep loop:', e);
+      this.footstepSource = null;
+      this.footstepGain = null;
+      this.footstepPanner = null;
+    }
+  }
+
+  /** Stops Footsteps.m4a when movement or the rally ends. */
+  stopFootstepLoop(immediate = false) {
+    if (!this.footstepSource) return;
+
+    const source = this.footstepSource;
+    const gain = this.footstepGain;
+    if (this.footstepStopTimer) {
+      clearTimeout(this.footstepStopTimer);
+      this.footstepStopTimer = null;
+    }
+    this.footstepSource = null;
+    this.footstepGain = null;
+    this.footstepPanner = null;
+
+    try {
+      if (gain && this.ctx) {
+        const now = this.ctx.currentTime;
+        gain.gain.cancelScheduledValues(now);
+        if (immediate) {
+          gain.gain.setValueAtTime(0, now);
+        } else {
+          gain.gain.setValueAtTime(gain.gain.value, now);
+          gain.gain.linearRampToValueAtTime(0, now + 0.12);
+        }
+      }
+      if (immediate || !this.ctx) {
+        source.stop();
+      } else {
+        source.stop(this.ctx.currentTime + 0.15);
+      }
+    } catch (e) {}
   }
 
   /** ラケット移動時の「かちかち」音を再生します。 */
@@ -433,12 +489,18 @@ export class SoundSystem {
   stopRallyMusic(immediate = false) {
     this.rallyRequested = false;
     this.stopServeRollSound();
+    this.stopFootstepLoop(immediate);
     if (immediate && this.realRollGain && this.ctx) {
       const now = this.ctx.currentTime;
       this.realRollGain.gain.cancelScheduledValues(now);
       this.realRollGain.gain.setValueAtTime(0, now);
     }
-    if (!this.rallyPlaying) return;
+    if (immediate && this.realRollSource) {
+      try { this.realRollSource.stop(); } catch (e) {}
+      this.realRollSource = null;
+      this.realRollGain = null;
+    }
+    if (!this.rallyPlaying && !this.rallySource) return;
     this.rallyPlaying = false;
     try {
       if (this.rallyGain && this.ctx) {

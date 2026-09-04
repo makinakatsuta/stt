@@ -12,7 +12,7 @@ export class SoundSystem {
     this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
     this.cpuRacketBuffer = null; // cpuracket.m4a
-    this.footstepBuffer = null; // Footsteps.m4a
+    this.footstepBuffer = null; // RacketLeftRight.m4a
     this.footstepSource = null;
     this.footstepGain = null;
     this.footstepPanner = null;
@@ -146,7 +146,7 @@ export class SoundSystem {
         fetchAudio('sounds/cpuracket.m4a'),
         // Bump this when the binary asset is replaced so an already-open
         // browser cannot keep using the previous (or silent) cached buffer.
-        fetchAudio('sounds/Footsteps.m4a?v=20260904-1'),
+        fetchAudio('sounds/RacketLeftRight.m4a?v=20260904-1'),
         fetchAudio('sounds/out.m4a'),
         fetchAudio('sounds/rally2.m4a')
       ]);
@@ -309,7 +309,7 @@ export class SoundSystem {
     this.startFootstepLoop(x);
   }
 
-  /** Starts the quiet Footsteps.m4a loop while the player is moving. */
+  /** Starts the quiet RacketLeftRight.m4a loop while the player is moving. */
   startFootstepLoop(x = CANVAS_WIDTH / 2) {
     if (!this.ctx || this.isMuted || !this.footstepBuffer) return;
     this.ensureAudioRunning();
@@ -328,7 +328,8 @@ export class SoundSystem {
       const gain = this.ctx.createGain();
       const now = this.ctx.currentTime;
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.18, now + 0.03);
+      // RacketLeftRight.m4a は従来より20%大きく再生する。
+      gain.gain.linearRampToValueAtTime(0.216, now + 0.03);
 
       const panner = this.create3DPanner(x, Y_DEFENSE_P1);
       source.connect(gain);
@@ -347,7 +348,7 @@ export class SoundSystem {
     }
   }
 
-  /** Stops Footsteps.m4a when movement or the rally ends. */
+  /** Stops RacketLeftRight.m4a when movement or the rally ends. */
   stopFootstepLoop(immediate = false) {
     if (!this.footstepSource) return;
 

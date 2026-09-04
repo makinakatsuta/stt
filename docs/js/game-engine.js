@@ -27,6 +27,10 @@ const NORMAL_SIDE_OUT_CHANCE = 0.15;
 const NORMAL_END_FRAME_OUT_CHANCE = 0.18;
 const HARD_SIDE_OUT_CHANCE = 0.20;
 const HARD_END_FRAME_OUT_CHANCE = 0.24;
+const TABLE_LEFT = 10;
+const TABLE_RIGHT = CANVAS_WIDTH - 10;
+const PADDLE_MIN_X = TABLE_LEFT;
+const PADDLE_MAX_X = TABLE_RIGHT - PADDLE_WIDTH;
 
 export class GameEngine {
   constructor() {
@@ -549,6 +553,19 @@ export class GameEngine {
       }
     });
 
+    // ウィンドウ切り替えなどで keyup を取りこぼしても、ラケットが
+    // 勝手に動き続けないように入力状態を安全にクリアする。
+    const clearMovementInput = () => {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = false;
+      this.keys['KeyA'] = false;
+      this.keys['KeyD'] = false;
+      this.motionSpeed = 0;
+      this.tiltSpeed = 0;
+      sounds.stopFootstepLoop(true);
+    };
+    window.addEventListener('blur', clearMovementInput);
+
     // Canvasへのフォーカス制御 (矢印キーでのブラウザスクロール防止)
     this.canvas.addEventListener('keydown', (e) => {
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
@@ -559,6 +576,9 @@ export class GameEngine {
     // タブ切り替え・画面非表示時のチャージ状態リセット
     // （Alt+Tab等で keyup が発火しないまま isCharging が残るケースを防ぐ）
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        clearMovementInput();
+      }
       if (document.hidden && this.isCharging) {
         this.isCharging = false;
       }
@@ -799,9 +819,9 @@ export class GameEngine {
       // 相手の画面から送られてくるラケット位置をそのままセット
       // (対戦相手のX座標は、画面上部なので反転せずにそのまま同期できます。Xの向きは共通)
       if (this.role === 1) {
-        this.p2.x = payload.x;
+        this.p2.x = Math.max(PADDLE_MIN_X, Math.min(PADDLE_MAX_X, payload.x));
       } else {
-        this.p1.x = payload.x;
+        this.p1.x = Math.max(PADDLE_MIN_X, Math.min(PADDLE_MAX_X, payload.x));
       }
     }
     else if (payload.actionType === 'voice_call') {
@@ -1014,11 +1034,11 @@ export class GameEngine {
     // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
     if (this.serverRole === 1) {
       // STT service area: the right half of the server's defensive court.
-      this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p1.x));
+      this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p1.x));
       this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
     } else {
-      this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p2.x));
+      this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p2.x));
       this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
     }
@@ -1652,11 +1672,11 @@ export class GameEngine {
           this.state === STATE_PRE_SERVE_HEARD ||
           this.state === STATE_SERVE_WAITING) {
         if (this.serverRole === 1) {
-          this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p1.x));
+          this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p1.x));
           this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
         } else {
-          this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(CANVAS_WIDTH - PADDLE_WIDTH, this.p2.x));
+          this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p2.x));
           this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
         }
@@ -1690,10 +1710,11 @@ export class GameEngine {
 
         const now = Date.now();
         if (myDeltaX > 0.1) {
-          sounds.startFootstepLoop(myPaddleX);
+          sounds.startFootstepLoop(myPaddleX + PADDLE_WIDTH / 2);
           this.lastFootstepTime = now;
         } else if (myDeltaX <= 0.1) {
-          sounds.stopFootstepLoop();
+          // ラケットが止まった瞬間に足音も完全停止する。
+          sounds.stopFootstepLoop(true);
         }
         // 中央判定 (コート中央 X=400 に対し、ラケット中心が 370〜430 の範囲内)
         const myCenterPos = myPaddleX + PADDLE_WIDTH / 2;
@@ -1851,7 +1872,7 @@ export class GameEngine {
         ? maxSpeed * this.tiltSpeed
         : maxSpeed;
       paddle.x -= speed;
-      if (paddle.x < 0) paddle.x = 0;
+      if (paddle.x < PADDLE_MIN_X) paddle.x = PADDLE_MIN_X;
       this.syncPaddlePosition(paddle.x);
     }
     if (physicsKeys['ArrowRight']) {
@@ -1859,7 +1880,7 @@ export class GameEngine {
         ? maxSpeed * this.tiltSpeed
         : maxSpeed;
       paddle.x += speed;
-      if (paddle.x > CANVAS_WIDTH - PADDLE_WIDTH) paddle.x = CANVAS_WIDTH - PADDLE_WIDTH;
+      if (paddle.x > PADDLE_MAX_X) paddle.x = PADDLE_MAX_X;
       this.syncPaddlePosition(paddle.x);
     }
 
@@ -1868,10 +1889,11 @@ export class GameEngine {
     const myDeltaX = Math.abs(myPaddleX - this.lastMyPaddleX);
     const now = Date.now();
     if (myDeltaX > 0.1) {
-      sounds.startFootstepLoop(myPaddleX);
+      sounds.startFootstepLoop(myPaddleX + PADDLE_WIDTH / 2);
       this.lastFootstepTime = now;
     } else if (myDeltaX <= 0.1) {
-      sounds.stopFootstepLoop();
+      // ラケットが止まった瞬間に足音も完全停止する。
+      sounds.stopFootstepLoop(true);
     }
     this.lastMyPaddleX = myPaddleX;
 
@@ -1900,10 +1922,10 @@ export class GameEngine {
 
       if (this.p2.x < cpuTarget) {
         this.p2.x += cpuSpeed;
-        if (this.p2.x > CANVAS_WIDTH - PADDLE_WIDTH) this.p2.x = CANVAS_WIDTH - PADDLE_WIDTH;
+        if (this.p2.x > PADDLE_MAX_X) this.p2.x = PADDLE_MAX_X;
       } else if (this.p2.x > cpuTarget) {
         this.p2.x -= cpuSpeed;
-        if (this.p2.x < 0) this.p2.x = 0;
+        if (this.p2.x < PADDLE_MIN_X) this.p2.x = PADDLE_MIN_X;
       }
     }
 

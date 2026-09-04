@@ -11,6 +11,8 @@ import (
 const (
 	CanvasWidth             = 800.0
 	CanvasHeight            = 500.0
+	TableLeft               = 10.0
+	TableRight              = CanvasWidth - 10.0
 	PaddleWidth             = 100.0
 	PaddleHeight            = 15.0
 	BallRadius              = 10.0
@@ -105,27 +107,27 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	if role == 1 {
 		if getBoolSafe(jsKeys, "ArrowLeft") {
 			p1X -= paddleSpeed
-			if p1X < 0 {
-				p1X = 0
+			if p1X < TableLeft {
+				p1X = TableLeft
 			}
 		}
 		if getBoolSafe(jsKeys, "ArrowRight") {
 			p1X += paddleSpeed
-			if p1X > CanvasWidth-PaddleWidth {
-				p1X = CanvasWidth - PaddleWidth
+			if p1X > TableRight-PaddleWidth {
+				p1X = TableRight - PaddleWidth
 			}
 		}
 	} else if role == 2 {
 		if getBoolSafe(jsKeys, "ArrowLeft") {
 			p2X -= paddleSpeed
-			if p2X < 0 {
-				p2X = 0
+			if p2X < TableLeft {
+				p2X = TableLeft
 			}
 		}
 		if getBoolSafe(jsKeys, "ArrowRight") {
 			p2X += paddleSpeed
-			if p2X > CanvasWidth-PaddleWidth {
-				p2X = CanvasWidth - PaddleWidth
+			if p2X > TableRight-PaddleWidth {
+				p2X = TableRight - PaddleWidth
 			}
 		}
 	}
@@ -153,13 +155,13 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 
 		if p2X < cpuTarget {
 			p2X += cpuSpeed
-			if p2X > CanvasWidth-PaddleWidth {
-				p2X = CanvasWidth - PaddleWidth
+			if p2X > TableRight-PaddleWidth {
+				p2X = TableRight - PaddleWidth
 			}
 		} else if p2X > cpuTarget {
 			p2X -= cpuSpeed
-			if p2X < 0 {
-				p2X = 0
+			if p2X < TableLeft {
+				p2X = TableLeft
 			}
 		}
 	}

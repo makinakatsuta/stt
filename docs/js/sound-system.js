@@ -328,8 +328,8 @@ export class SoundSystem {
       const gain = this.ctx.createGain();
       const now = this.ctx.currentTime;
       gain.gain.setValueAtTime(0, now);
-      // RacketLeftRight.m4a は従来より20%大きく再生する。
-      gain.gain.linearRampToValueAtTime(0.216, now + 0.03);
+      // RacketLeftRight.m4a は現在の設定より30%大きく再生する。
+      gain.gain.linearRampToValueAtTime(0.2808, now + 0.03);
 
       const panner = this.create3DPanner(x, Y_DEFENSE_P1);
       source.connect(gain);

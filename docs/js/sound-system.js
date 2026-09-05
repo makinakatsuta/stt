@@ -146,7 +146,7 @@ export class SoundSystem {
         fetchAudio('sounds/cpuracket.m4a'),
         // Bump this when the binary asset is replaced so an already-open
         // browser cannot keep using the previous (or silent) cached buffer.
-        fetchAudio('sounds/RacketLeftRight.m4a?v=20260904-1'),
+        fetchAudio('sounds/RacketLeftRight.m4a?v=20260905-1'),
         fetchAudio('sounds/out.m4a'),
         fetchAudio('sounds/rally2.m4a')
       ]);

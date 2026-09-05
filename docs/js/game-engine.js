@@ -1324,7 +1324,7 @@ export class GameEngine {
         reasonText = "ストップボール";
         break;
       case 'front_stop':
-        reasonText = "前コートストップ";
+        reasonText = "コートストップ";
         break;
       case 'serve_fault':
         reasonText = "フォルト";

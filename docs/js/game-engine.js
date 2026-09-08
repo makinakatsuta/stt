@@ -496,8 +496,14 @@ export class GameEngine {
     document.getElementById('btn-quit-game').addEventListener('click', () => {
       this.showQuitConfirmation();
     });
-    document.getElementById('btn-confirm-quit').addEventListener('click', () => {
-      this.confirmQuitGame();
+    document.getElementById('btn-quit-easy').addEventListener('click', () => {
+      this.restartFromQuitConfirmation('easy');
+    });
+    document.getElementById('btn-quit-normal').addEventListener('click', () => {
+      this.restartFromQuitConfirmation('normal');
+    });
+    document.getElementById('btn-quit-hard').addEventListener('click', () => {
+      this.restartFromQuitConfirmation('hard');
     });
     document.getElementById('btn-cancel-quit').addEventListener('click', () => {
       this.resumeGameplay();
@@ -658,8 +664,8 @@ export class GameEngine {
 
     const overlay = document.getElementById('quit-confirm-overlay');
     overlay.classList.remove('hidden');
-    narrator.speak("プレイを停止しました。メニューに戻りますか？ OKで戻る、キャンセルでプレイを再開します。", true);
-    document.getElementById('btn-confirm-quit').focus();
+    narrator.speak("プレイを停止しました。戻るステージを選択してください。簡単、普通、難しいから選べます。キャンセルでプレイを再開します。", true);
+    document.getElementById('btn-quit-easy').focus();
   }
 
   /**
@@ -679,11 +685,22 @@ export class GameEngine {
   }
 
   /**
-   * 戻る確認を確定し、ゲームを終了します。
+   * 戻る確認から選択した難易度で新しいCPU戦を開始します。
    */
-  confirmQuitGame() {
+  restartFromQuitConfirmation(difficulty) {
+    if (!this.isGameplayPaused) return;
+
+    if (this.mode === 'online') {
+      this.net.disconnect();
+    }
+    this.mode = 'cpu';
+    this.role = 1;
+    this.difficulty = difficulty;
+    localStorage.setItem('stt_last_difficulty', difficulty);
+    this.isGameplayPaused = false;
+    this.gameplayPausedAt = 0;
     document.getElementById('quit-confirm-overlay').classList.add('hidden');
-    this.quitGame();
+    this.startNewMatch();
   }
 
   handleNetworkDisconnect() {
@@ -1484,18 +1501,49 @@ export class GameEngine {
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) {
       instrEl.classList.remove('hidden');
+      const nextMatchActions = this.mode === 'cpu'
+        ? `<div class="match-result-next-label">次のステージを選択</div>
+          <div class="match-result-difficulties" role="group" aria-label="次のステージを選択">
+            <button class="btn btn-diff result-difficulty-easy" data-result-difficulty="easy">
+              <span class="menu-icon">🐣</span>
+              <span class="menu-title">簡単 (Easy)</span>
+            </button>
+            <button class="btn btn-diff result-difficulty-normal" data-result-difficulty="normal">
+              <span class="menu-icon">⚔️</span>
+              <span class="menu-title">普通 (Normal)</span>
+            </button>
+            <button class="btn btn-diff result-difficulty-hard" data-result-difficulty="hard">
+              <span class="menu-icon">🔥</span>
+              <span class="menu-title">難しい (Hard)</span>
+            </button>
+          </div>`
+        : `<div class="match-result-buttons">
+          <button id="btn-play-again" class="btn btn-primary">もう一度プレイ</button>
+        </div>`;
+
       instrEl.innerHTML = `<div class="match-result-overlay">
         <div class="match-result-title">🏆 試合終了！</div>
         <div class="match-result-winner">勝者: ${winnerName}</div>
         <div class="match-result-score">最終スコア ${this.gameScores.p1} - ${this.gameScores.p2}</div>
+        ${nextMatchActions}
         <div class="match-result-buttons">
-          <button id="btn-play-again" class="btn btn-primary">もう一度プレイ</button>
           <button id="btn-quit-to-menu" class="btn btn-secondary">メニューに戻る</button>
         </div>
       </div>`;
 
+      const resultDifficultyButtons = instrEl.querySelectorAll('[data-result-difficulty]');
       const btnPlayAgain = document.getElementById('btn-play-again');
       const btnQuitMenu = document.getElementById('btn-quit-to-menu');
+
+      resultDifficultyButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          this.difficulty = button.dataset.resultDifficulty;
+          localStorage.setItem('stt_last_difficulty', this.difficulty);
+          instrEl.classList.add('hidden');
+          instrEl.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。';
+          this.startNewMatch();
+        });
+      });
 
       if (btnPlayAgain) {
         btnPlayAgain.addEventListener('click', () => {
@@ -1519,7 +1567,8 @@ export class GameEngine {
         });
       }
 
-      if (btnPlayAgain) btnPlayAgain.focus();
+      const firstResultAction = resultDifficultyButtons[0] || btnPlayAgain || btnQuitMenu;
+      if (firstResultAction) firstResultAction.focus();
     }
 
     // Feature #13: オンライン対戦時は相手に再戦希望（offer）のみを送信する。

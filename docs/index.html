@@ -202,9 +202,13 @@
         <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
           <div class="quit-confirm-dialog">
             <h2 id="quit-confirm-title">プレイを停止しました</h2>
-            <p id="quit-confirm-message">メニューに戻りますか？</p>
+            <p id="quit-confirm-message">戻るステージを選択してください。</p>
+            <div class="quit-confirm-stages" role="group" aria-label="戻るステージを選択">
+              <button id="btn-quit-easy" class="btn btn-diff result-difficulty-easy">🐣 簡単 (Easy)</button>
+              <button id="btn-quit-normal" class="btn btn-diff result-difficulty-normal">⚔️ 普通 (Normal)</button>
+              <button id="btn-quit-hard" class="btn btn-diff result-difficulty-hard">🔥 難しい (Hard)</button>
+            </div>
             <div class="quit-confirm-buttons">
-              <button id="btn-confirm-quit" class="btn btn-danger">OK</button>
               <button id="btn-cancel-quit" class="btn btn-secondary">キャンセル</button>
             </div>
           </div>

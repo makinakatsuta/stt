@@ -514,11 +514,22 @@ body {
   font-size: 1.1rem;
 }
 
+.quit-confirm-stages {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.quit-confirm-stages .btn {
+  min-height: 52px;
+  width: 100%;
+}
+
 .quit-confirm-buttons {
   display: flex;
   justify-content: center;
   gap: 14px;
-  margin-top: 24px;
+  margin-top: 16px;
 }
 
 /* 9. ヘルプとルール説明 */
@@ -1030,12 +1041,57 @@ body {
   letter-spacing: 1px;
 }
 
+.match-result-next-label {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.match-result-difficulties {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
+}
+
+.match-result-difficulties .btn {
+  min-height: 76px;
+  padding: 12px 16px;
+}
+
+.match-result-difficulties .menu-title {
+  font-size: 1rem;
+}
+
+.result-difficulty-easy:hover, .result-difficulty-easy:focus {
+  border-color: var(--color-success);
+  box-shadow: 0 0 20px rgba(57, 255, 20, 0.2);
+}
+
+.result-difficulty-normal:hover, .result-difficulty-normal:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
+}
+
+.result-difficulty-hard:hover, .result-difficulty-hard:focus {
+  border-color: var(--color-warning);
+  box-shadow: 0 0 20px rgba(255, 170, 0, 0.2);
+}
+
 .match-result-buttons {
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .match-result-difficulties {
+    grid-template-columns: 1fr;
+    max-width: 360px;
+  }
 }
 
 /* Speech rate panel */

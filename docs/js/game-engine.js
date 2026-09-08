@@ -510,23 +510,39 @@ export class GameEngine {
     });
 
     // キーボード入力の監視 (Feature #2: スペースキー長押しによるサーブチャージ)
-    window.addEventListener('keydown', (e) => {
+    document.addEventListener('keydown', (e) => {
+      // 中断確認中でもEscでプレイへ戻れるようにする。
+      // 一般キーを無視する処理より先に判定する必要がある。
+      const isEscapeKey = e.code === 'Escape' || e.key === 'Escape' || e.key === 'Esc';
+      if (this.isGameplayPaused && isEscapeKey) {
+        e.preventDefault();
+        this.resumeGameplay();
+        return;
+      }
+
       if (this.isGameplayPaused) {
         e.preventDefault();
         return;
       }
 
+      // code はブラウザやキーボード・スクリーンリーダーによって空になる
+      // ことがあるため、key も併用して操作キーを判定する。
+      const isSpaceKey = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
+      const isArrowKey = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)
+        || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key);
+      const inputCode = e.code || e.key;
+
       // プレイ中は矢印キーのデフォルト挙動 (スクロール) を防止して連打・長押しを円滑にする
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code) || ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+      if (isArrowKey) {
         if (this.state !== STATE_MENU) {
           e.preventDefault();
         }
       }
 
-      this.keys[e.code] = true;
+      if (inputCode) this.keys[inputCode] = true;
 
       // スペースキーによるアクション制御 (スクロール防止)
-      if (e.code === 'Space') {
+      if (isSpaceKey) {
         e.preventDefault();
         if (!e.repeat) {
           if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
@@ -540,24 +556,27 @@ export class GameEngine {
       }
 
       // Escキーによる中断
-      if (e.code === 'Escape') {
+      if (isEscapeKey) {
+        e.preventDefault();
         if (this.state !== STATE_MENU) {
           this.showQuitConfirmation();
         }
       }
-    });
+    }, true);
 
-    window.addEventListener('keyup', (e) => {
+    document.addEventListener('keyup', (e) => {
       if (this.isGameplayPaused) return;
-      this.keys[e.code] = false;
+      const isSpaceKey = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
+      const inputCode = e.code || e.key;
+      if (inputCode) this.keys[inputCode] = false;
 
-      if (e.code === 'Space') {
+      if (isSpaceKey) {
         if (this.isCharging) {
           // チャージ完了でサーブ実行
           this.handleActionInput();
         }
       }
-    });
+    }, true);
 
     // ウィンドウ切り替えなどで keyup を取りこぼしても、ラケットが
     // 勝手に動き続けないように入力状態を安全にクリアする。
@@ -960,6 +979,10 @@ export class GameEngine {
 
     // UIの切り替え
     this.changeScreen('play');
+    // changeScreen は画面内の先頭ボタン（非表示の調整ボタンを含む）へ
+    // フォーカスを移すため、キーボード操作領域を明示的にフォーカスする。
+    const canvasContainer = document.getElementById('canvas-container');
+    if (canvasContainer) canvasContainer.focus();
 
     // 体移動操作（DeviceMotion）の調整ボタン表示制御
     if (this.isMobile && this.useTilt) {
@@ -1066,8 +1089,7 @@ export class GameEngine {
     narrator.speak("プレー", true);
 
     if (this.isMyTurnToServe()) {
-      // 音声のみで案内（テキストフィールドには書かない）
-      // narrator.speak("あなたのサーブです。画面をタップまたはスペースキーで「いきます」と発声してください。", false);
+      // 操作説明はヘルプで案内し、プレイ中は短いコールだけにする。
     } else {
       // CPU対戦かつCPUがサーバーの場合、一定時間後にCPUが自動で「いきます」と発声
       if (this.mode === 'cpu' && this.serverRole === 2) {
@@ -1139,6 +1161,7 @@ export class GameEngine {
             setTimeout(() => {
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
+                this.stateStartTime = Date.now();
                 this.ball.active = true;
 
                 // 難易度に応じてサーブの速度や角度を調整
@@ -1238,8 +1261,6 @@ export class GameEngine {
         this.state = STATE_RALLY;
         this.ball.active = true;
 
-        // 音声のみでラリー開始を案内（テキストフィールドには書かない）
-        // narrator.speak("ラリー開始。ボールが近づいたら高い音が鳴ります。画面をタップまたはスペースキーで打ち返してください。", false);
         // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
         if (this.serverRole === 1) {
           // 自分から相手へ (Yをマイナス方向へ)

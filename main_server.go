@@ -528,7 +528,12 @@ func main() {
 
 	// 静的ファイルの配信設定 (docs ディレクトリ以下をルートとしてサーブ)
 	fs := http.FileServer(http.Dir(docsDir))
-	http.Handle("/", fs)
+	// JavaScriptのイベント処理を更新した際に、古いモジュールをブラウザが
+	// 使い続けないよう、静的ファイルは常に再検証させる。
+	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		fs.ServeHTTP(w, r)
+	}))
 
 	// サウンドファイルの配信設定 (docs/sounds ディレクトリ)
 	soundsFs := http.StripPrefix("/sounds/", http.FileServer(http.Dir(filepath.Join(docsDir, "sounds"))))

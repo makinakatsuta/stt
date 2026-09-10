@@ -16,7 +16,7 @@ const (
 	PaddleWidth             = 100.0
 	PaddleHeight            = 15.0
 	BallRadius              = 10.0
-	TableFriction           = 0.997
+	TableFriction           = 1.0
 	YNet                    = 250.0
 	YDefenseP1              = 400.0
 	YDefenseP2              = 100.0
@@ -24,6 +24,7 @@ const (
 	HardDifficultyFactor    = 0.9
 	NormalOutSpeed          = 13.0
 	EasyCPUDifficultyFactor = 1.07
+	EasyCPUReturnChance     = 0.60
 	EasyRallySpeedFactor    = 0.8056
 	EasySideOutChance       = 0.10
 	EasyEndFrameOutChance   = 0.12
@@ -251,27 +252,23 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
-					cpuReturnChance = 0.54 * EasyCPUDifficultyFactor
+					cpuReturnChance = EasyCPUReturnChance
 				} else if difficulty == "normal" {
 					cpuReturnChance = 0.79
 				}
 				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP1
-					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					cpuVxFactor := 3.6
 					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.35 * EasyCPUDifficultyFactor
 						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
 					} else if difficulty == "hard" {
-						cpuVxFactor = 5.4
-						cpuVyBoost = 1.144
+						cpuVyBoost = 1.15
 					}
 					easySpeedFactor := 1.0
 					if difficulty == "easy" {
 						easySpeedFactor = EasyRallySpeedFactor
 					}
-					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
+					ballVx = 0
 					ballVy = -math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
 
 					events = append(events, map[string]interface{}{
@@ -293,27 +290,23 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
-					cpuReturnChance = 0.54 * EasyCPUDifficultyFactor
+					cpuReturnChance = EasyCPUReturnChance
 				} else if difficulty == "normal" {
 					cpuReturnChance = 0.79
 				}
 				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP2
-					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
-					cpuVxFactor := 3.6
 					cpuVyBoost := 1.045
 					if difficulty == "easy" {
-						cpuVxFactor = 1.35 * EasyCPUDifficultyFactor
 						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
 					} else if difficulty == "hard" {
-						cpuVxFactor = 5.4
-						cpuVyBoost = 1.144
+						cpuVyBoost = 1.15
 					}
 					easySpeedFactor := 1.0
 					if difficulty == "easy" {
 						easySpeedFactor = EasyRallySpeedFactor
 					}
-					ballVx = relativeHitPos * cpuVxFactor * easySpeedFactor
+					ballVx = 0
 					ballVy = math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
 
 					events = append(events, map[string]interface{}{

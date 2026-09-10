@@ -3,10 +3,11 @@ import { sounds } from './sound-system.js';
 import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
-const EASY_RALLY_SPEED_FACTOR = 0.8056;
+const EASY_RALLY_SPEED_FACTOR = 0.85;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
+const EASY_CPU_RETURN_CHANCE = 0.60;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
 const NORMAL_PADDLE_SPEED = 8;
@@ -14,10 +15,15 @@ const HARD_DIFFICULTY_FACTOR = 0.9;
 const NORMAL_HIT_ZONE = 90;
 const NORMAL_PADDLE_MARGIN = 35;
 const NORMAL_OUT_SPEED = 13;
-// At 60 FPS with TABLE_FRICTION, this range crosses the 300 px court in
-// roughly 5-6 seconds. Easy serves deliberately drift left or right.
-const EASY_SERVE_VY_MIN = 1.35;
-const EASY_SERVE_VY_MAX = 1.45;
+const NORMAL_SERVE_SPEED_FACTOR = 1.10;
+const NORMAL_FAST_SERVE_CHANCE = 0.15;
+const NORMAL_FAST_SERVE_VY_MIN = 8.5;
+const NORMAL_FAST_SERVE_VY_MAX = 9.5;
+const HARD_RETURN_SPEED_FACTOR = 1.15;
+const HARD_FAST_SERVE_CHANCE = 0.35;
+// Easy serves remain deliberately slow and drift left or right.
+const EASY_SERVE_VY_MIN = 3.2;
+const EASY_SERVE_VY_MAX = 4.5;
 const EASY_SERVE_VX_MIN = 0.65;
 const EASY_SERVE_VX_MAX = 0.85;
 const EASY_SERVE_SPEED_FACTOR = 1.03;
@@ -1177,16 +1183,21 @@ export class GameEngine {
                   // ノーマル: スローサーブ、通常速度サーブ、高速サーブをランダムに打ち分け
                   const speedCategory = Math.random();
                   let baseVy;
-                  if (speedCategory < 0.33) {
+                  if (speedCategory < 0.25) {
                     // スローサーブ (ふわりと緩い球)
                     baseVy = 3.42 + Math.random() * 0.45; // 3.42〜3.87
-                  } else if (speedCategory < 0.67) {
+                  } else if (speedCategory < 0.85) {
                     // 通常速度サーブ
                     baseVy = 4.68 + Math.random() * 0.72; // 4.68〜5.4
                   } else {
                     // 高速サーブ (鋭く速い球)
-                    baseVy = 6.3 + Math.random() * 0.9; // 6.3〜7.2
+                    baseVy = 7.0 + Math.random() * 1.0; // faster normal serve
                   }
+                  if (Math.random() < NORMAL_FAST_SERVE_CHANCE) {
+                    baseVy = NORMAL_FAST_SERVE_VY_MIN + Math.random() *
+                      (NORMAL_FAST_SERVE_VY_MAX - NORMAL_FAST_SERVE_VY_MIN);
+                  }
+                  baseVy *= NORMAL_SERVE_SPEED_FACTOR;
 
                   const serveAngle = Math.random();
                   let cpuServeVx;
@@ -1204,12 +1215,12 @@ export class GameEngine {
                   // 90% は高速、10% だけ遅い変化球にする。
                   const speedCategory = Math.random();
                   let baseVy;
-                  if (speedCategory < 0.2) {
-                    baseVy = 3.6 + Math.random() * 0.72;
-                  } else if (speedCategory < 0.4) {
-                    baseVy = 5.4 + Math.random() * 0.9;
+                  if (speedCategory < 0.15) {
+                    baseVy = 4.2 + Math.random() * 0.8;
+                  } else if (speedCategory < 1 - HARD_FAST_SERVE_CHANCE) {
+                    baseVy = 5.8 + Math.random() * 1.0;
                   } else {
-                    baseVy = 7.2 + Math.random() * 1.8;
+                    baseVy = 8.5 + Math.random() * 1.5;
                   }
                   const serveAngle = Math.random();
                   let cpuServeVx;
@@ -1244,18 +1255,29 @@ export class GameEngine {
         this.isCharging = false;
         const chargeRatio = chargeTime;
         let baseVy = 4.05 + (chargeRatio * 3.15); // 4.05〜7.2
+        if (this.difficulty === 'normal') {
+          baseVy *= NORMAL_SERVE_SPEED_FACTOR;
+          if (Math.random() < NORMAL_FAST_SERVE_CHANCE) {
+            baseVy = NORMAL_FAST_SERVE_VY_MIN + Math.random() *
+              (NORMAL_FAST_SERVE_VY_MAX - NORMAL_FAST_SERVE_VY_MIN);
+          }
+        }
         if (this.difficulty === 'easy') {
-          // Keep Easy serves in the 5-6 second range, independent of charge.
+          // Easy serves stay forgiving, but no longer make the rally drag.
           baseVy = EASY_SERVE_VY_MIN +
             Math.random() * (EASY_SERVE_VY_MAX - EASY_SERVE_VY_MIN);
           baseVy *= EASY_SERVE_SPEED_FACTOR;
         }
         if (this.difficulty === 'hard') {
           // ハードはプレイヤーのサーブも高速主体、遅球は10%。
-          baseVy = Math.random() < 0.10
-          baseVy = Math.random() < 0.10
-            ? 4.0 + Math.random() * 0.8
-            : 8.0 + Math.random() * 2.0;
+          const hardSpeedCategory = Math.random();
+          if (hardSpeedCategory < 0.15) {
+            baseVy = 4.2 + Math.random() * 0.8;
+          } else if (hardSpeedCategory < 1 - HARD_FAST_SERVE_CHANCE) {
+            baseVy = 5.8 + Math.random() * 1.0;
+          } else {
+            baseVy = 8.5 + Math.random() * 1.5;
+          }
         }
 
         this.state = STATE_RALLY;
@@ -1679,10 +1701,12 @@ export class GameEngine {
     this.ball.y = defenseY;
     const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
     const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
-    this.ball.vx = relativeHitPos * 7.5 * rallySpeedFactor;
+    // Returns travel straight toward the opponent's end frame.
+    this.ball.vx = 0;
+    const returnSpeedFactor = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : 1.05;
     this.ball.vy = this.role === 1
-      ? -Math.abs(this.ball.vy) * 1.05 * rallySpeedFactor
-      : Math.abs(this.ball.vy) * 1.05 * rallySpeedFactor;
+      ? -Math.abs(this.ball.vy) * returnSpeedFactor * rallySpeedFactor
+      : Math.abs(this.ball.vy) * returnSpeedFactor * rallySpeedFactor;
 
     sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2, defenseY);
     sounds.playHitSound(this.ball.x, defenseY);
@@ -1931,7 +1955,7 @@ export class GameEngine {
     // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
     const maxSpeed = this.difficulty === 'hard'
       ? NORMAL_PADDLE_SPEED * HARD_DIFFICULTY_FACTOR
-      : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 7;
+      : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 8.5;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     const isAssistMove = !this.keys['ArrowLeft'] && !this.keys['ArrowRight'] &&
       (physicsKeys['ArrowLeft'] || physicsKeys['ArrowRight']);
@@ -2082,16 +2106,16 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? 0.54 * EASY_CPU_DIFFICULTY_FACTOR
+          const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
             : this.difficulty === 'normal' ? 0.79 : 0.88;
           if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
+            const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
-            this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
+            this.ball.vx = 0;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
             sounds.playCpuHitSound(this.ball.x, this.ball.y);
@@ -2108,16 +2132,16 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? 0.54 * EASY_CPU_DIFFICULTY_FACTOR
+          const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
             : this.difficulty === 'normal' ? 0.79 : 0.88;
           if (hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? 1.144 : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
+            const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
-            this.ball.vx = relativeHitPos * cpuVxFactor * rallySpeedFactor;
+            this.ball.vx = 0;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
             sounds.playCpuHitSound(this.ball.x, this.ball.y);

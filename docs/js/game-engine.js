@@ -4,6 +4,10 @@ import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.85;
+// Normal/Hard were reaching the opponent roughly twice as fast as the
+// official Sound Table Tennis rally pace. Keep Easy's existing tuning and
+// reduce only the standard/hard rally return speed.
+const STANDARD_RALLY_SPEED_FACTOR = 0.5;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
@@ -1700,7 +1704,8 @@ export class GameEngine {
     this.pendingSwingUntil = 0;
     this.ball.y = defenseY;
     const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-    const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
+    const rallySpeedFactor = this.difficulty === 'easy'
+      ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
     // Returns travel straight toward the opponent's end frame.
     this.ball.vx = 0;
     const returnSpeedFactor = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : 1.05;
@@ -2114,7 +2119,8 @@ export class GameEngine {
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
             const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
-            const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
+            const rallySpeedFactor = this.difficulty === 'easy'
+              ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
             this.ball.vx = 0;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
@@ -2140,7 +2146,8 @@ export class GameEngine {
             // 改善①②④: 難易度別の返球横速度・縦加速
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
             const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
-            const rallySpeedFactor = this.difficulty === 'easy' ? EASY_RALLY_SPEED_FACTOR : 1;
+            const rallySpeedFactor = this.difficulty === 'easy'
+              ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
             this.ball.vx = 0;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 

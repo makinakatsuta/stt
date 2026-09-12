@@ -11,7 +11,7 @@ export class SoundSystem {
     // 本物の実録音源バッファ
     this.realRollBuffer = null; // rally.m4a
     this.racketBuffer = null;   // racket.m4a
-    this.cpuRacketBuffer = null; // cpuracket.m4a
+    this.cpuRacketBuffer = null; // CPU_racket.m4a
     this.footstepBuffer = null; // RacketLeftRight.m4a
     this.footstepSource = null;
     this.footstepGain = null;
@@ -142,8 +142,8 @@ export class SoundSystem {
         fetchAudio('sounds/serve2.m4a'),
         fetchAudio('sounds/serve3.m4a'),
         fetchAudio('sounds/rally.m4a'),
-        fetchAudio('sounds/racket.m4a'),
-        fetchAudio('sounds/cpuracket.m4a'),
+        fetchAudio('sounds/racket.m4a?v=20260912-1'),
+        fetchAudio('sounds/CPU_racket.m4a?v=20260912-1'),
         // Bump this when the binary asset is replaced so an already-open
         // browser cannot keep using the previous (or silent) cached buffer.
         fetchAudio('sounds/RacketLeftRight.m4a?v=20260905-1'),
@@ -904,7 +904,7 @@ export class SoundSystem {
     noise.stop(this.ctx.currentTime + 0.04);
   }
 
-  /** CPU返球時は、全難易度で cpuracket.m4a の「コン」を再生します。 */
+  /** CPU返球時は、全難易度で CPU_racket.m4a の「コン」を再生します。 */
   playCpuHitSound(x, y = Y_DEFENSE_P1) {
     // Easy/Normal/Hard intentionally share the same recorded CPU return sound.
     this.playBuffer(this.cpuRacketBuffer, x, y, 1.0);

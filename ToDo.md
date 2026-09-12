@@ -2,6 +2,16 @@
 
 サウンドテーブルテニス（STT）の公式ルールに準拠し、Go（WebSocket）バックエンドとWeb Audio API（フロントエンド）を組み合わせたブラウザゲームの開発ToDoリストです。オンライン対戦は現在一時停止中です。
 
+## [x] 62. 音源ファイルの差し替えと参照先更新 (2026-09-12)
+
+`racket.m4a` と CPU返球音源を新しい音源へ差し替え、音源ファイル名の変更を再生処理へ反映した。
+- [x] 62.1 **[音響] プレイヤー打球音源の差し替え** (`docs/sounds/racket.m4a`, `docs/js/sound-system.js`)
+  - `racket.m4a` を差し替え、キャッシュバスターを更新した。
+- [x] 62.2 **[音響] CPU返球音源のファイル名変更** (`docs/sounds/CPU_racket.m4a`, `docs/sounds/cpuracket.m4a`, `docs/js/sound-system.js`)
+  - `cpuracket.m4a` から `CPU_racket.m4a` へ変更し、参照先を更新した。
+- [x] 62.3 **[確認] 音源参照と構文の確認**
+  - 音源ファイルの存在、`node --check docs/js/sound-system.js`、`git diff --check` を確認した。
+
 ## [x] 61. 難易度別ボール速度・ラリー軌道の調整 (2026-09-11)
 
 フィードバックを反映し、Easy・Normal・Hardの速度差と、返球後のフレーム到達性を調整した。

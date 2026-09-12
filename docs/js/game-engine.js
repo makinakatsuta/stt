@@ -44,6 +44,11 @@ const TABLE_LEFT = 10;
 const TABLE_RIGHT = CANVAS_WIDTH - 10;
 const PADDLE_MIN_X = TABLE_LEFT;
 const PADDLE_MAX_X = TABLE_RIGHT - PADDLE_WIDTH;
+// DeviceMotion input is smoothed and uses hysteresis so small hand tremors
+// do not repeatedly start and stop the paddle near the movement threshold.
+const MOTION_FILTER_ALPHA = 0.25;
+const MOTION_START_DEADZONE = 1.8;
+const MOTION_STOP_DEADZONE = 1.2;
 
 function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction) {
   const incomingSpeed = Math.hypot(vx, vy);
@@ -142,8 +147,10 @@ export class GameEngine {
     this.useTilt = false;
     // 加速度センサー（DeviceMotion）による体移動操作
     this.motionAccelX = 0;       // 現在の横方向加速度 (m/s²)
+    this.filteredMotionAccelX = 0; // 平滑化後の横方向加速度 (m/s²)
     this.motionSpeed = 0;        // 正規化されたラケット速度 (0.0〜1.0)
     this.tiltSpeed = 0;          // updatePhysics で参照する速度 (互換性維持)
+    this.motionDirection = 0;    // -1: 左, 1: 右, 0: 静止
     this.handleMotionBound = null;
 
     // 戻る確認ダイアログ表示中は、ゲームを完全に停止する
@@ -203,6 +210,8 @@ export class GameEngine {
           this.keys['KeyD'] = false;
           this.motionSpeed = 0;
           this.tiltSpeed = 0;
+          this.filteredMotionAccelX = 0;
+          this.motionDirection = 0;
           document.getElementById('btn-calibrate-tilt').classList.add('hidden');
           this.updateCanvasAriaLabel();
         }
@@ -616,6 +625,8 @@ export class GameEngine {
       this.keys['KeyD'] = false;
       this.motionSpeed = 0;
       this.tiltSpeed = 0;
+      this.filteredMotionAccelX = 0;
+      this.motionDirection = 0;
       sounds.stopFootstepLoop(true);
     };
     window.addEventListener('blur', clearMovementInput);
@@ -682,6 +693,8 @@ export class GameEngine {
     this.keys['KeyD'] = false;
     this.motionSpeed = 0;
     this.tiltSpeed = 0;
+    this.filteredMotionAccelX = 0;
+    this.motionDirection = 0;
     this.updateCanvasAriaLabel();
 
     // play-instructions を元の表示状態に戻す (次回プレイ開始まで非表示のまま)
@@ -708,7 +721,11 @@ export class GameEngine {
     this.keys['KeyD'] = false;
     this.motionSpeed = 0;
     this.tiltSpeed = 0;
-    sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
+    this.filteredMotionAccelX = 0;
+    this.motionDirection = 0;
+    // A back/Escape action must silence all continuous gameplay audio while
+    // the confirmation dialog is open.
+    sounds.stopGameplayAudio();
 
     const overlay = document.getElementById('quit-confirm-overlay');
     overlay.classList.remove('hidden');
@@ -727,6 +744,12 @@ export class GameEngine {
     this.isGameplayPaused = false;
     this.gameplayPausedAt = 0;
     document.getElementById('quit-confirm-overlay').classList.add('hidden');
+    if (this.state === STATE_RALLY && this.ball.active) {
+      // Recreate the rally audio only when play was resumed during an active
+      // rally. The ball position/velocity is refreshed by the next frame.
+      sounds.startRallyMusic();
+      sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
+    }
     this.startLoop();
     this.canvas.focus();
     narrator.speak("プレイを再開しました。");
@@ -2801,31 +2824,43 @@ export class GameEngine {
 
     this.motionAccelX = rawX;
 
-    // デッドゾーンと最大スケールを適用して 0.0〜1.0 に正規化
-    const deadzone = 1.5;  // m/s²: これ以下の加速度は無視
+    // センサー値を平滑化し、移動開始と停止に別の閾値を使う。
+    // 閾値付近の微細な手ブレでラケットが左右に揺れ続けるのを防ぐ。
+    this.filteredMotionAccelX += (rawX - this.filteredMotionAccelX) * MOTION_FILTER_ALPHA;
+    const filteredX = this.filteredMotionAccelX;
     const maxAccel = 8.0;  // m/s²: これ以上でラケット最大速度
 
-    let ratio = 0;
-    if (Math.abs(rawX) > deadzone) {
-      const effective = Math.abs(rawX) - deadzone;
-      const range = maxAccel - deadzone;
-      ratio = Math.min(effective / range, 1.0);
+    if (this.motionDirection === 0) {
+      if (Math.abs(filteredX) >= MOTION_START_DEADZONE) {
+        this.motionDirection = filteredX < 0 ? -1 : 1;
+      }
+    } else if (Math.abs(filteredX) <= MOTION_STOP_DEADZONE) {
+      this.motionDirection = 0;
+    } else if (Math.abs(filteredX) >= MOTION_START_DEADZONE) {
+      // 十分な逆方向入力が入った場合だけ方向を切り替える。
+      this.motionDirection = filteredX < 0 ? -1 : 1;
     }
 
+    let ratio = 0;
+    if (this.motionDirection !== 0) {
+      const effective = Math.max(0, Math.abs(filteredX) - MOTION_STOP_DEADZONE);
+      const range = maxAccel - MOTION_STOP_DEADZONE;
+      ratio = Math.min(effective / range, 1.0);
+    }
     this.motionSpeed = ratio; // 0.0〜1.0
     this.tiltSpeed = ratio;   // updatePhysics の既存コードと互換
 
     // キー状態に反映（updatePhysics で keys['ArrowLeft/Right'] を参照しているため）
-    if (rawX < -deadzone) {
+    if (this.motionDirection < 0) {
       // 右向き加速度（体が右に動く → ラケットを右へ）
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = true;
-    } else if (rawX > deadzone) {
+    } else if (this.motionDirection > 0) {
       // 左向き加速度（体が左に動く → ラケットを左へ）
       this.keys['ArrowLeft'] = true;
       this.keys['ArrowRight'] = false;
     } else {
-      // デッドゾーン内 → 静止
+      // 停止閾値内 → 静止
       this.keys['ArrowLeft'] = false;
       this.keys['ArrowRight'] = false;
       this.motionSpeed = 0;

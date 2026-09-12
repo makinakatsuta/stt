@@ -596,6 +596,16 @@ export class SoundSystem {
     return panner;
   }
 
+  /** Stops every continuous sound used during gameplay immediately. */
+  stopGameplayAudio() {
+    // Stop the ball/rally loop, serve-roll loop, and paddle movement loop.
+    this.stopRallyMusic(true);
+    this.stopServeRollSound();
+    this.stopFootstepLoop(true);
+    this.stopGymAmbience();
+    this.updateBallSound(0, 0, 0, 0);
+  }
+
   /**
    * ボールのリアルタイムな位置と速度に応じて、3D空間定位・距離減衰・空気吸収フィルター・
    * および実録音源 (rally.m4a) の再生音量を動的に更新します。

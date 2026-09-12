@@ -3,11 +3,13 @@ import { sounds } from './sound-system.js';
 import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
-const EASY_RALLY_SPEED_FACTOR = 0.85;
-// Easy keeps its existing beginner-friendly pace. Normal is the average
-// player's reference pace, while Hard shortens the time between returns.
-const STANDARD_RALLY_SPEED_FACTOR = 1.0;
-const HARD_RALLY_SPEED_FACTOR = 1.1;
+// Each return uses the incoming ball speed, so the rally naturally accelerates.
+const EASY_RALLY_ACCELERATION = 1.01;
+const STANDARD_RALLY_ACCELERATION = 1.02;
+const HARD_RALLY_ACCELERATION = 1.04;
+const EASY_RALLY_MAX_SPEED = 8;
+const STANDARD_RALLY_MAX_SPEED = 13;
+const HARD_RALLY_MAX_SPEED = 15;
 const GAME_TIME_LIMIT_MS = 10 * 60 * 1000;
 const EXPEDITE_RETURN_LIMIT = 7;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
@@ -25,7 +27,6 @@ const NORMAL_SERVE_SPEED_FACTOR = 1.10;
 const NORMAL_FAST_SERVE_CHANCE = 0.15;
 const NORMAL_FAST_SERVE_VY_MIN = 8.5;
 const NORMAL_FAST_SERVE_VY_MAX = 9.5;
-const HARD_RETURN_SPEED_FACTOR = 1.15;
 const HARD_FAST_SERVE_CHANCE = 0.35;
 // Easy serves remain deliberately slow and drift left or right.
 const EASY_SERVE_VY_MIN = 3.2;
@@ -43,6 +44,19 @@ const TABLE_LEFT = 10;
 const TABLE_RIGHT = CANVAS_WIDTH - 10;
 const PADDLE_MIN_X = TABLE_LEFT;
 const PADDLE_MAX_X = TABLE_RIGHT - PADDLE_WIDTH;
+
+function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction) {
+  const incomingSpeed = Math.hypot(vx, vy);
+  const acceleration = difficulty === 'easy' ? EASY_RALLY_ACCELERATION
+    : difficulty === 'hard' ? HARD_RALLY_ACCELERATION : STANDARD_RALLY_ACCELERATION;
+  const maxSpeed = difficulty === 'easy' ? EASY_RALLY_MAX_SPEED
+    : difficulty === 'hard' ? HARD_RALLY_MAX_SPEED : STANDARD_RALLY_MAX_SPEED;
+  const targetSpeed = Math.min(incomingSpeed * acceleration, maxSpeed);
+  const horizontalRatio = Math.max(-0.25, Math.min(0.25, relativeHitPos * 0.25));
+  const outVx = targetSpeed * horizontalRatio;
+  const outVy = direction * Math.sqrt(Math.max(0, targetSpeed * targetSpeed - outVx * outVx));
+  return { vx: outVx, vy: outVy };
+}
 
 export class GameEngine {
   constructor() {
@@ -1718,15 +1732,15 @@ export class GameEngine {
     this.pendingSwingUntil = 0;
     this.ball.y = defenseY;
     const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
-    const rallySpeedFactor = this.difficulty === 'easy'
-      ? EASY_RALLY_SPEED_FACTOR
-      : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
-    // Returns travel straight toward the opponent's end frame.
-    this.ball.vx = 0;
-    const returnSpeedFactor = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : 1.05;
-    this.ball.vy = this.role === 1
-      ? -Math.abs(this.ball.vy) * returnSpeedFactor * rallySpeedFactor
-      : Math.abs(this.ball.vy) * returnSpeedFactor * rallySpeedFactor;
+    const returnVelocity = calculateRallyReturnVelocity(
+      this.ball.vx,
+      this.ball.vy,
+      relativeHitPos,
+      this.difficulty,
+      this.role === 1 ? -1 : 1
+    );
+    this.ball.vx = returnVelocity.vx;
+    this.ball.vy = returnVelocity.vy;
 
     sounds.playSwingSound(paddle.x + PADDLE_WIDTH / 2, defenseY);
     sounds.playHitSound(this.ball.x, defenseY);
@@ -2134,13 +2148,15 @@ export class GameEngine {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
-            const rallySpeedFactor = this.difficulty === 'easy'
-              ? EASY_RALLY_SPEED_FACTOR
-              : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
-            this.ball.vx = 0;
-            this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
+            const returnVelocity = calculateRallyReturnVelocity(
+              this.ball.vx,
+              this.ball.vy,
+              relativeHitPos,
+              this.difficulty,
+              -1
+            );
+            this.ball.vx = returnVelocity.vx;
+            this.ball.vy = returnVelocity.vy;
 
             sounds.playCpuHitSound(this.ball.x, this.ball.y);
             sounds.playServeRollSound(this.ball.x, this.ball.y);
@@ -2163,13 +2179,15 @@ export class GameEngine {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
-            const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
-            const rallySpeedFactor = this.difficulty === 'easy'
-              ? EASY_RALLY_SPEED_FACTOR
-              : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
-            this.ball.vx = 0;
-            this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
+            const returnVelocity = calculateRallyReturnVelocity(
+              this.ball.vx,
+              this.ball.vy,
+              relativeHitPos,
+              this.difficulty,
+              1
+            );
+            this.ball.vx = returnVelocity.vx;
+            this.ball.vy = returnVelocity.vy;
 
             sounds.playCpuHitSound(this.ball.x, this.ball.y);
             sounds.playServeRollSound(this.ball.x, this.ball.y);

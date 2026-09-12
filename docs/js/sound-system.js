@@ -3,6 +3,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js
 // The recorded racket hit was perceived at less than half the required
 // loudness on the target speakers. Compensate at playback for both players.
 const RACKET_HIT_VOLUME = 2.0;
+const CPU_RACKET_HIT_VOLUME = 2.12;
 
 export class SoundSystem {
   constructor() {
@@ -911,7 +912,7 @@ export class SoundSystem {
   /** CPU返球時は、全難易度で CPU_racket.m4a の「コン」を再生します。 */
   playCpuHitSound(x, y = Y_DEFENSE_P1) {
     // Easy/Normal/Hard intentionally share the same recorded CPU return sound.
-    this.playBuffer(this.cpuRacketBuffer, x, y, RACKET_HIT_VOLUME);
+    this.playBuffer(this.cpuRacketBuffer, x, y, CPU_RACKET_HIT_VOLUME);
   }
 
   /**

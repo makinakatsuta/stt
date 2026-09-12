@@ -9,32 +9,53 @@ import (
 )
 
 const (
-	CanvasWidth              = 800.0
-	CanvasHeight             = 500.0
-	TableLeft                = 10.0
-	TableRight               = CanvasWidth - 10.0
-	PaddleWidth              = 100.0
-	PaddleHeight             = 15.0
-	BallRadius               = 10.0
-	TableFriction            = 1.0
-	YNet                     = 250.0
-	YDefenseP1               = 400.0
-	YDefenseP2               = 100.0
-	NormalPaddleSpeed        = 8.0
-	HardDifficultyFactor     = 0.9
-	NormalOutSpeed           = 13.0
-	EasyCPUDifficultyFactor  = 1.07
-	EasyCPUReturnChance      = 0.60
-	EasyRallySpeedFactor     = 0.8056
-	StandardRallySpeedFactor = 1.0
-	HardRallySpeedFactor     = 1.1
-	EasySideOutChance        = 0.10
-	EasyEndFrameOutChance    = 0.12
-	NormalSideOutChance      = 0.15
-	NormalEndFrameOutChance  = 0.18
-	HardSideOutChance        = 0.20
-	HardEndFrameOutChance    = 0.24
+	CanvasWidth               = 800.0
+	CanvasHeight              = 500.0
+	TableLeft                 = 10.0
+	TableRight                = CanvasWidth - 10.0
+	PaddleWidth               = 100.0
+	PaddleHeight              = 15.0
+	BallRadius                = 10.0
+	TableFriction             = 1.0
+	YNet                      = 250.0
+	YDefenseP1                = 400.0
+	YDefenseP2                = 100.0
+	NormalPaddleSpeed         = 8.0
+	HardDifficultyFactor      = 0.9
+	NormalOutSpeed            = 13.0
+	EasyCPUDifficultyFactor   = 1.07
+	EasyCPUReturnChance       = 0.60
+	EasyRallyAcceleration     = 1.01
+	StandardRallyAcceleration = 1.02
+	HardRallyAcceleration     = 1.04
+	EasyRallyMaxSpeed         = 8.0
+	StandardRallyMaxSpeed     = 13.0
+	HardRallyMaxSpeed         = 15.0
+	EasySideOutChance         = 0.10
+	EasyEndFrameOutChance     = 0.12
+	NormalSideOutChance       = 0.15
+	NormalEndFrameOutChance   = 0.18
+	HardSideOutChance         = 0.20
+	HardEndFrameOutChance     = 0.24
 )
+
+func calculateRallyReturnVelocity(vx, vy, relativeHitPos float64, difficulty string, direction float64) (float64, float64) {
+	incomingSpeed := math.Hypot(vx, vy)
+	acceleration := StandardRallyAcceleration
+	maxSpeed := StandardRallyMaxSpeed
+	if difficulty == "easy" {
+		acceleration = EasyRallyAcceleration
+		maxSpeed = EasyRallyMaxSpeed
+	} else if difficulty == "hard" {
+		acceleration = HardRallyAcceleration
+		maxSpeed = HardRallyMaxSpeed
+	}
+	targetSpeed := math.Min(incomingSpeed*acceleration, maxSpeed)
+	horizontalRatio := math.Max(-0.25, math.Min(0.25, relativeHitPos*0.25))
+	outVx := targetSpeed * horizontalRatio
+	outVy := direction * math.Sqrt(math.Max(0, targetSpeed*targetSpeed-outVx*outVx))
+	return outVx, outVy
+}
 
 func main() {
 	// Register the function to JavaScript global scope
@@ -260,20 +281,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				}
 				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP1
-					cpuVyBoost := 1.045
-					if difficulty == "easy" {
-						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
-					} else if difficulty == "hard" {
-						cpuVyBoost = 1.15
-					}
-					rallySpeedFactor := StandardRallySpeedFactor
-					if difficulty == "easy" {
-						rallySpeedFactor = EasyRallySpeedFactor
-					} else if difficulty == "hard" {
-						rallySpeedFactor = HardRallySpeedFactor
-					}
-					ballVx = 0
-					ballVy = -math.Abs(ballVy) * cpuVyBoost * rallySpeedFactor
+					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
+					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, -1)
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -300,20 +309,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				}
 				if hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP2
-					cpuVyBoost := 1.045
-					if difficulty == "easy" {
-						cpuVyBoost = 1.018 * EasyCPUDifficultyFactor
-					} else if difficulty == "hard" {
-						cpuVyBoost = 1.15
-					}
-					rallySpeedFactor := StandardRallySpeedFactor
-					if difficulty == "easy" {
-						rallySpeedFactor = EasyRallySpeedFactor
-					} else if difficulty == "hard" {
-						rallySpeedFactor = HardRallySpeedFactor
-					}
-					ballVx = 0
-					ballVy = math.Abs(ballVy) * cpuVyBoost * rallySpeedFactor
+					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
+					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, 1)
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",

@@ -4,10 +4,12 @@ import { narrator } from './speech-system.js';
 import { NetworkSystem } from './network-system.js';
 
 const EASY_RALLY_SPEED_FACTOR = 0.85;
-// Normal/Hard were reaching the opponent roughly twice as fast as the
-// official Sound Table Tennis rally pace. Keep Easy's existing tuning and
-// reduce only the standard/hard rally return speed.
-const STANDARD_RALLY_SPEED_FACTOR = 0.5;
+// Easy keeps its existing beginner-friendly pace. Normal is the average
+// player's reference pace, while Hard shortens the time between returns.
+const STANDARD_RALLY_SPEED_FACTOR = 1.0;
+const HARD_RALLY_SPEED_FACTOR = 1.1;
+const GAME_TIME_LIMIT_MS = 10 * 60 * 1000;
+const EXPEDITE_RETURN_LIMIT = 7;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
@@ -81,6 +83,9 @@ export class GameEngine {
 
     // タイムアウト管理 (公式5秒ルールなどのチェック用)
     this.stateStartTime = 0;
+    this.gameStartTime = 0;
+    this.expediteRuleActive = false;
+    this.rallyReturnCount = 0;
     this.timerInterval = null;
 
     // Feature #2, #4: チャージサーブおよびインターバルスキップ用の状態管理変数
@@ -984,6 +989,9 @@ export class GameEngine {
     this.scores.p2 = 0;
     this.gameScores.p1 = 0;
     this.gameScores.p2 = 0;
+    this.gameStartTime = Date.now();
+    this.expediteRuleActive = false;
+    this.rallyReturnCount = 0;
     // STT準拠: Easyを含む全難易度で、2ポイントごとにサーブ権を交替する。
     this.serverRole = 1;
 
@@ -1074,6 +1082,7 @@ export class GameEngine {
     this.ball.active = false;
     this.pendingSwingUntil = 0;
     this.endFrameHits = 0;
+    this.rallyReturnCount = 0;
 
     // プレイ集中モード: play-instructions テキストボックスを非表示にする
     // (スクリーンリーダーの sr-announcer 経由で音声で案内するため画面テキストは不要)
@@ -1399,6 +1408,9 @@ export class GameEngine {
       case 'overtime':
         reasonText = "オーバータイム";
         break;
+      case 'expedite':
+        reasonText = "促進ルール";
+        break;
       default:
         reasonText = reason || "ポイント";
     }
@@ -1490,6 +1502,8 @@ export class GameEngine {
           // ゲーム内のスコアをリセット
           this.scores.p1 = 0;
           this.scores.p2 = 0;
+          this.gameStartTime = Date.now();
+          this.rallyReturnCount = 0;
           this.updateScoreboard();
 
           // Feature #1 / 改善⑦: CPU戦サーブ交代制（easy含め全難易度でゲームごとに交代）
@@ -1705,7 +1719,8 @@ export class GameEngine {
     this.ball.y = defenseY;
     const relativeHitPos = (this.ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
     const rallySpeedFactor = this.difficulty === 'easy'
-      ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
+      ? EASY_RALLY_SPEED_FACTOR
+      : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
     // Returns travel straight toward the opponent's end frame.
     this.ball.vx = 0;
     const returnSpeedFactor = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : 1.05;
@@ -1718,6 +1733,7 @@ export class GameEngine {
     sounds.playServeRollSound(this.ball.x, defenseY);
     sounds.startRallyMusic();
     sounds.playSuccessChime(this.ball.x, this.difficulty === 'easy', defenseY);
+    this.recordRallyReturn(this.role);
     this.addRipple(this.ball.x, this.ball.y, this.role === 1 ? 'hit_p1' : 'hit');
     console.debug('[STT return success]', {
       role: this.role,
@@ -1890,6 +1906,7 @@ export class GameEngine {
               } else {
                 this.addRipple(evt.x, evt.y, 'hit');
               }
+              this.recordRallyReturn(evt.player);
 
               if (this.mode === 'online' && this.role === evt.player) {
                 this.net.send('action', {
@@ -2120,7 +2137,8 @@ export class GameEngine {
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
             const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy'
-              ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
+              ? EASY_RALLY_SPEED_FACTOR
+              : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
             this.ball.vx = 0;
             this.ball.vy = -Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
@@ -2128,6 +2146,7 @@ export class GameEngine {
             sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit_p1');
+            this.recordRallyReturn(1);
           }
         }
       }
@@ -2147,7 +2166,8 @@ export class GameEngine {
             const cpuVxFactor = this.difficulty === 'easy' ? 1.35 * EASY_CPU_DIFFICULTY_FACTOR : this.difficulty === 'hard' ? 5.4 : 3.6;
             const cpuVyBoost = this.difficulty === 'hard' ? HARD_RETURN_SPEED_FACTOR : this.difficulty === 'easy' ? 1.018 * EASY_CPU_DIFFICULTY_FACTOR : 1.045;
             const rallySpeedFactor = this.difficulty === 'easy'
-              ? EASY_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
+              ? EASY_RALLY_SPEED_FACTOR
+              : this.difficulty === 'hard' ? HARD_RALLY_SPEED_FACTOR : STANDARD_RALLY_SPEED_FACTOR;
             this.ball.vx = 0;
             this.ball.vy = Math.abs(this.ball.vy) * cpuVyBoost * rallySpeedFactor;
 
@@ -2155,6 +2175,7 @@ export class GameEngine {
             sounds.playServeRollSound(this.ball.x, this.ball.y);
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit');
+            this.recordRallyReturn(2);
             // 改善⑤: CPU打球時のスクリーンリーダー向け通知
             try {
               const srEl = document.getElementById('sr-announcer');
@@ -2265,10 +2286,38 @@ export class GameEngine {
   /**
    * STT公式ルールに基づく秒数制限をチェックし、違反時は失点処理を行います。
    */
+  recordRallyReturn(player) {
+    if (this.expediteRuleActive && player !== this.serverRole) {
+      this.rallyReturnCount++;
+    }
+  }
+
   checkTimeouts() {
     if (this.state === STATE_POINT_WON || this.state === STATE_MENU) return;
 
     const elapsed = (Date.now() - this.stateStartTime) / 1000;
+
+    // STT 1.12: apply the expedite system after ten minutes, except for
+    // the late-game score range where the rule is not applied.
+    if (!this.expediteRuleActive && this.gameStartTime > 0 &&
+        Date.now() - this.gameStartTime >= GAME_TIME_LIMIT_MS) {
+      const p1 = this.scores.p1;
+      const p2 = this.scores.p2;
+      const lateGameException = (p1 === 9 && p2 === 9) ||
+        (p1 >= 10 && p2 >= 8) || (p2 >= 10 && p1 >= 8);
+      if (!lateGameException) {
+        this.expediteRuleActive = true;
+        this.rallyReturnCount = 0;
+        narrator.speak('促進ルールを適用します。レシーバーが7回返球するとラリーを終了します。', true);
+      }
+    }
+
+    if (this.expediteRuleActive && this.state === STATE_RALLY &&
+        this.rallyReturnCount >= EXPEDITE_RETURN_LIMIT) {
+      const receiver = this.serverRole === 1 ? 2 : 1;
+      this.awardPointTo(receiver, 'expedite');
+      return;
+    }
 
     if (this.state === STATE_PRE_SERVE_READY) {
       // サーバーは「プレー」宣告から10秒以内に「いきます」と言わなければならない

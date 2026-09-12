@@ -1,5 +1,5 @@
 // 変更後のモジュールを確実に読み込むため、リリースごとにバージョンを更新する。
-import { GameEngine } from './js/game-engine.js?v=20260912-1';
+import { GameEngine } from './js/game-engine.js?v=20260912-2';
 
 const bootstrap = () => {
   const enableAudioButton = document.getElementById('btn-enable-audio');

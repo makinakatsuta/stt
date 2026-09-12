@@ -9,29 +9,31 @@ import (
 )
 
 const (
-	CanvasWidth             = 800.0
-	CanvasHeight            = 500.0
-	TableLeft               = 10.0
-	TableRight              = CanvasWidth - 10.0
-	PaddleWidth             = 100.0
-	PaddleHeight            = 15.0
-	BallRadius              = 10.0
-	TableFriction           = 1.0
-	YNet                    = 250.0
-	YDefenseP1              = 400.0
-	YDefenseP2              = 100.0
-	NormalPaddleSpeed       = 8.0
-	HardDifficultyFactor    = 0.9
-	NormalOutSpeed          = 13.0
-	EasyCPUDifficultyFactor = 1.07
-	EasyCPUReturnChance     = 0.60
-	EasyRallySpeedFactor    = 0.8056
-	EasySideOutChance       = 0.10
-	EasyEndFrameOutChance   = 0.12
-	NormalSideOutChance     = 0.15
-	NormalEndFrameOutChance = 0.18
-	HardSideOutChance       = 0.20
-	HardEndFrameOutChance   = 0.24
+	CanvasWidth              = 800.0
+	CanvasHeight             = 500.0
+	TableLeft                = 10.0
+	TableRight               = CanvasWidth - 10.0
+	PaddleWidth              = 100.0
+	PaddleHeight             = 15.0
+	BallRadius               = 10.0
+	TableFriction            = 1.0
+	YNet                     = 250.0
+	YDefenseP1               = 400.0
+	YDefenseP2               = 100.0
+	NormalPaddleSpeed        = 8.0
+	HardDifficultyFactor     = 0.9
+	NormalOutSpeed           = 13.0
+	EasyCPUDifficultyFactor  = 1.07
+	EasyCPUReturnChance      = 0.60
+	EasyRallySpeedFactor     = 0.8056
+	StandardRallySpeedFactor = 1.0
+	HardRallySpeedFactor     = 1.1
+	EasySideOutChance        = 0.10
+	EasyEndFrameOutChance    = 0.12
+	NormalSideOutChance      = 0.15
+	NormalEndFrameOutChance  = 0.18
+	HardSideOutChance        = 0.20
+	HardEndFrameOutChance    = 0.24
 )
 
 func main() {
@@ -264,12 +266,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					} else if difficulty == "hard" {
 						cpuVyBoost = 1.15
 					}
-					easySpeedFactor := 1.0
+					rallySpeedFactor := StandardRallySpeedFactor
 					if difficulty == "easy" {
-						easySpeedFactor = EasyRallySpeedFactor
+						rallySpeedFactor = EasyRallySpeedFactor
+					} else if difficulty == "hard" {
+						rallySpeedFactor = HardRallySpeedFactor
 					}
 					ballVx = 0
-					ballVy = -math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
+					ballVy = -math.Abs(ballVy) * cpuVyBoost * rallySpeedFactor
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -302,12 +306,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					} else if difficulty == "hard" {
 						cpuVyBoost = 1.15
 					}
-					easySpeedFactor := 1.0
+					rallySpeedFactor := StandardRallySpeedFactor
 					if difficulty == "easy" {
-						easySpeedFactor = EasyRallySpeedFactor
+						rallySpeedFactor = EasyRallySpeedFactor
+					} else if difficulty == "hard" {
+						rallySpeedFactor = HardRallySpeedFactor
 					}
 					ballVx = 0
-					ballVy = math.Abs(ballVy) * cpuVyBoost * easySpeedFactor
+					ballVy = math.Abs(ballVy) * cpuVyBoost * rallySpeedFactor
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",

@@ -2,8 +2,8 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js
 
 // The recorded racket hit was perceived at less than half the required
 // loudness on the target speakers. Compensate at playback for both players.
-const RACKET_HIT_VOLUME = 2.2;
-const CPU_RACKET_HIT_VOLUME = 2.332;
+const RACKET_HIT_VOLUME = 3.85;
+const CPU_RACKET_HIT_VOLUME = 4.081;
 
 export class SoundSystem {
   constructor() {

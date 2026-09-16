@@ -35,11 +35,8 @@ const EASY_SERVE_VX_MIN = 0.65;
 const EASY_SERVE_VX_MAX = 0.85;
 const EASY_SERVE_SPEED_FACTOR = 1.03;
 const EASY_SIDE_OUT_CHANCE = 0.10;
-const EASY_END_FRAME_OUT_CHANCE = 0.12;
 const NORMAL_SIDE_OUT_CHANCE = 0.15;
-const NORMAL_END_FRAME_OUT_CHANCE = 0.18;
 const HARD_SIDE_OUT_CHANCE = 0.20;
-const HARD_END_FRAME_OUT_CHANCE = 0.24;
 const TABLE_LEFT = 10;
 const TABLE_RIGHT = CANVAS_WIDTH - 10;
 const PADDLE_MIN_X = TABLE_LEFT;
@@ -89,7 +86,6 @@ export class GameEngine {
     // Kept for compatibility with a previously cached WASM binary. The
     // current game logic does not use this value to guarantee any rally.
     this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0 };
-    this.endFrameHits = 0;
     this.p1 = { x: 350, y: Y_DEFENSE_P1 + 50 }; // 手前 (自分)
     this.p2 = { x: 350, y: Y_DEFENSE_P2 - 50 }; // 奥 (相手 / CPU)
 
@@ -1118,7 +1114,6 @@ export class GameEngine {
     this.stateStartTime = Date.now();
     this.ball.active = false;
     this.pendingSwingUntil = 0;
-    this.endFrameHits = 0;
     this.rallyReturnCount = 0;
 
     // プレイ集中モード: play-instructions テキストボックスを非表示にする
@@ -1384,7 +1379,7 @@ export class GameEngine {
   /**
    * 得点獲得処理。得点理由と勝者をアナウンスし、次のラリーへ。
    * @param {number} winner 勝者プレイヤー番号 (1 or 2)
-   * @param {string} reason 理由 ('miss', 'serve_fault', 'out', 'stop', 'overtime')
+   * @param {string} reason 理由 ('miss', 'serve_fault', 'out', 'safe', 'stop', 'overtime')
    */
   awardPointTo(winner, reason) {
     // A physics frame can report more than one terminal condition (for
@@ -1400,12 +1395,6 @@ export class GameEngine {
     if (reason === 'out') {
       sounds.playOutSound(this.ball.x, this.ball.y);
     }
-
-    // エンドフレーム2回成功の判定時だけ、rally2.m4aを1回鳴らす。
-    if (reason === 'end_frame_success') {
-      sounds.playEndFrameSuccessSound(this.ball.x, this.ball.y);
-    }
-
 
     // 効果音の再生
     if (reason === 'out') {
@@ -1438,9 +1427,6 @@ export class GameEngine {
         break;
       case 'serve_fault':
         reasonText = "フォルト";
-        break;
-      case 'end_frame_success':
-        reasonText = "エンドフレーム成功";
         break;
       case 'overtime':
         reasonText = "オーバータイム";
@@ -2227,51 +2213,28 @@ export class GameEngine {
       }
 
       // --- 得点・セーフ・アウト・停止判定 (STT公式ルールブック 1.7.12, 1.9.1, 1.9.2 に準拠) ---
+      // エンドフレームに触れた時点でプレー中ではなくなる。ここでは物理モデル上、
+      // エンドフレーム通過時の速度を「次に最初に当たる場所」の近似として使い、
+      // そのラリーを直ちにセーフまたはアウトとして確定する。
 
-      // 1. 自分側 (P1) のエンドフレーム到達
+      // 1. 自分側 (P1) のエンドフレーム到達。P2の打球なので、
+      //    セーフならP2、アウトならP1にポイント。
       if (this.ball.y > CANVAS_HEIGHT) {
         const outSpeed = this.difficulty === 'hard'
           ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
-        const endFrameOutChance = this.difficulty === 'easy' ? EASY_END_FRAME_OUT_CHANCE
-          : this.difficulty === 'hard' ? HARD_END_FRAME_OUT_CHANCE : NORMAL_END_FRAME_OUT_CHANCE;
-        if (Math.abs(this.ball.vy) > outSpeed || Math.random() < endFrameOutChance) {
-          // 強すぎてエンドフレームを越えて飛び出た -> P2のアウト、P1の得点
-          this.awardPointTo(1, 'out');
-        } else {
-          this.endFrameHits++;
-          sounds.playFrameSound(this.ball.x, CANVAS_HEIGHT);
-          if (this.endFrameHits >= 2) {
-            // 2回目もコート内に残った場合は成功扱いにする。
-            this.awardPointTo(2, 'end_frame_success');
-          } else {
-            // 1回目はコート内へ跳ね返し、2回目の接触を待つ。
-            this.ball.y = CANVAS_HEIGHT - BALL_RADIUS;
-            this.ball.vy = -Math.abs(this.ball.vy) * 0.75;
-          }
-        }
+        const reason = Math.abs(this.ball.vy) > outSpeed ? 'out' : 'safe';
+        sounds.playFrameSound(this.ball.x, CANVAS_HEIGHT);
+        this.awardPointTo(reason === 'out' ? 1 : 2, reason);
       }
 
-      // 2. 相手側 (P2) のエンドフレーム到達
+      // 2. 相手側 (P2) のエンドフレーム到達。P1の打球なので、
+      //    セーフならP1、アウトならP2にポイント。
       else if (this.ball.y < 0) {
         const outSpeed = this.difficulty === 'hard'
           ? NORMAL_OUT_SPEED * HARD_DIFFICULTY_FACTOR : NORMAL_OUT_SPEED;
-        const endFrameOutChance = this.difficulty === 'easy' ? EASY_END_FRAME_OUT_CHANCE
-          : this.difficulty === 'hard' ? HARD_END_FRAME_OUT_CHANCE : NORMAL_END_FRAME_OUT_CHANCE;
-        if (Math.abs(this.ball.vy) > outSpeed || Math.random() < endFrameOutChance) {
-          // 強すぎてエンドフレームを越えて飛び出た -> P1のアウト、P2の得点
-          this.awardPointTo(2, 'out');
-        } else {
-          this.endFrameHits++;
-          sounds.playFrameSound(this.ball.x, 0);
-          if (this.endFrameHits >= 2) {
-            // 2回目もコート内に残った場合は成功扱いにする。
-            this.awardPointTo(1, 'end_frame_success');
-          } else {
-            // 1回目はコート内へ跳ね返し、2回目の接触を待つ。
-            this.ball.y = BALL_RADIUS;
-            this.ball.vy = Math.abs(this.ball.vy) * 0.75;
-          }
-        }
+        const reason = Math.abs(this.ball.vy) > outSpeed ? 'out' : 'safe';
+        sounds.playFrameSound(this.ball.x, 0);
+        this.awardPointTo(reason === 'out' ? 2 : 1, reason);
       }
 
       // 3. ボールの摩擦停止判定 (守備コート内停止＝ストップボール、前コート停止＝前コートストップ)

@@ -1,9 +1,19 @@
 サウンドテーブルテニス (STT) オンライン リリースノート
 
 =========================================
-2026年9月17日 更新
+2026年9月18日 更新
 -----------------------------------------
-バージョン 3.31.17
+バージョン 3.31.18
+
+【CPU打球音源の差し替え】
+・CPUの返球音源 `docs/sounds/CPU_racket.m4a` を新しい音源に差し替えました。
+
+【確認】
+・`node --check docs/js/game-engine.js`
+・`node --check docs/js/sound-system.js`
+・`go test ./...`
+・`go build -o stt.exe main_server.go`
+・`git diff --check`
 
 【プレイヤー打球音源の差し替え】
 ・プレイヤーの打球音源 `docs/sounds/racket.m4a` を新しい音源に差し替えました。

@@ -519,11 +519,18 @@ export class GameEngine {
 
     // 7. ヘルプ画面の開閉
     document.getElementById('btn-show-help').addEventListener('click', () => {
-      this.changeScreen('help');
+      this.openHelp();
       narrator.speak("操作方法とルール説明です。読み上げが終わったら、エスケープキーまたはメニューに戻るボタンで戻れます。");
     });
     document.getElementById('btn-close-help').addEventListener('click', () => {
-      this.changeScreen('menu');
+      this.closeHelp();
+    });
+
+    document.getElementById('btn-paused-help').addEventListener('click', () => this.openHelp());
+    document.getElementById('btn-quit-top').addEventListener('click', () => {
+      if (window.confirm('TOPに戻ると、この試合の進行状況は失われます。TOPに戻りますか？')) {
+        this.quitGame();
+      }
     });
 
     // 8. ゲームプレイ中断（確認ダイアログを表示）
@@ -548,6 +555,13 @@ export class GameEngine {
       // 中断確認中でもEscでプレイへ戻れるようにする。
       // 一般キーを無視する処理より先に判定する必要がある。
       const isEscapeKey = e.code === 'Escape' || e.key === 'Escape' || e.key === 'Esc';
+      if (!this.screens.help.classList.contains('hidden')) {
+        if (isEscapeKey) {
+          e.preventDefault();
+          this.closeHelp();
+        }
+        return;
+      }
       if (this.isGameplayPaused && isEscapeKey) {
         e.preventDefault();
         this.resumeGameplay();
@@ -555,9 +569,21 @@ export class GameEngine {
       }
 
       if (this.isGameplayPaused) {
-        e.preventDefault();
+        if (e.key === 'Tab') {
+          const buttons = [...document.querySelectorAll('#quit-confirm-overlay button')];
+          const first = buttons[0];
+          const last = buttons[buttons.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
         return;
       }
+      if (this.screens.play.classList.contains('hidden')) return;
 
       // code はブラウザやキーボード・スクリーンリーダーによって空になる
       // ことがあるため、key も併用して操作キーを判定する。
@@ -669,7 +695,28 @@ export class GameEngine {
   /**
    * ゲームを安全に終了し、メニューに戻ります。
    */
+  openHelp() {
+    document.getElementById('btn-close-help').textContent = this.isGameplayPaused ? '中断メニューに戻る' : 'メニューに戻る';
+    this.changeScreen('help');
+    const title = document.getElementById('help-title');
+    title.tabIndex = -1;
+    title.focus();
+  }
+
+  closeHelp() {
+    narrator.stop();
+    this.changeScreen(this.isGameplayPaused ? 'play' : 'menu');
+    document.getElementById(this.isGameplayPaused ? 'btn-paused-help' : 'btn-show-help').focus();
+  }
+
   quitGame() {
+    document.getElementById('quit-confirm-overlay').classList.add('hidden');
+    this.gameplayPausedAt = 0;
+    this.isCharging = false;
+    this.pendingSwingUntil = 0;
+    clearTimeout(this.pendingScoreTimeout);
+    this.pendingScoreTimeout = null;
+    sounds.stopGameplayAudio();
     this.isGameplayPaused = false;
     this.net.disconnect();
     this.state = STATE_MENU;
@@ -725,8 +772,8 @@ export class GameEngine {
 
     const overlay = document.getElementById('quit-confirm-overlay');
     overlay.classList.remove('hidden');
-    narrator.speak("プレイを停止しました。戻るステージを選択してください。簡単、普通、難しいから選べます。キャンセルでプレイを再開します。", true);
-    document.getElementById('btn-quit-easy').focus();
+    narrator.speak("プレイを停止しました。再開、操作方法、TOPに戻るを選べます。エスケープキーでも再開できます。", true);
+    document.getElementById('btn-cancel-quit').focus();
   }
 
   /**
@@ -737,6 +784,7 @@ export class GameEngine {
 
     const pausedDuration = Date.now() - this.gameplayPausedAt;
     this.stateStartTime += pausedDuration;
+    if (this.gameStartTime > 0) this.gameStartTime += pausedDuration;
     this.isGameplayPaused = false;
     this.gameplayPausedAt = 0;
     document.getElementById('quit-confirm-overlay').classList.add('hidden');

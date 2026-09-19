@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サウンドテーブルテニス (STT) オンライン</title>
   <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3.31.19">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -196,21 +196,25 @@
 
         <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
           <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">ラケット位置をリセット（中央に戻す）</button>
-          <button id="btn-quit-game" class="btn btn-danger btn-small">ゲームを中断して戻る</button>
+          <button id="btn-quit-game" class="btn btn-danger btn-small">中断メニュー</button>
         </div>
 
         <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
           <div class="quit-confirm-dialog">
             <h2 id="quit-confirm-title">プレイを停止しました</h2>
-            <p id="quit-confirm-message">戻るステージを選択してください。</p>
+            <p id="quit-confirm-message">再開、操作方法の確認、TOPへ戻ることができます。</p>
+            <div class="quit-confirm-buttons">
+              <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
+              <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
+              <button id="btn-quit-top" class="btn btn-danger">TOPに戻る</button>
+            </div>
+            <p>難易度を選んで最初からやり直す</p>
             <div class="quit-confirm-stages" role="group" aria-label="戻るステージを選択">
               <button id="btn-quit-easy" class="btn btn-diff result-difficulty-easy">🐣 簡単 (Easy)</button>
               <button id="btn-quit-normal" class="btn btn-diff result-difficulty-normal">⚔️ 普通 (Normal)</button>
               <button id="btn-quit-hard" class="btn btn-diff result-difficulty-hard">🔥 難しい (Hard)</button>
             </div>
-            <div class="quit-confirm-buttons">
-              <button id="btn-cancel-quit" class="btn btn-secondary">キャンセル</button>
-            </div>
+
           </div>
         </div>
       </section>
@@ -245,6 +249,7 @@
     </main>
 
     <footer class="game-footer">
+      <p>バージョン 3.31.19</p>
       <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
@@ -260,6 +265,6 @@
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=20260908-4"></script>
+  <script type="module" src="app.js?v=3.31.19"></script>
 </body>
 </html>

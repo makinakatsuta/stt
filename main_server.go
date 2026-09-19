@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -17,6 +18,8 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+const appVersion = "3.31.19"
 
 // アップグレーダーの設定。許容するオリジンをすべて許可します（開発・LAN用）。
 // NOTE: インターネット公開時は r.Header.Get("Origin") を検証し、
@@ -515,6 +518,13 @@ func openBrowser(url string) {
 }
 
 func main() {
+	showVersion := flag.Bool("version", false, "Print the application version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Printf("STT v%s\n", appVersion)
+		return
+	}
+
 	// ダブルクリック起動時も、実行ファイルと同じ場所の docs を参照する。
 	baseDir, err := os.Getwd()
 	if exePath, exeErr := os.Executable(); exeErr == nil {
@@ -558,7 +568,7 @@ func main() {
 	defer listener.Close()
 	actualPort := listener.Addr().(*net.TCPAddr).Port
 	localURL := fmt.Sprintf("http://localhost:%d", actualPort)
-	log.Printf("STT Game Server starting on %s", localURL)
+	log.Printf("STT v%s Game Server starting on %s", appVersion, localURL)
 
 	// LAN内のIPアドレスを取得してスマホ向けURLを表示
 	if ifaces, err := net.Interfaces(); err == nil {

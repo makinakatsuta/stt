@@ -495,6 +495,8 @@ body {
 }
 
 .quit-confirm-dialog {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
   width: min(100%, 420px);
   padding: 28px;
   border: 2px solid var(--color-danger);
@@ -526,6 +528,7 @@ body {
 }
 
 .quit-confirm-buttons {
+  flex-wrap: wrap;
   display: flex;
   justify-content: center;
   gap: 14px;

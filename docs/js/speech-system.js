@@ -1,3 +1,5 @@
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.22';
+
 export class SpeechSystem {
   constructor() {
     this.synth = window.speechSynthesis;
@@ -5,7 +7,7 @@ export class SpeechSystem {
     this.srAnnouncer = document.getElementById('sr-announcer');
     this.refereeMessage = document.getElementById('referee-message');
     // Feature #8: 音声速度設定の初期読み込み
-    this.speechRate = parseFloat(localStorage.getItem('stt_speech_rate') || '1.2');
+    this.speechRate = parseFloat(readSetting('stt_speech_rate') || '1.2');
 
     // 日本語の音声を検索してセットする
     if (this.synth) {
@@ -88,7 +90,7 @@ export class SpeechSystem {
    */
   setSpeechRate(rate) {
     this.speechRate = rate;
-    localStorage.setItem('stt_speech_rate', rate);
+    writeSetting('stt_speech_rate', rate);
   }
 }
 

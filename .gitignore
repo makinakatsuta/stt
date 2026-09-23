@@ -12,3 +12,4 @@ Thumbs.db
 
 # 著作権保護対象の音源ファイル
 .gocache/
+.release-artifacts/

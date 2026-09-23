@@ -25,6 +25,7 @@ const (
 	NormalOutSpeed            = 13.0
 	EasyCPUDifficultyFactor   = 1.07
 	EasyCPUReturnChance       = 0.60
+	EasyRallyReturnLimit      = 4
 	EasyRallyAcceleration     = 1.01
 	StandardRallyAcceleration = 1.02
 	HardRallyAcceleration     = 1.04
@@ -32,11 +33,8 @@ const (
 	StandardRallyMaxSpeed     = 13.0
 	HardRallyMaxSpeed         = 15.0
 	EasySideOutChance         = 0.10
-	EasyEndFrameOutChance     = 0.12
 	NormalSideOutChance       = 0.15
-	NormalEndFrameOutChance   = 0.18
 	HardSideOutChance         = 0.20
-	HardEndFrameOutChance     = 0.24
 )
 
 func calculateRallyReturnVelocity(vx, vy, relativeHitPos float64, difficulty string, direction float64) (float64, float64) {
@@ -51,10 +49,26 @@ func calculateRallyReturnVelocity(vx, vy, relativeHitPos float64, difficulty str
 		maxSpeed = HardRallyMaxSpeed
 	}
 	targetSpeed := math.Min(incomingSpeed*acceleration, maxSpeed)
+	// This function is used only for CPU hits; player returns are handled in JS.
+	// Match the JS slow/fast mix and stay below Hard's 11.7 speed-out threshold.
+	if difficulty == "hard" {
+		targetSpeed = 5.0
+		if rand.Float64() >= 0.5 {
+			targetSpeed = 10.0
+		}
+		targetSpeed += rand.Float64() * 1.5
+	}
 	horizontalRatio := math.Max(-0.25, math.Min(0.25, relativeHitPos*0.25))
 	outVx := targetSpeed * horizontalRatio
 	outVy := direction * math.Sqrt(math.Max(0, targetSpeed*targetSpeed-outVx*outVx))
 	return outVx, outVy
+}
+
+func normalCpuVelocity(ball js.Value, x, direction float64) (float64, float64) {
+	dx := ball.Get("normalTargetX").Float() - x
+	dy := YDefenseP1 - YDefenseP2
+	scale := ball.Get("normalSpeed").Float() / math.Hypot(dx, dy)
+	return dx * scale, direction * dy * scale
 }
 
 func main() {
@@ -114,6 +128,37 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	ballVx := jsBall.Get("vx").Float()
 	ballVy := jsBall.Get("vy").Float()
 	ballActive := jsBall.Get("active").Bool()
+	easyCpuAttempted := getBoolSafe(jsBall, "easyCpuAttempted")
+	normalCpuAttempted := getBoolSafe(jsBall, "normalCpuAttempted")
+	hardCpuAttempted := getBoolSafe(jsBall, "hardCpuAttempted")
+	easyReturnCount := 0
+	if value := jsBall.Get("easyReturnCount"); value.Type() == js.TypeNumber {
+		easyReturnCount = value.Int()
+	}
+	canCpuReturn := func() bool {
+		if difficulty == "hard" {
+			if hardCpuAttempted {
+				return false
+			}
+			hardCpuAttempted = true
+			return true
+		}
+		if difficulty == "normal" {
+			if normalCpuAttempted {
+				return false
+			}
+			normalCpuAttempted = true
+			return true
+		}
+		if difficulty != "easy" {
+			return true
+		}
+		if easyCpuAttempted {
+			return false
+		}
+		easyCpuAttempted = true
+		return easyReturnCount < EasyRallyReturnLimit-1
+	}
 	// Get paddle properties
 	p1X := jsP1.Get("x").Float()
 	p2X := jsP2.Get("x").Float()
@@ -121,12 +166,15 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	// 1. Player paddle movement (Keys)
 	// Normal / Hard はラリー中にボール速度が上がるため、移動量ではなく
 	// ラケットの移動速度を難易度に応じて上げ、左右の深い球にも追いつけるようにする。
-	paddleSpeed := 7.0
+	paddleSpeed := 8.5
 	switch difficulty {
 	case "normal":
 		paddleSpeed = NormalPaddleSpeed
 	case "hard":
 		paddleSpeed = NormalPaddleSpeed * HardDifficultyFactor
+	}
+	if len(args) > 9 && args[9].Type() == js.TypeNumber {
+		paddleSpeed *= math.Max(0, math.Min(1, args[9].Float()))
 	}
 	if role == 1 {
 		if getBoolSafe(jsKeys, "ArrowLeft") {
@@ -157,7 +205,13 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	}
 
 	// 2. CPU AI movement
-	if mode == "cpu" && state == "RALLY" && ballVy < 0 {
+	if mode == "cpu" && state == "RALLY" && ((role == 1 && ballVy < 0) || (role == 2 && ballVy > 0)) {
+		cpuX := &p2X
+		defenseY := YDefenseP2
+		if role == 2 {
+			cpuX = &p1X
+			defenseY = YDefenseP1
+		}
 		cpuSpeed := 4.5
 		targetOffset := 0.0
 
@@ -174,18 +228,18 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		}
 
 		// CPU も現在位置ではなく、ラケット到達時の玉の位置を追う。
-		predictedX := predictedBallX(ballX, ballY, ballVx, ballVy, YDefenseP2)
+		predictedX := predictedBallX(ballX, ballY, ballVx, ballVy, defenseY)
 		cpuTarget := predictedX - PaddleWidth/2.0 + targetOffset
 
-		if p2X < cpuTarget {
-			p2X += cpuSpeed
-			if p2X > TableRight-PaddleWidth {
-				p2X = TableRight - PaddleWidth
+		if *cpuX < cpuTarget {
+			*cpuX += cpuSpeed
+			if *cpuX > TableRight-PaddleWidth {
+				*cpuX = TableRight - PaddleWidth
 			}
-		} else if p2X > cpuTarget {
-			p2X -= cpuSpeed
-			if p2X < TableLeft {
-				p2X = TableLeft
+		} else if *cpuX > cpuTarget {
+			*cpuX -= cpuSpeed
+			if *cpuX < TableLeft {
+				*cpuX = TableLeft
 			}
 		}
 	}
@@ -277,12 +331,15 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
 				} else if difficulty == "normal" {
-					cpuReturnChance = 0.79
+					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
-				if hitPaddle && rand.Float64() < cpuReturnChance {
+				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, -1)
+					if difficulty == "normal" {
+						ballVx, ballVy = normalCpuVelocity(jsBall, ballX, -1)
+					}
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -305,12 +362,15 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
 				} else if difficulty == "normal" {
-					cpuReturnChance = 0.79
+					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
-				if hitPaddle && rand.Float64() < cpuReturnChance {
+				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, 1)
+					if difficulty == "normal" {
+						ballVx, ballVy = normalCpuVelocity(jsBall, ballX, 1)
+					}
 
 					events = append(events, map[string]interface{}{
 						"type":   "ball_hit",
@@ -327,16 +387,10 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		// --- Endline / Safe / Out & Score detection (STT rulebook compliant) ---
 		if !sideOut && ballY > CanvasHeight {
 			outSpeed := NormalOutSpeed
-			endFrameOutChance := NormalEndFrameOutChance
-			if difficulty == "easy" {
-				endFrameOutChance = EasyEndFrameOutChance
-			} else if difficulty == "hard" {
-				endFrameOutChance = HardEndFrameOutChance
-			}
 			if difficulty == "hard" {
 				outSpeed *= HardDifficultyFactor
 			}
-			if math.Abs(ballVy) > outSpeed || rand.Float64() < endFrameOutChance {
+			if math.Abs(ballVy) > outSpeed {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 1,
@@ -351,16 +405,10 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			}
 		} else if !sideOut && ballY < 0 {
 			outSpeed := NormalOutSpeed
-			endFrameOutChance := NormalEndFrameOutChance
-			if difficulty == "easy" {
-				endFrameOutChance = EasyEndFrameOutChance
-			} else if difficulty == "hard" {
-				endFrameOutChance = HardEndFrameOutChance
-			}
 			if difficulty == "hard" {
 				outSpeed *= HardDifficultyFactor
 			}
-			if math.Abs(ballVy) > outSpeed || rand.Float64() < endFrameOutChance {
+			if math.Abs(ballVy) > outSpeed {
 				events = append(events, map[string]interface{}{
 					"type":   "score",
 					"winner": 2,
@@ -409,11 +457,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	// Prepare results object
 	res := map[string]interface{}{
 		"ball": map[string]interface{}{
-			"x":      ballX,
-			"y":      ballY,
-			"vx":     ballVx,
-			"vy":     ballVy,
-			"active": ballActive,
+			"x":                  ballX,
+			"y":                  ballY,
+			"vx":                 ballVx,
+			"vy":                 ballVy,
+			"active":             ballActive,
+			"easyCpuAttempted":   easyCpuAttempted,
+			"normalCpuAttempted": normalCpuAttempted,
+			"hardCpuAttempted":   hardCpuAttempted,
 		},
 		"p1": map[string]interface{}{
 			"x": p1X,

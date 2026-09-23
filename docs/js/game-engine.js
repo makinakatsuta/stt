@@ -1,7 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js';
+import { narrator } from './speech-system.js?v=3.31.22';
 import { NetworkSystem } from './network-system.js';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.22';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -16,6 +17,7 @@ const EXPEDITE_RETURN_LIMIT = 7;
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
 const EASY_CPU_RETURN_CHANCE = 0.60;
+const EASY_RALLY_RETURN_LIMIT = 4;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
 const NORMAL_PADDLE_SPEED = 8;
@@ -47,17 +49,38 @@ const MOTION_FILTER_ALPHA = 0.25;
 const MOTION_START_DEADZONE = 1.8;
 const MOTION_STOP_DEADZONE = 1.2;
 
-function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction) {
+function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction, isCpu = false) {
   const incomingSpeed = Math.hypot(vx, vy);
   const acceleration = difficulty === 'easy' ? EASY_RALLY_ACCELERATION
     : difficulty === 'hard' ? HARD_RALLY_ACCELERATION : STANDARD_RALLY_ACCELERATION;
   const maxSpeed = difficulty === 'easy' ? EASY_RALLY_MAX_SPEED
     : difficulty === 'hard' ? HARD_RALLY_MAX_SPEED : STANDARD_RALLY_MAX_SPEED;
-  const targetSpeed = Math.min(incomingSpeed * acceleration, maxSpeed);
+  let targetSpeed = Math.min(incomingSpeed * acceleration, maxSpeed);
+  if (isCpu && difficulty === 'hard') {
+    // CPU alone chooses the pace: equal chances of slow (5–6.5) or fast (10–11.5).
+    // Keep fast shots below the Hard end-frame speed-out threshold (11.7).
+    targetSpeed = (Math.random() < 0.5 ? 5 : 10) + Math.random() * 1.5;
+  }
   const horizontalRatio = Math.max(-0.25, Math.min(0.25, relativeHitPos * 0.25));
   const outVx = targetSpeed * horizontalRatio;
   const outVy = direction * Math.sqrt(Math.max(0, targetSpeed * targetSpeed - outVx * outVx));
   return { vx: outVx, vy: outVy };
+}
+
+function predictedBallX(x, y, vx, vy, defenseY) {
+  if (Math.abs(vy) < 0.01) return x;
+  const frames = Math.max(0, (defenseY - y) / vy);
+  const span = CANVAS_WIDTH - 2 * BALL_RADIUS;
+  let reflected = ((x + vx * frames - BALL_RADIUS) % (2 * span) + 2 * span) % (2 * span);
+  if (reflected > span) reflected = 2 * span - reflected;
+  return BALL_RADIUS + reflected;
+}
+
+function normalCpuVelocity(ball, direction) {
+  const dy = Y_DEFENSE_P1 - Y_DEFENSE_P2;
+  const dx = ball.normalTargetX - ball.x;
+  const scale = ball.normalSpeed / Math.hypot(dx, dy);
+  return { vx: dx * scale, vy: direction * dy * scale };
 }
 
 export class GameEngine {
@@ -79,13 +102,19 @@ export class GameEngine {
     // ゲームモード、難易度と役割
     this.mode = 'cpu'; // 'cpu' or 'online'
     this.difficulty = 'normal'; // 'easy' or 'normal' or 'hard'
+    const feedbackSetting = document.getElementById('normal-feedback');
+    if (feedbackSetting) {
+      feedbackSetting.checked = readSetting('stt_normal_feedback') !== 'off';
+      feedbackSetting.addEventListener('change', () => {
+        writeSetting('stt_normal_feedback', feedbackSetting.checked ? 'on' : 'off');
+      });
+    }
     this.role = 1;      // 1: Player 1 (手前 / サーバー), 2: Player 2 (奥 / レシーバー)
     this.state = STATE_MENU;
 
     // ゲームオブジェクトのステート
-    // Kept for compatibility with a previously cached WASM binary. The
-    // current game logic does not use this value to guarantee any rally.
-    this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0 };
+    this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0,
+      easyReturnCount: 0, easyCpuAttempted: false };
     this.p1 = { x: 350, y: Y_DEFENSE_P1 + 50 }; // 手前 (自分)
     this.p2 = { x: 350, y: Y_DEFENSE_P2 - 50 }; // 奥 (相手 / CPU)
 
@@ -173,7 +202,7 @@ export class GameEngine {
     const rangeSpeechRate = document.getElementById('range-speech-rate');
     const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
     if (rangeSpeechRate && lblSpeechRateVal) {
-      const savedRate = localStorage.getItem('stt_speech_rate') || '1.2';
+      const savedRate = readSetting('stt_speech_rate') || '1.2';
       rangeSpeechRate.value = savedRate;
       lblSpeechRateVal.textContent = savedRate;
       narrator.speechRate = parseFloat(savedRate);
@@ -189,7 +218,7 @@ export class GameEngine {
     const useTiltCheckbox = document.getElementById('chk-use-tilt');
     if (useTiltCheckbox) {
       useTiltCheckbox.addEventListener('change', (e) => {
-        localStorage.setItem('stt_use_tilt', e.target.checked);
+        writeSetting('stt_use_tilt', e.target.checked);
         if (e.target.checked) {
           this.requestDeviceMotionPermission();
         } else {
@@ -341,13 +370,13 @@ export class GameEngine {
       // Feature #17: 設定から体移動操作設定を復元
       const useTiltCheckbox = document.getElementById('chk-use-tilt');
       if (useTiltCheckbox) {
-        const savedTilt = localStorage.getItem('stt_use_tilt');
+        const savedTilt = readSetting('stt_use_tilt');
         // 初回起動時はHTMLの初期値（ON）を維持する。保存値がある場合だけ復元する。
         useTiltCheckbox.checked = savedTilt === null ? true : savedTilt === 'true';
         // iOS Safari / iPhone版Chromeでは、モーション許可要求がユーザーの
         // 直接操作中である必要がある。音声ボタンのclickから直接呼び出す。
         if (this.isMobile && useTiltCheckbox.checked) {
-          localStorage.setItem('stt_use_tilt', 'true');
+          writeSetting('stt_use_tilt', 'true');
           this.requestDeviceMotionPermission();
         } else {
           // OFF設定だけは通常のchange処理で状態を反映する。
@@ -370,17 +399,17 @@ export class GameEngine {
     // 2.5 難易度選択ボタン (Feature #17: 選択した難易度を保存)
     document.getElementById('btn-diff-easy').addEventListener('click', () => {
       this.difficulty = 'easy';
-      localStorage.setItem('stt_last_difficulty', 'easy');
+      writeSetting('stt_last_difficulty', 'easy');
       this.startNewMatch();
     });
     document.getElementById('btn-diff-normal').addEventListener('click', () => {
       this.difficulty = 'normal';
-      localStorage.setItem('stt_last_difficulty', 'normal');
+      writeSetting('stt_last_difficulty', 'normal');
       this.startNewMatch();
     });
     document.getElementById('btn-diff-hard').addEventListener('click', () => {
       this.difficulty = 'hard';
-      localStorage.setItem('stt_last_difficulty', 'hard');
+      writeSetting('stt_last_difficulty', 'hard');
       this.startNewMatch();
     });
     document.getElementById('btn-difficulty-back').addEventListener('click', () => {
@@ -494,7 +523,7 @@ export class GameEngine {
 
       // Feature #17: 接続時にもアドレス保存
       if (serverAddr) {
-        localStorage.setItem('stt_server_addr', serverAddr);
+        writeSetting('stt_server_addr', serverAddr);
       }
 
       this.changeScreen('waiting');
@@ -811,7 +840,7 @@ export class GameEngine {
     this.mode = 'cpu';
     this.role = 1;
     this.difficulty = difficulty;
-    localStorage.setItem('stt_last_difficulty', difficulty);
+    writeSetting('stt_last_difficulty', difficulty);
     this.isGameplayPaused = false;
     this.gameplayPausedAt = 0;
     document.getElementById('quit-confirm-overlay').classList.add('hidden');
@@ -1058,7 +1087,7 @@ export class GameEngine {
   startNewMatch() {
     // Feature #17: 難易度を復元
     if (this.mode === 'cpu' && !this.difficulty) {
-      this.difficulty = localStorage.getItem('stt_last_difficulty') || 'normal';
+      this.difficulty = readSetting('stt_last_difficulty') || 'normal';
     }
     try {
       sounds.startGymAmbience();
@@ -1157,6 +1186,14 @@ export class GameEngine {
    * 画面全体タップでのアクション集中モードを有効にします。
    */
   prepareServeSequence() {
+    this.ball.hardCpuAttempted = false;
+    this.ball.normalPlanReady = false;
+    this.ball.normalCpuAttempted = false;
+    this.normalReturnCount = 0;
+    this.normalPlayerReturns = 0;
+    this.normalLastShotWide = false;
+    this.ball.easyReturnCount = 0;
+    this.ball.easyCpuAttempted = false;
     sounds.stopRallyMusic();
     this.state = STATE_PRE_SERVE_READY;
     this.stateStartTime = Date.now();
@@ -1511,8 +1548,11 @@ export class GameEngine {
       }
     }
 
+    const feedback = this.normalFeedback(winner, reason);
+    // The combined score/feedback announcement already includes useful guidance.
+    // Do not overwrite it with a second live-region message.
     // Feature #3: リターンミス時のミス方向音声アナウンス
-    if (reason === 'miss' || reason === 'safe') {
+    if (!feedback && (reason === 'miss' || reason === 'safe')) {
       const sideText = this.ball.x < CANVAS_WIDTH / 3 ? '左を通りました' : (this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右を通りました' : '中央を通りました');
       try {
         const srEl = document.getElementById('sr-announcer');
@@ -1526,7 +1566,7 @@ export class GameEngine {
     }
 
     // 主審の宣告コール（例:「セーフ、ポイント プレイヤー。 1 対 0。」 / 「アウト、ポイント CPU。 0 対 1。」）
-    const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
+    const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。${feedback}`;
     if (reason === 'stop') {
       // 停止音の再生が終わってから、主審のコールを重ねる。
       setTimeout(() => narrator.speak(scoreAnnounce, true), 250);
@@ -1538,7 +1578,7 @@ export class GameEngine {
     setTimeout(() => {
       try {
         const srEl = document.getElementById('sr-announcer');
-        if (srEl) {
+        if (srEl && !feedback && this.state === STATE_POINT_WON) {
           srEl.textContent = '';
           setTimeout(() => { srEl.textContent = 'タップまたはスペースキーで次のサーブへ進めます。'; }, 50);
         }
@@ -1601,7 +1641,7 @@ export class GameEngine {
         this.intervalSkipCallback();
         this.intervalSkipCallback = null;
       }
-    }, 4000);
+    }, 4000 + Math.min(7000, feedback.length * 170));
     this.currentIntervalTimer = skipTimer;
   }
 
@@ -1670,7 +1710,7 @@ export class GameEngine {
       resultDifficultyButtons.forEach((button) => {
         button.addEventListener('click', () => {
           this.difficulty = button.dataset.resultDifficulty;
-          localStorage.setItem('stt_last_difficulty', this.difficulty);
+          writeSetting('stt_last_difficulty', this.difficulty);
           instrEl.classList.add('hidden');
           instrEl.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。';
           this.startNewMatch();
@@ -1851,6 +1891,8 @@ export class GameEngine {
    */
   updatePhysics() {
     if (this.isGameplayPaused) return;
+    if (this.ball.active && this.state === STATE_RALLY) this.processBufferedSwing();
+    this.prepareNormalCpuShot();
     try {
       const physicsKeys = this.getBallAssistKeys();
       // サービス前のボール吸着処理 (物理演算呼び出し前に行う)
@@ -1879,7 +1921,8 @@ export class GameEngine {
         this.state,
         this.role,
         this.difficulty,
-        Date.now()
+        Date.now(),
+        this.useTilt && this.tiltSpeed !== undefined ? Math.max(0, Math.min(1, this.tiltSpeed)) : 1
       );
 
       if (result) {
@@ -1930,6 +1973,9 @@ export class GameEngine {
           this.ball.vx = result.ball.vx;
           this.ball.vy = result.ball.vy;
           this.ball.active = result.ball.active;
+          this.ball.easyCpuAttempted = result.ball.easyCpuAttempted === true;
+          this.ball.normalCpuAttempted = result.ball.normalCpuAttempted === true;
+          this.ball.hardCpuAttempted = result.ball.hardCpuAttempted === true;
         } else {
           // Player2: ボールの移動補間のみ行う（壁反射・ネット跳ね返りのみ、スコア判定なし）
           if (this.ball.active && this.state === STATE_RALLY) {
@@ -1952,7 +1998,6 @@ export class GameEngine {
         if (this.ball.active && this.state === STATE_RALLY) {
           sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
         }
-        this.processBufferedSwing();
 
         // イベントの処理 (音、エフェクト、得点、通信同期)
         if (result.events && result.events.length > 0) {
@@ -2084,14 +2129,17 @@ export class GameEngine {
     }
     this.lastMyPaddleX = myPaddleX;
 
-    if (this.mode === 'cpu' && this.state === STATE_RALLY && this.ball.vy < 0) {
+    if (this.mode === 'cpu' && this.state === STATE_RALLY &&
+        (this.role === 1 ? this.ball.vy < 0 : this.ball.vy > 0)) {
+      const cpuPaddle = this.role === 1 ? this.p2 : this.p1;
+      const cpuDefenseY = this.role === 1 ? Y_DEFENSE_P2 : Y_DEFENSE_P1;
       // 難易度に応じたCPUの追従速度とブレを設定
       let cpuSpeed = 4.5;
       let targetOffset = 0;
 
       switch (this.difficulty) {
         case 'easy':
-          // 【簡単モード】プレイヤーが3回返球できるよう、最初だけCPU返球を補助する
+          // 簡単モードはゆっくり追従し、返球回数と打球ごとの判定で難易度を抑える。
           cpuSpeed = 4.05 * EASY_CPU_DIFFICULTY_FACTOR;
           targetOffset = Math.sin(Date.now() / 600) * 8; // 微小なブレのみ（自然な動きの演出用）
           break;
@@ -2105,14 +2153,15 @@ export class GameEngine {
           break;
       }
 
-      const cpuTarget = this.ball.x - PADDLE_WIDTH / 2 + targetOffset;
+      const targetX = predictedBallX(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy, cpuDefenseY);
+      const cpuTarget = targetX - PADDLE_WIDTH / 2 + targetOffset;
 
-      if (this.p2.x < cpuTarget) {
-        this.p2.x += cpuSpeed;
-        if (this.p2.x > PADDLE_MAX_X) this.p2.x = PADDLE_MAX_X;
-      } else if (this.p2.x > cpuTarget) {
-        this.p2.x -= cpuSpeed;
-        if (this.p2.x < PADDLE_MIN_X) this.p2.x = PADDLE_MIN_X;
+      if (cpuPaddle.x < cpuTarget) {
+        cpuPaddle.x += cpuSpeed;
+        if (cpuPaddle.x > PADDLE_MAX_X) cpuPaddle.x = PADDLE_MAX_X;
+      } else if (cpuPaddle.x > cpuTarget) {
+        cpuPaddle.x -= cpuSpeed;
+        if (cpuPaddle.x < PADDLE_MIN_X) cpuPaddle.x = PADDLE_MIN_X;
       }
     }
 
@@ -2133,12 +2182,10 @@ export class GameEngine {
         this.ball.vx = -this.ball.vx * 0.85;
       }
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
-      this.processBufferedSwing();
 
     }
     const shouldComputeBall = !(this.mode === 'online' && this.role === 2);
     if (shouldComputeBall && this.ball.active && this.state === STATE_RALLY) {
-      this.processBufferedSwing();
       // 摩擦による減速
       this.ball.vx *= TABLE_FRICTION;
       this.ball.vy *= TABLE_FRICTION;
@@ -2200,17 +2247,18 @@ export class GameEngine {
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
-            : this.difficulty === 'normal' ? 0.79 : 0.88;
-          if (hitPaddle && Math.random() < cpuReturnChance) {
+            : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
+          if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const returnVelocity = calculateRallyReturnVelocity(
+            const returnVelocity = this.difficulty === 'normal' ? normalCpuVelocity(this.ball, -1) : calculateRallyReturnVelocity(
               this.ball.vx,
               this.ball.vy,
               relativeHitPos,
               this.difficulty,
-              -1
+              -1,
+              true
             );
             this.ball.vx = returnVelocity.vx;
             this.ball.vy = returnVelocity.vy;
@@ -2231,17 +2279,18 @@ export class GameEngine {
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
-            : this.difficulty === 'normal' ? 0.79 : 0.88;
-          if (hitPaddle && Math.random() < cpuReturnChance) {
+            : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
+          if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const returnVelocity = calculateRallyReturnVelocity(
+            const returnVelocity = this.difficulty === 'normal' ? normalCpuVelocity(this.ball, 1) : calculateRallyReturnVelocity(
               this.ball.vx,
               this.ball.vy,
               relativeHitPos,
               this.difficulty,
-              1
+              1,
+              true
             );
             this.ball.vx = returnVelocity.vx;
             this.ball.vy = returnVelocity.vy;
@@ -2338,7 +2387,82 @@ export class GameEngine {
   /**
    * STT公式ルールに基づく秒数制限をチェックし、違反時は失点処理を行います。
    */
+  prepareNormalCpuShot() {
+    if (this.mode !== 'cpu' || this.difficulty !== 'normal' ||
+        this.state !== STATE_RALLY || !this.ball.active || this.ball.normalPlanReady) return;
+    const towardCpu = this.role === 1 ? this.ball.vy < 0 : this.ball.vy > 0;
+    if (!towardCpu) return;
+    const cpu = this.role === 1 ? this.p2 : this.p1;
+    const player = this.role === 1 ? this.p1 : this.p2;
+    const defenseY = this.role === 1 ? Y_DEFENSE_P2 : Y_DEFENSE_P1;
+    const arrivalX = predictedBallX(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy, defenseY);
+    const travel = Math.abs(arrivalX - (cpu.x + PADDLE_WIDTH / 2));
+    const count = this.normalReturnCount || 0;
+    // Plan once per incoming shot, shared by JS and WASM. Movement pressure,
+    // rather than repeated random rolls, creates opportunities to win a point.
+    this.ball.normalReturnChance = Math.max(0.68,
+      0.92 - Math.min(0.20, travel / 300 * 0.20) - Math.max(0, count - 6) * 0.015);
+    this.normalLastShotWide = travel >= 130 && (this.normalPlayerReturns || 0) > 0;
+    const choice = Math.random();
+    if (count >= 4 && choice < 0.35) {
+      this.ball.normalTargetX = player.x + PADDLE_WIDTH / 2 < CANVAS_WIDTH / 2 ? 630 : 170;
+    } else {
+      this.ball.normalTargetX = choice < 0.6 ? 400 : choice < 0.8 ? 170 : 630;
+    }
+    this.ball.normalTargetX += (Math.random() - 0.5) * 40;
+    this.ball.normalSpeed = Math.random() < 0.2
+      ? 5.5 + Math.random() * 0.5 : 6.5 + Math.random();
+    this.ball.normalPlanReady = true;
+  }
+
+  normalFeedback(winner, reason) {
+    if (this.mode !== 'cpu' || this.difficulty !== 'normal' ||
+        document.getElementById('normal-feedback')?.checked === false) return '';
+    const returns = this.normalPlayerReturns || 0;
+    if (winner === this.role && reason === 'safe' && this.normalLastShotWide) {
+      return '相手を横に動かす返球で得点できました。';
+    }
+    if (returns >= 3) return `${returns}回返球できました。打った後も次の球に備えましょう。`;
+    if (winner !== this.role && reason === 'safe') {
+      const side = this.ball.x < CANVAS_WIDTH / 3 ? '左' : this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右' : '中央';
+      return `${side}の球を返せませんでした。球の音を聞いて位置とタイミングを合わせましょう。`;
+    }
+    return '';
+  }
+
+  canCpuReturn() {
+    if (this.difficulty === 'hard') {
+      if (this.ball.hardCpuAttempted) return false;
+      this.ball.hardCpuAttempted = true;
+      return true;
+    }
+    if (this.difficulty === 'normal') {
+      if (this.ball.normalCpuAttempted) return false;
+      this.ball.normalCpuAttempted = true;
+      return true;
+    }
+    if (this.difficulty !== 'easy') return true;
+    if (this.ball.easyCpuAttempted) return false;
+    this.ball.easyCpuAttempted = true;
+    // Leave room for the player's last return, then let the CPU miss.
+    return this.ball.easyReturnCount < EASY_RALLY_RETURN_LIMIT - 1;
+  }
+
   recordRallyReturn(player) {
+    if (this.mode === 'cpu' && player === this.role) this.ball.hardCpuAttempted = false;
+    if (this.mode === 'cpu' && this.difficulty === 'normal') {
+      this.normalReturnCount = (this.normalReturnCount || 0) + 1;
+      if (player === this.role) {
+        this.normalPlayerReturns = (this.normalPlayerReturns || 0) + 1;
+        this.ball.normalPlanReady = false;
+        this.ball.normalCpuAttempted = false;
+        this.prepareNormalCpuShot();
+      }
+    }
+    if (this.mode === 'cpu' && this.difficulty === 'easy') {
+      this.ball.easyReturnCount++;
+      if (player === this.role) this.ball.easyCpuAttempted = false;
+    }
     if (this.expediteRuleActive && player !== this.serverRole) {
       this.rallyReturnCount++;
     }

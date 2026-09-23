@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.23';
+import { narrator } from './speech-system.js?v=3.31.24';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.23';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.24';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -1023,7 +1023,8 @@ export class GameEngine {
       // ビープ音によるボール接近通知が開始される
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
-      sounds.playServeSound(this.ball.x, this.difficulty);
+      sounds.playHitSound(this.ball.x, this.ball.y);
+      sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y);
     }
     else if (payload.actionType === 'ball_hit') {
       // 得点確定後に遅れて届いた打球通知でラリー音や球を再開しない。
@@ -1369,6 +1370,7 @@ export class GameEngine {
                 if (this.difficulty !== 'easy') {
                   this.ball.vx = Math.random() * 1.2 - 0.6;
                 }
+                sounds.playCpuHitSound(this.ball.x, this.ball.y);
                 sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, true);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
               }
@@ -1438,7 +1440,8 @@ export class GameEngine {
         } else {
           this.ball.vx = Math.random() * 1.2 - 0.6;
         }
-        sounds.playServeSound(this.ball.x, this.difficulty);
+        sounds.playHitSound(this.ball.x, this.ball.y);
+        sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
         if (this.mode === 'online') {

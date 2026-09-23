@@ -751,8 +751,23 @@ body {
 
   /* スコアボード */
   .scoreboard {
-    padding: 10px 15px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px 0;
     margin-bottom: 15px;
+  }
+
+  .score-panel {
+    min-width: 0;
+    max-width: 100%;
+    padding: 10px 4px;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .score-panel > * {
+    max-width: 100%;
   }
 
   .score-name {
@@ -770,10 +785,12 @@ body {
     padding: 0 10px;
   }
 
-  /* モバイルのプレイ中は、戻るボタンだけを表示して操作に集中できるようにする */
-  #screen-play .scoreboard,
+  /* 得点・審判コール・操作説明は、狭い画面や拡大表示でも維持する。 */
   #screen-play .referee-call,
-  #screen-play .play-instructions,
+  #screen-play .play-instructions {
+    overflow-wrap: anywhere;
+  }
+
   #screen-play #btn-calibrate-tilt {
     display: none !important;
   }
@@ -1124,4 +1141,115 @@ body {
   cursor: pointer;
   height: 6px;
 }
+
+/* Display preferences: rem-based UI text scales without changing game physics. */
+.speech-rate-panel + #btn-enable-audio { margin-top: 24px; }
+
+html[data-text-size="standard"] { font-size: 100%; }
+html[data-text-size="large"] { font-size: 125%; }
+html[data-text-size="extra-large"] { font-size: 150%; }
+html[data-text-size="largest"] { font-size: 200%; }
+
+.display-settings-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: 650px;
+  padding: 16px;
+  margin-bottom: 24px;
+  border: 2px solid var(--text-muted);
+  border-radius: 10px;
+}
+
+.display-settings-panel legend { padding: 0 8px; font-weight: 700; }
+.display-setting { display: grid; gap: 8px; margin-bottom: 16px; }
+.display-setting label { font-weight: 700; }
+.display-setting select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px;
+  font: inherit;
+  color: var(--text-main);
+  background: var(--bg-primary);
+  border: 2px solid var(--text-muted);
+  border-radius: 6px;
+}
+.display-settings-panel p { font-size: 1rem; overflow-wrap: anywhere; }
+:is(button, select, input, a):focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+html:not([data-text-size="standard"]) .menu-grid,
+html:not([data-text-size="standard"]) .difficulty-grid,
+html:not([data-text-size="standard"]) .match-result-difficulties {
+  grid-template-columns: 1fr;
+}
+html[data-text-size] .game-header,
+html[data-text-size] .game-card { overflow-wrap: anywhere; }
+html[data-text-size] .btn { max-width: 100%; white-space: normal; }
+html[data-text-size] .score-panel { min-width: 0; overflow-wrap: anywhere; }
+
+html[data-contrast="white-on-black"],
+html[data-contrast="yellow-on-black"] {
+  color-scheme: dark;
+  --bg-primary: #000;
+  --bg-secondary: #000;
+  --bg-tertiary: #000;
+  --text-main: #fff;
+  --text-muted: #fff;
+  --color-accent: #fff;
+  --color-accent-alt: #fff;
+  --color-success: #fff;
+  --color-danger: #fff;
+  --color-warning: #fff;
+}
+html[data-contrast="black-on-white"] {
+  color-scheme: light;
+  --bg-primary: #fff;
+  --bg-secondary: #fff;
+  --bg-tertiary: #fff;
+  --text-main: #000;
+  --text-muted: #000;
+  --color-accent: #000;
+  --color-accent-alt: #000;
+  --color-success: #000;
+  --color-danger: #000;
+  --color-warning: #000;
+}
+html[data-contrast="yellow-on-black"] {
+  --text-main: #ff0;
+  --text-muted: #ff0;
+  --color-accent: #ff0;
+  --color-accent-alt: #ff0;
+  --color-success: #ff0;
+  --color-danger: #ff0;
+  --color-warning: #ff0;
+}
+
+/* Override decorative and inline colors for consistent contrast throughout the UI. */
+html[data-contrast]:not([data-contrast="default"]) body,
+html[data-contrast]:not([data-contrast="default"]) body * {
+  color: var(--text-main) !important;
+  border-color: var(--text-main) !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+html[data-contrast]:not([data-contrast="default"]) :is(
+  .game-card, .btn, input, select, .score-panel, .referee-call,
+  .display-settings-panel, .mobile-settings-panel, .speech-rate-panel,
+  .quit-confirm-dialog, .match-result-overlay, .network-error-box, .lobby-hint
+) {
+  background-color: var(--bg-primary) !important;
+}
+html[data-contrast]:not([data-contrast="default"]) .btn {
+  border: 2px solid var(--text-main);
+}
+html[data-contrast]:not([data-contrast="default"]) .btn-subtext { opacity: 1; }
+html[data-contrast]:not([data-contrast="default"]) a { text-decoration: underline; }
+html[data-contrast]:not([data-contrast="default"]) :is(.fade-in, .pulse-text) { animation: none; }
+html[data-contrast="white-on-black"] #game-canvas,
+html[data-contrast="yellow-on-black"] #game-canvas { filter: grayscale(1) contrast(3); }
+html[data-contrast="black-on-white"] #game-canvas { filter: grayscale(1) contrast(3) invert(1); }
 

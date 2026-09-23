@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サウンドテーブルテニス (STT) オンライン</title>
   <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
-  <link rel="stylesheet" href="styles.css?v=3.31.19">
+  <script src="js/display-settings.js?v=3.31.20"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.20">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -31,6 +32,35 @@
           このゲームは、音が左右・前後に移動する立体音響（Web Audio API）を頼りにプレイする卓球ゲームです。<br>
           ヘッドホンまたはイヤホンの使用を強く推奨します。
         </p>
+        <fieldset class="display-settings-panel">
+          <legend>画面の見やすさ</legend>
+          <div class="display-setting">
+            <label for="select-contrast">配色・コントラスト</label>
+            <select id="select-contrast" aria-describedby="display-settings-hint">
+              <option value="default">標準（ダークカラー）</option>
+              <option value="white-on-black">黒背景・白文字</option>
+              <option value="black-on-white">白背景・黒文字（白黒反転）</option>
+              <option value="yellow-on-black">黒背景・黄色文字</option>
+            </select>
+          </div>
+          <div class="display-setting">
+            <label for="select-text-size">文字の大きさ</label>
+            <select id="select-text-size" aria-describedby="display-settings-hint">
+              <option value="standard">標準（100%）</option>
+              <option value="large">大（125%）</option>
+              <option value="extra-large">特大（150%）</option>
+              <option value="largest">最大（200%）</option>
+            </select>
+          </div>
+          <p id="display-settings-hint">選ぶとすぐに反映され、次回も同じ設定で開きます。文字の大きさはメニュー・得点・案内に適用されます。</p>
+        </fieldset>
+        <!-- 音声読み上げ速度設定 -->
+        <div class="speech-rate-panel">
+          <label for="range-speech-rate">音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
+          <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
+            aria-label="音声読み上げの速さを調整します。2.0倍が最大速度、0.5倍が最小速度です。">
+          <p class="mobile-hint-text">「1.0」が標準速度です。慣れた方は1.5〜2.0に設定すると、読み上げがスムーズになります。</p>
+        </div>
         <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
           <span class="btn-text">オーディオを有効にして開始する</span>
           <span class="btn-subtext">Enter または スペースキー</span>
@@ -47,13 +77,6 @@
           </p>
         </div>
 
-        <!-- 音声読み上げ速度設定 -->
-        <div class="speech-rate-panel">
-          <label for="range-speech-rate">音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
-          <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
-            aria-label="音声読み上げの速さを調整します。2.0倍が最大速度、0.5倍が最小速度です。">
-          <p class="mobile-hint-text">「1.0」が標準速度です。慣れた方は1.5〜2.0に設定すると、読み上げがスムーズになります。</p>
-        </div>
       </section>
 
       <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->
@@ -249,7 +272,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.19</p>
+      <p>バージョン 3.31.20</p>
       <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
@@ -265,6 +288,6 @@
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.19"></script>
+  <script type="module" src="app.js?v=3.31.20"></script>
 </body>
 </html>

@@ -19,7 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const appVersion = "3.31.19"
+const appVersion = "3.31.20"
 
 // アップグレーダーの設定。許容するオリジンをすべて許可します（開発・LAN用）。
 // NOTE: インターネット公開時は r.Header.Get("Origin") を検証し、

@@ -6,6 +6,7 @@ const read = name => fs.readFileSync(__dirname + '/js/' + name, 'utf8')
 const source = read('settings-storage.js') + '\n' + read('constants.js') + '\n' + read('game-engine.js');
 function environment(storage) {
   const elements = new Map();
+  const announcements = [];
   function element(id) {
     if (!elements.has(id)) {
       const classes = new Set();
@@ -22,23 +23,41 @@ function environment(storage) {
     window: { addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false }) },
     document: { getElementById: element, addEventListener() {}, querySelectorAll: () => [] },
     NetworkSystem: class {}, sounds: new Proxy({}, { get: () => () => {} }),
-    narrator: { speak() {}, stop() {}, setSpeechRate() {} }, console,
+    narrator: { speak(text) { announcements.push(text); }, stop() {}, setSpeechRate() {} }, console,
     setTimeout: () => 1, clearTimeout() {}, Date, Math };
   const GameEngine = vm.runInNewContext(source + '\nGameEngine', context);
   const game = new GameEngine();
   game.startLoop = () => {}; game.stopLoop = () => {};
-  return { game, element };
+  return { game, element, announcements };
 }
 const saved = new Map([['stt_normal_feedback', 'off']]);
 const store = { getItem: key => saved.get(key) ?? null, setItem: (key, value) => saved.set(key, value) };
 const first = environment(store);
-assert.equal(first.element('normal-feedback').checked, false);
-first.element('normal-feedback').checked = true;
-first.element('normal-feedback').events.change();
-assert.equal(environment(store).element('normal-feedback').checked, true);
+first.element('btn-diff-normal').events.click();
+assert.equal(saved.get('stt_last_difficulty'), 'normal');
 const blocked = environment({ getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } });
-blocked.element('normal-feedback').checked = false;
-assert.doesNotThrow(() => blocked.element('normal-feedback').events.change());
+// Legacy feedback settings must not affect any difficulty's referee call.
+for (const legacyValue of ['on', 'off']) {
+  saved.set('stt_normal_feedback', legacyValue);
+  for (const reason of ['safe', 'out', 'miss']) {
+    for (const winner of [1, 2]) {
+      const calls = [];
+      for (const difficulty of ['easy', 'normal', 'hard']) {
+        const match = environment(store);
+        match.game.difficulty = difficulty;
+        match.game.state = 'RALLY';
+        match.game.scores = { p1: 0, p2: 0 };
+        match.announcements.length = 0;
+        match.game.awardPointTo(winner, reason);
+        assert.equal(match.announcements.length, 1);
+        assert.match(match.announcements[0], /、ポイント .+。 [01] 対 [01]。$/);
+        calls.push(match.announcements[0]);
+      }
+      assert.equal(calls[0], calls[1]);
+      assert.equal(calls[1], calls[2]);
+    }
+  }
+}
 for (const difficulty of ['easy', 'normal', 'hard']) {
   blocked.element('btn-diff-' + difficulty).events.click();
   assert.equal(blocked.game.difficulty, difficulty);

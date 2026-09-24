@@ -11,14 +11,14 @@ for (const role of [1, 2]) {
     Object.assign(game, { mode: 'cpu', difficulty: 'easy', role,
       ball: { easyReturnCount: 0, easyCpuAttempted: false } });
     let player = server === 1 ? 2 : 1;
-    // Even if every random return succeeds, the CPU ends the rally before five returns.
+    // Allow several exchanges, while keeping beginner rallies bounded.
     for (let i = 0; i < 10; i++) {
       if (player !== role && !game.canCpuReturn()) break;
       game.recordRallyReturn(player);
       player = player === 1 ? 2 : 1;
     }
-    assert.ok(game.ball.easyReturnCount <= 4);
-    assert.ok(game.ball.easyReturnCount >= 3);
+    assert.ok(game.ball.easyReturnCount <= 8);
+    assert.ok(game.ball.easyReturnCount >= 7);
     assert.equal(game.canCpuReturn(), false);
   }
 }

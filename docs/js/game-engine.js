@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.24';
+import { narrator } from './speech-system.js?v=3.31.25';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.24';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.25';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -16,11 +16,12 @@ const EXPEDITE_RETURN_LIMIT = 7;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
 // tuned 7% stronger than before.
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
-const EASY_CPU_RETURN_CHANCE = 0.60;
-const EASY_RALLY_RETURN_LIMIT = 4;
+const EASY_CPU_RETURN_CHANCE = 0.90;
+const EASY_RALLY_RETURN_LIMIT = 8;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
 const NORMAL_PADDLE_SPEED = 8;
+const NORMAL_CPU_SPEED = 5.2;
 const HARD_DIFFICULTY_FACTOR = 0.9;
 const NORMAL_HIT_ZONE = 90;
 const NORMAL_PADDLE_MARGIN = 35;
@@ -102,13 +103,6 @@ export class GameEngine {
     // ゲームモード、難易度と役割
     this.mode = 'cpu'; // 'cpu' or 'online'
     this.difficulty = 'normal'; // 'easy' or 'normal' or 'hard'
-    const feedbackSetting = document.getElementById('normal-feedback');
-    if (feedbackSetting) {
-      feedbackSetting.checked = readSetting('stt_normal_feedback') !== 'off';
-      feedbackSetting.addEventListener('change', () => {
-        writeSetting('stt_normal_feedback', feedbackSetting.checked ? 'on' : 'off');
-      });
-    }
     this.role = 1;      // 1: Player 1 (手前 / サーバー), 2: Player 2 (奥 / レシーバー)
     this.state = STATE_MENU;
 
@@ -1191,8 +1185,6 @@ export class GameEngine {
     this.ball.normalPlanReady = false;
     this.ball.normalCpuAttempted = false;
     this.normalReturnCount = 0;
-    this.normalPlayerReturns = 0;
-    this.normalLastShotWide = false;
     this.ball.easyReturnCount = 0;
     this.ball.easyCpuAttempted = false;
     sounds.stopRallyMusic();
@@ -1314,19 +1306,15 @@ export class GameEngine {
                   // ノーマル: スローサーブ、通常速度サーブ、高速サーブをランダムに打ち分け
                   const speedCategory = Math.random();
                   let baseVy;
-                  if (speedCategory < 0.25) {
+                  if (speedCategory < 0.20) {
                     // スローサーブ (ふわりと緩い球)
                     baseVy = 3.42 + Math.random() * 0.45; // 3.42〜3.87
-                  } else if (speedCategory < 0.85) {
+                  } else if (speedCategory < 0.90) {
                     // 通常速度サーブ
                     baseVy = 4.68 + Math.random() * 0.72; // 4.68〜5.4
                   } else {
                     // 高速サーブ (鋭く速い球)
-                    baseVy = 7.0 + Math.random() * 1.0; // faster normal serve
-                  }
-                  if (Math.random() < NORMAL_FAST_SERVE_CHANCE) {
-                    baseVy = NORMAL_FAST_SERVE_VY_MIN + Math.random() *
-                      (NORMAL_FAST_SERVE_VY_MAX - NORMAL_FAST_SERVE_VY_MIN);
+                    baseVy = 6.2 + Math.random() * 0.8;
                   }
                   baseVy *= NORMAL_SERVE_SPEED_FACTOR;
 
@@ -1335,9 +1323,9 @@ export class GameEngine {
                   if (serveAngle < 0.4) {
                     cpuServeVx = (Math.random() * 0.8 - 0.4); // 直球
                   } else if (serveAngle < 0.7) {
-                    cpuServeVx = -(1.2 + Math.random() * 2.0); // 左流し
+                    cpuServeVx = -(0.8 + Math.random() * 1.2); // 左流し
                   } else {
-                    cpuServeVx = (1.2 + Math.random() * 2.0);  // 右流し
+                    cpuServeVx = (0.8 + Math.random() * 1.2);  // 右流し
                   }
                   this.ball.vx = cpuServeVx;
                   this.ball.vy = baseVy;
@@ -1551,11 +1539,8 @@ export class GameEngine {
       }
     }
 
-    const feedback = this.normalFeedback(winner, reason);
-    // The combined score/feedback announcement already includes useful guidance.
-    // Do not overwrite it with a second live-region message.
     // Feature #3: リターンミス時のミス方向音声アナウンス
-    if (!feedback && (reason === 'miss' || reason === 'safe')) {
+    if (reason === 'miss' || reason === 'safe') {
       const sideText = this.ball.x < CANVAS_WIDTH / 3 ? '左を通りました' : (this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右を通りました' : '中央を通りました');
       try {
         const srEl = document.getElementById('sr-announcer');
@@ -1569,7 +1554,7 @@ export class GameEngine {
     }
 
     // 主審の宣告コール（例:「セーフ、ポイント プレイヤー。 1 対 0。」 / 「アウト、ポイント CPU。 0 対 1。」）
-    const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。${feedback}`;
+    const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     if (reason === 'stop') {
       // 停止音の再生が終わってから、主審のコールを重ねる。
       setTimeout(() => narrator.speak(scoreAnnounce, true), 250);
@@ -1581,7 +1566,7 @@ export class GameEngine {
     setTimeout(() => {
       try {
         const srEl = document.getElementById('sr-announcer');
-        if (srEl && !feedback && this.state === STATE_POINT_WON) {
+        if (srEl && this.state === STATE_POINT_WON) {
           srEl.textContent = '';
           setTimeout(() => { srEl.textContent = 'タップまたはスペースキーで次のサーブへ進めます。'; }, 50);
         }
@@ -1644,7 +1629,7 @@ export class GameEngine {
         this.intervalSkipCallback();
         this.intervalSkipCallback = null;
       }
-    }, 4000 + Math.min(7000, feedback.length * 170));
+    }, 4000);
     this.currentIntervalTimer = skipTimer;
   }
 
@@ -2147,8 +2132,8 @@ export class GameEngine {
           targetOffset = Math.sin(Date.now() / 600) * 8; // 微小なブレのみ（自然な動きの演出用）
           break;
         case 'normal':
-          cpuSpeed = 4.68; // 従来比90%
-          targetOffset = Math.sin(Date.now() / 300) * 15; // わずかなブレ
+          cpuSpeed = NORMAL_CPU_SPEED;
+          targetOffset = Math.sin(Date.now() / 600) * 6;
           break;
         case 'hard':
           cpuSpeed = 7.65; // 従来比90%
@@ -2158,6 +2143,7 @@ export class GameEngine {
 
       const targetX = predictedBallX(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy, cpuDefenseY);
       const cpuTarget = targetX - PADDLE_WIDTH / 2 + targetOffset;
+      if (this.difficulty === 'normal') cpuSpeed = Math.min(cpuSpeed, Math.abs(cpuTarget - cpuPaddle.x));
 
       if (cpuPaddle.x < cpuTarget) {
         cpuPaddle.x += cpuSpeed;
@@ -2249,7 +2235,7 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
+          const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
             : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
@@ -2281,7 +2267,7 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? EASY_CPU_RETURN_CHANCE
+          const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
             : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
@@ -2400,37 +2386,27 @@ export class GameEngine {
     const defenseY = this.role === 1 ? Y_DEFENSE_P2 : Y_DEFENSE_P1;
     const arrivalX = predictedBallX(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy, defenseY);
     const travel = Math.abs(arrivalX - (cpu.x + PADDLE_WIDTH / 2));
-    const count = this.normalReturnCount || 0;
-    // Plan once per incoming shot, shared by JS and WASM. Movement pressure,
-    // rather than repeated random rolls, creates opportunities to win a point.
-    this.ball.normalReturnChance = Math.max(0.68,
-      0.92 - Math.min(0.20, travel / 300 * 0.20) - Math.max(0, count - 6) * 0.015);
-    this.normalLastShotWide = travel >= 130 && (this.normalPlayerReturns || 0) > 0;
+    // Judge the time available to reach this shot, not the rally length.
+    // The plan is shared by JS/WASM and stays fixed until the next shot.
+    const frames = Math.abs((defenseY - this.ball.y) / this.ball.vy);
+    const pressure = Math.min(1, Math.max(0, travel - PADDLE_WIDTH / 2) /
+      Math.max(PADDLE_WIDTH / 2, frames * NORMAL_CPU_SPEED));
+    const incomingSpeed = Math.hypot(this.ball.vx, this.ball.vy);
+    this.ball.normalReturnChance = 0.96 - pressure * 0.18 -
+      Math.min(0.04, Math.max(0, incomingSpeed - 8) * 0.01);
     const choice = Math.random();
-    if (count >= 4 && choice < 0.35) {
-      this.ball.normalTargetX = player.x + PADDLE_WIDTH / 2 < CANVAS_WIDTH / 2 ? 630 : 170;
+    if (pressure < 0.6 && choice < 0.25) {
+      // With time to spare, aim into the space the player has left open.
+      const playerCenter = player.x + PADDLE_WIDTH / 2;
+      this.ball.normalTargetX = 400 + Math.max(-220, Math.min(220, (400 - playerCenter) * 0.8));
     } else {
-      this.ball.normalTargetX = choice < 0.6 ? 400 : choice < 0.8 ? 170 : 630;
+      // Under pressure, recover toward the middle instead of forcing an attack.
+      this.ball.normalTargetX = 400 + (Math.random() - 0.5) * (440 - pressure * 240);
     }
     this.ball.normalTargetX += (Math.random() - 0.5) * 40;
-    this.ball.normalSpeed = Math.random() < 0.2
-      ? 5.5 + Math.random() * 0.5 : 6.5 + Math.random();
+    this.ball.normalSpeed = Math.max(5.5, Math.min(8,
+      incomingSpeed * 0.75 + 6.5 * 0.25 + (Math.random() - 0.5) * 0.6 - pressure * 0.7));
     this.ball.normalPlanReady = true;
-  }
-
-  normalFeedback(winner, reason) {
-    if (this.mode !== 'cpu' || this.difficulty !== 'normal' ||
-        document.getElementById('normal-feedback')?.checked === false) return '';
-    const returns = this.normalPlayerReturns || 0;
-    if (winner === this.role && reason === 'safe' && this.normalLastShotWide) {
-      return '相手を横に動かす返球で得点できました。';
-    }
-    if (returns >= 3) return `${returns}回返球できました。打った後も次の球に備えましょう。`;
-    if (winner !== this.role && reason === 'safe') {
-      const side = this.ball.x < CANVAS_WIDTH / 3 ? '左' : this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右' : '中央';
-      return `${side}の球を返せませんでした。球の音を聞いて位置とタイミングを合わせましょう。`;
-    }
-    return '';
   }
 
   canCpuReturn() {
@@ -2456,7 +2432,6 @@ export class GameEngine {
     if (this.mode === 'cpu' && this.difficulty === 'normal') {
       this.normalReturnCount = (this.normalReturnCount || 0) + 1;
       if (player === this.role) {
-        this.normalPlayerReturns = (this.normalPlayerReturns || 0) + 1;
         this.ball.normalPlanReady = false;
         this.ball.normalCpuAttempted = false;
         this.prepareNormalCpuShot();

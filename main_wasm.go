@@ -21,11 +21,12 @@ const (
 	YDefenseP1                = 400.0
 	YDefenseP2                = 100.0
 	NormalPaddleSpeed         = 8.0
+	NormalCPUSpeed            = 5.2
 	HardDifficultyFactor      = 0.9
 	NormalOutSpeed            = 13.0
 	EasyCPUDifficultyFactor   = 1.07
-	EasyCPUReturnChance       = 0.60
-	EasyRallyReturnLimit      = 4
+	EasyCPUReturnChance       = 0.90
+	EasyRallyReturnLimit      = 8
 	EasyRallyAcceleration     = 1.01
 	StandardRallyAcceleration = 1.02
 	HardRallyAcceleration     = 1.04
@@ -220,8 +221,8 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			cpuSpeed = 4.05 * EasyCPUDifficultyFactor
 			targetOffset = math.Sin(timeMs/600.0) * 8.0
 		case "normal":
-			cpuSpeed = 4.68
-			targetOffset = math.Sin(timeMs/300.0) * 15.0
+			cpuSpeed = NormalCPUSpeed
+			targetOffset = math.Sin(timeMs/600.0) * 6.0
 		case "hard":
 			cpuSpeed = 7.65
 			targetOffset = 0.0
@@ -230,6 +231,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		// CPU も現在位置ではなく、ラケット到達時の玉の位置を追う。
 		predictedX := predictedBallX(ballX, ballY, ballVx, ballVy, defenseY)
 		cpuTarget := predictedX - PaddleWidth/2.0 + targetOffset
+		if difficulty == "normal" {
+			cpuSpeed = math.Min(cpuSpeed, math.Abs(cpuTarget-*cpuX))
+		}
 
 		if *cpuX < cpuTarget {
 			*cpuX += cpuSpeed
@@ -330,6 +334,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
+					if easyReturnCount < 2 {
+						cpuReturnChance = 1
+					}
 				} else if difficulty == "normal" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
@@ -361,6 +368,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				cpuReturnChance := 0.88
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
+					if easyReturnCount < 2 {
+						cpuReturnChance = 1
+					}
 				} else if difficulty == "normal" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}

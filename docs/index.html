@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サウンドテーブルテニス (STT) オンライン</title>
   <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
-  <script src="js/display-settings.js?v=3.31.24"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.24">
+  <script src="js/display-settings.js?v=3.31.25"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.25">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -34,8 +34,8 @@
         </p>
         <section aria-labelledby="welcome-difficulty-title">
           <h3 id="welcome-difficulty-title">CPU対戦の難易度</h3>
-          <p><strong>簡単：</strong>ゆっくりした球で気軽に。ラリーは双方の返球を合計4回まで。</p>
-          <p><strong>ノーマル：</strong>コースを読んで動く試合練習。相手を左右に動かして得点を狙います。</p>
+          <p><strong>簡単：</strong>ゆっくりした球でラリーを練習。CPUは最初の返球を取りやすく、ラリーは双方の返球を合計8回まで。</p>
+          <p><strong>ノーマル：</strong>簡単より速い球とコースの変化で試合を楽しめます。相手を左右に動かして得点を狙います。</p>
           <p><strong>ハード：</strong>CPUが速球と遅球を打ち分け。素早い移動と返球のタイミングが勝負です。</p>
           <p class="description">どの難易度も、自分で移動・返球を操作します。</p>
         </section>
@@ -111,7 +111,7 @@
           <button id="btn-diff-easy" class="btn btn-menu btn-diff">
             <span class="menu-icon">🐣</span>
             <span class="menu-title">簡単 (Easy)</span>
-            <span class="menu-desc">ゆっくりした球と広い返球判定で気軽に。ラリーは双方の返球を合計4回まで。</span>
+            <span class="menu-desc">ゆっくりした球と広い返球判定でラリーを練習。ラリーは双方の返球を合計8回まで。</span>
           </button>
           <button id="btn-diff-normal" class="btn btn-menu btn-diff">
             <span class="menu-icon">⚔️</span>
@@ -124,7 +124,6 @@
             <span class="menu-desc">CPUが速球と遅球を打ち分け。素早い移動と返球のタイミングが勝負です。</span>
           </button>
         </div>
-        <p><label><input type="checkbox" id="normal-feedback" checked> 普通モード：得点後に短い振り返りを読み上げる</label></p>
         <button id="btn-difficulty-back" class="btn btn-secondary">メニューに戻る</button>
       </section>
 
@@ -280,7 +279,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.24</p>
+      <p>バージョン 3.31.25</p>
       <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
@@ -289,13 +288,13 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.24"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.25"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.24"></script>
+  <script type="module" src="app.js?v=3.31.25"></script>
 </body>
 </html>

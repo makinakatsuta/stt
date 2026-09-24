@@ -5,10 +5,9 @@ const constants = fs.readFileSync(__dirname + '/js/constants.js', 'utf8').replac
 const source = fs.readFileSync(__dirname + '/js/game-engine.js', 'utf8')
   .replace(/^import .*;\r?\n/gm, '').replace('export class GameEngine', 'class GameEngine');
 const math = Object.create(Math);
-let feedbackEnabled = true;
 const context = { Math: math, window: {}, console: { debug() {}, error(error) { throw error; } },
   setTimeout() {}, Date: { now: () => 0 },
-  document: { getElementById: id => id === 'normal-feedback' ? { checked: feedbackEnabled } : null },
+  document: { getElementById: () => null },
   narrator: { speak() {} },
   sounds: new Proxy({}, { get: () => () => {} }) };
 const { GameEngine, normalCpuVelocity, predictedBallX } = vm.runInNewContext(
@@ -18,7 +17,7 @@ function game(role = 1) {
   Object.assign(g, { mode: 'cpu', difficulty: 'normal', state: 'RALLY', role,
     keys: { ArrowLeft: false, ArrowRight: false }, p1: { x: 350 }, p2: { x: 350 },
     ball: { x: 400, y: role === 1 ? 101 : 399, vx: 0, vy: role === 1 ? -7 : 7, active: true },
-    normalPlayerReturns: 1, normalReturnCount: 1, lastMyPaddleX: 350, lastOppPaddleX: 350,
+    normalReturnCount: 1, lastMyPaddleX: 350, lastOppPaddleX: 350,
     processBufferedSwing() {}, checkTimeouts() {}, addRipple() {}, syncPaddlePosition() {},
     awardPointTo(winner, reason) { this.point = { winner, reason }; this.state = 'POINT_WON'; this.ball.active = false; } });
   return g;
@@ -27,7 +26,6 @@ math.random = () => 0.1;
 const centered = game(); centered.prepareNormalCpuShot();
 const wide = game(); wide.p2.x = 50; wide.prepareNormalCpuShot();
 assert.ok(wide.ball.normalReturnChance < centered.ball.normalReturnChance);
-assert.equal(wide.normalLastShotWide, true);
 const savedPlan = JSON.stringify(wide.ball);
 math.random = () => { throw new Error('A shot must not be rerolled each frame'); };
 wide.prepareNormalCpuShot();
@@ -36,18 +34,29 @@ for (const random of [0.1, 0.7, 0.9]) {
   math.random = () => random;
   const g = game(); g.prepareNormalCpuShot();
   const speed = g.ball.normalSpeed;
-  assert.ok(random < 0.2 ? speed >= 5.5 && speed <= 6 : speed >= 6.5 && speed <= 7.5);
+  assert.ok(speed >= 6.5 && speed <= 7.2, 'Return pace stays close to the incoming ball');
   const v = normalCpuVelocity(g.ball, 1);
   assert.ok(Math.abs(g.ball.x + v.vx * 300 / v.vy - g.ball.normalTargetX) < 1e-8);
 }
 math.random = () => 0.1;
 const open = game(); open.normalReturnCount = 6; open.p1.x = 100; open.prepareNormalCpuShot();
-assert.ok(open.ball.normalTargetX > 600);
+assert.ok(open.ball.normalTargetX > 550);
+const openingChance = open.ball.normalReturnChance;
+const openingTarget = open.ball.normalTargetX;
 open.normalReturnCount = 30; open.ball.normalPlanReady = false; open.prepareNormalCpuShot();
-assert.ok(open.ball.normalReturnChance >= 0.68, 'No forced rally cutoff');
-assert.ok(wide.normalFeedback(1, 'safe').includes('横'));
-feedbackEnabled = false; assert.equal(wide.normalFeedback(1, 'safe'), ''); feedbackEnabled = true;
-wide.normalPlayerReturns = 4; assert.ok(wide.normalFeedback(2, 'safe').includes('4回'));
+assert.equal(open.ball.normalReturnChance, openingChance, 'Rally length must not cause artificial misses');
+assert.equal(open.ball.normalTargetX, openingTarget, 'Attack choice depends on positioning, not return count');
+const timeToMove = game(); timeToMove.p2.x = 150; timeToMove.ball.y = 400;
+timeToMove.prepareNormalCpuShot();
+const rushed = game(); rushed.p2.x = 150; rushed.prepareNormalCpuShot();
+assert.ok(timeToMove.ball.normalReturnChance > rushed.ball.normalReturnChance,
+  'More time to reach the same wide ball reduces pressure');
+assert.ok(timeToMove.ball.normalSpeed > rushed.ball.normalSpeed,
+  'A rushed CPU return loses pace');
+for (const speed of [3.5, 6, 8, 12]) {
+  const paced = game(); paced.ball.vy = -speed; paced.prepareNormalCpuShot();
+  assert.ok(paced.ball.normalSpeed >= 5.5 && paced.ball.normalSpeed <= 8);
+}
 assert.ok(predictedBallX(780, 400, 3, -6, 100) < 790);
 
 async function integration() {
@@ -58,7 +67,26 @@ async function integration() {
   for (const useWasm of [false, true]) {
     context.window.updatePhysicsWasm = useWasm ? global.updatePhysicsWasm : undefined;
     for (const role of [1, 2]) {
+      // Both the serve receive (0) and the CPU server's first return (1)
+      // should start a rally without a random Easy miss.
+      math.random = () => 0.99;
+      for (const returnCount of [0, 1]) {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const opening = game(role);
+          opening.difficulty = 'easy';
+          opening.ball.easyReturnCount = returnCount;
+          opening.ball.easyCpuAttempted = false;
+          opening.updatePhysics();
+          assert.equal(opening.ball.easyReturnCount, returnCount + 1,
+            'Easy CPU must return reachable opening shots in JS and WASM');
+        }
+      }
       math.random = () => 0.1;
+      const settle = game(role);
+      settle.ball.y = 250; settle.ball.x = 402;
+      settle.updatePhysics();
+      assert.equal((role === 1 ? settle.p2 : settle.p1).x, 352,
+        'Normal CPU stops at its target without oscillating past it');
       const g = game(role); g.prepareNormalCpuShot(); g.ball.normalReturnChance = 1;
       const expected = normalCpuVelocity(g.ball, role === 1 ? 1 : -1);
       g.updatePhysics();

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サウンドテーブルテニス (STT) オンライン</title>
   <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
-  <script src="js/display-settings.js?v=3.31.25"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.25">
+  <script src="js/display-settings.js?v=3.31.26"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.26">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -61,12 +61,23 @@
           </div>
           <p id="display-settings-hint">選ぶとすぐに反映され、次回も同じ設定で開きます。文字の大きさはメニュー・得点・案内に適用されます。</p>
         </fieldset>
+        <fieldset class="display-settings-panel">
+          <legend>音声案内</legend>
+          <div class="display-setting">
+            <label for="select-speech-mode">読み上げ方式</label>
+            <select id="select-speech-mode" aria-describedby="speech-mode-hint">
+              <option value="builtin">ゲームの内蔵音声</option>
+              <option value="screen-reader">スクリーンリーダー</option>
+            </select>
+          </div>
+          <p id="speech-mode-hint">案内は選んだ方式だけで読み上げます。球音や打球音はどちらでも鳴ります。中断メニューでも変更できます。</p>
+        </fieldset>
         <!-- 音声読み上げ速度設定 -->
         <div class="speech-rate-panel">
-          <label for="range-speech-rate">音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
+          <label for="range-speech-rate">内蔵音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
           <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
             aria-label="音声読み上げの速さを調整します。2.0倍が最大速度、0.5倍が最小速度です。">
-          <p class="mobile-hint-text">「1.0」が標準速度です。慣れた方は1.5〜2.0に設定すると、読み上げがスムーズになります。</p>
+          <p class="mobile-hint-text">「1.0」が標準速度です。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
         </div>
         <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
           <span class="btn-text">オーディオを有効にして開始する</span>
@@ -203,7 +214,7 @@
         </div>
 
         <!-- 審判のテキストコール表示 (ビジュアル補助用) -->
-        <div class="referee-call" id="referee-message" aria-live="polite">
+        <div class="referee-call" id="referee-message">
           「プレー」
         </div>
 
@@ -225,14 +236,24 @@
         </div>
 
         <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+          <button id="btn-game-action" type="button" class="btn btn-primary" aria-describedby="game-action-hint">サーブ・返球</button>
           <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">ラケット位置をリセット（中央に戻す）</button>
           <button id="btn-quit-game" class="btn btn-danger btn-small">中断メニュー</button>
         </div>
+
+        <p id="game-action-hint" class="play-instructions">サーブ・返球ボタンで準備、返事、サーブ、返球、得点後の待ち時間のスキップができます。スクリーンリーダーではボタンを選んで実行してください。ボタンのサーブは長押し不要です。</p>
 
         <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
           <div class="quit-confirm-dialog">
             <h2 id="quit-confirm-title">プレイを停止しました</h2>
             <p id="quit-confirm-message">再開、操作方法の確認、TOPへ戻ることができます。</p>
+            <div class="display-setting">
+              <label for="select-paused-speech-mode">読み上げ方式</label>
+              <select id="select-paused-speech-mode">
+                <option value="builtin">ゲームの内蔵音声</option>
+                <option value="screen-reader">スクリーンリーダー</option>
+              </select>
+            </div>
             <div class="quit-confirm-buttons">
               <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
               <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
@@ -259,6 +280,8 @@
             <li><strong>右矢印キー (→)</strong>: ラケットを右に移動</li>
             <li><strong>スペースキー (Space)</strong>: アクションの決定 (サーブの構え、レシーブの返事「はい」、サーブ打球、ラリー中の打ち返し)</li>
             <li><strong>エスケープキー (Esc)</strong>: プレイの中断</li>
+            <li><strong>サーブ・返球ボタン</strong>: 準備、返事、サーブ、返球、得点後の待ち時間のスキップ。スクリーンリーダーでボタンを選んで実行できます。長押し不要のサーブです。</li>
+            <li><strong>読み上げ方式</strong>: 起動画面・中断メニューで内蔵音声かスクリーンリーダーを選べます。球音と打球音は共通です。</li>
           </ul>
 
           <h3>🏓 サウンドテーブルテニス (STT) とは？</h3>
@@ -279,7 +302,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.25</p>
+      <p>バージョン 3.31.26</p>
       <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
@@ -288,13 +311,13 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.25"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.26"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.25"></script>
+  <script type="module" src="app.js?v=3.31.26"></script>
 </body>
 </html>

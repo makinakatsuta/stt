@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.25';
+import { narrator } from './speech-system.js?v=3.31.26';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.25';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.26';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -193,6 +193,30 @@ export class GameEngine {
     this.updateCanvasAriaLabel();
 
     // Feature #8: 音声速度設定スライダーのバインド＆初期化
+    const speechModeSelects = ['select-speech-mode', 'select-paused-speech-mode']
+      .map(id => document.getElementById(id)).filter(Boolean);
+    const syncSpeechMode = () => {
+      for (const select of speechModeSelects) select.value = narrator.speechMode || 'builtin';
+      const rate = document.getElementById('range-speech-rate');
+      if (rate) rate.disabled = narrator.speechMode === 'screen-reader';
+    };
+    syncSpeechMode();
+    for (const select of speechModeSelects) {
+      select.addEventListener('change', () => {
+        narrator.setSpeechMode(select.value);
+        syncSpeechMode();
+      });
+    }
+
+    // Use only native click for touch, keyboard and assistive-technology activation.
+    const actionButton = document.getElementById('btn-game-action');
+    if (actionButton) actionButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (this.isGameplayPaused || this.screens.play.classList.contains('hidden')) return;
+      this.isCharging = false;
+      this.handleActionInput();
+    });
+
     const rangeSpeechRate = document.getElementById('range-speech-rate');
     const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
     if (rangeSpeechRate && lblSpeechRateVal) {
@@ -256,13 +280,13 @@ export class GameEngine {
     let pointerStartPoint = null;
     // Pointer events provide one authoritative tap path and prevent the
     // touchend + synthetic click pair from being interpreted twice.
-    const pointerExcludedTags = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
+    const isControl = target => target?.closest?.('button, a, input, label, select, textarea');
     const pointerActiveStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
 
     if (canvasContainer) {
       canvasContainer.style.touchAction = 'none';
       canvasContainer.addEventListener('pointerdown', (e) => {
-        if (this.isGameplayPaused || !e.isPrimary || pointerExcludedTags.includes(e.target.tagName)) return;
+        if (this.isGameplayPaused || !e.isPrimary || isControl(e.target)) return;
         pointerStartPoint = { id: e.pointerId, x: e.clientX, y: e.clientY };
         if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
           e.preventDefault();
@@ -275,7 +299,7 @@ export class GameEngine {
         if (this.isGameplayPaused || !e.isPrimary || !pointerStartPoint || pointerStartPoint.id !== e.pointerId) return;
         const start = pointerStartPoint;
         pointerStartPoint = null;
-        if (pointerExcludedTags.includes(e.target.tagName)) return;
+        if (isControl(e.target)) return;
         const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12;
         if (moved || !pointerActiveStates.includes(this.state)) return;
         e.preventDefault();
@@ -296,8 +320,8 @@ export class GameEngine {
       if (!activeStates.includes(this.state)) return;
 
       // ボタン・リンク・input 要素のクリックは除外する（誤爆防止）
-      const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
-      if (excluded.includes(e.target.tagName)) return;
+      // Ignore controls and their descendants.
+      if (isControl(e.target)) return;
 
       e.preventDefault();
       this.handleActionInput();
@@ -313,8 +337,8 @@ export class GameEngine {
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
 
-      const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
-      if (excluded.includes(e.target.tagName)) return;
+      // Ignore controls and their descendants.
+      if (isControl(e.target)) return;
 
       e.preventDefault(); // 300ms の click 遅延と二重発火を防ぐ
       const touch = e.changedTouches && e.changedTouches[0];
@@ -337,8 +361,8 @@ export class GameEngine {
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_SERVE_WAITING];
 
-      const excluded = ['BUTTON', 'A', 'INPUT', 'LABEL', 'SELECT', 'TEXTAREA'];
-      if (excluded.includes(e.target.tagName)) return;
+      // Ignore controls and their descendants.
+      if (isControl(e.target)) return;
 
       const touch = e.touches && e.touches[0];
       touchStartPoint = touch ? { x: touch.clientX, y: touch.clientY } : null;
@@ -593,7 +617,7 @@ export class GameEngine {
 
       if (this.isGameplayPaused) {
         if (e.key === 'Tab') {
-          const buttons = [...document.querySelectorAll('#quit-confirm-overlay button')];
+          const buttons = [...document.querySelectorAll('#quit-confirm-overlay button, #quit-confirm-overlay select')];
           const first = buttons[0];
           const last = buttons[buttons.length - 1];
           if (e.shiftKey && document.activeElement === first) {
@@ -607,6 +631,11 @@ export class GameEngine {
         return;
       }
       if (this.screens.play.classList.contains('hidden')) return;
+      // Preserve native form/button activation. Arrow keys on the action button
+      // still move the paddle; Escape still opens the pause menu.
+      const control = isControl(e.target);
+      if (control && !isEscapeKey && !(control.id === 'btn-game-action'
+          && ['ArrowLeft', 'ArrowRight'].includes(e.code || e.key))) return;
 
       // code はブラウザやキーボード・スクリーンリーダーによって空になる
       // ことがあるため、key も併用して操作キーを判定する。
@@ -763,6 +792,8 @@ export class GameEngine {
     this.motionDirection = 0;
     this.updateCanvasAriaLabel();
 
+
+
     // play-instructions を元の表示状態に戻す (次回プレイ開始まで非表示のまま)
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) instrEl.classList.remove('hidden');
@@ -818,7 +849,7 @@ export class GameEngine {
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
     }
     this.startLoop();
-    this.canvas.focus();
+    document.getElementById('canvas-container').focus();
     narrator.speak("プレイを再開しました。");
   }
 

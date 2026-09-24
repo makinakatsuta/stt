@@ -1,4 +1,4 @@
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.25';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.26';
 
 export class SpeechSystem {
   constructor() {
@@ -6,6 +6,9 @@ export class SpeechSystem {
     this.voice = null;
     this.srAnnouncer = document.getElementById('sr-announcer');
     this.refereeMessage = document.getElementById('referee-message');
+    const savedMode = readSetting('stt_speech_mode');
+    this.speechMode = savedMode === 'screen-reader' ? 'screen-reader' : 'builtin';
+    this.announcementTimer = null;
     // Feature #8: 音声速度設定の初期読み込み
     this.speechRate = parseFloat(readSetting('stt_speech_rate') || '1.2');
 
@@ -26,16 +29,18 @@ export class SpeechSystem {
   }
 
   /**
-   * 主審やプレイヤーの発声を再生し、同時にスクリーンリーダー用のaria-liveテキストと画面表示を更新します。
+   * 案内は選択された方式だけで出力し、審判コールは画面にも表示します。
    * @param {string} text 発声するテキスト
    * @param {boolean} isReferee 主審としての発声かどうか (主審は少し高く、低テンポ)
    */
   speak(text, isReferee = true) {
+    this.stop();
     // 1. スクリーンリーダーのテキストを更新 (最優先で読み上げさせる)
     try {
-      if (this.srAnnouncer) {
+      if (this.srAnnouncer && (this.speechMode === 'screen-reader' || !this.synth)) {
         this.srAnnouncer.textContent = ''; // 一度クリアして確実に変更を検知させる
-        setTimeout(() => {
+        this.announcementTimer = setTimeout(() => {
+          this.announcementTimer = null;
           this.srAnnouncer.textContent = text;
         }, 50);
       }
@@ -57,8 +62,7 @@ export class SpeechSystem {
 
     // 3. Web Speech APIによる発声 (シークレットモード等の制限に備えtry-catch保護)
     try {
-      if (this.synth) {
-        this.synth.cancel();
+      if (this.synth && this.speechMode === 'builtin') {
 
         const utterance = new SpeechSynthesisUtterance(text);
         if (this.voice) {
@@ -80,9 +84,23 @@ export class SpeechSystem {
    * 音声の出力を強制停止します。
    */
   stop() {
-    if (this.synth) {
-      this.synth.cancel();
+    if (this.announcementTimer !== null) {
+      clearTimeout(this.announcementTimer);
+      this.announcementTimer = null;
     }
+    if (this.srAnnouncer) this.srAnnouncer.textContent = '';
+    try {
+      if (this.synth) this.synth.cancel();
+    } catch (error) {
+      console.warn('Failed to stop built-in speech:', error);
+    }
+  }
+
+  setSpeechMode(mode) {
+    if (!['builtin', 'screen-reader'].includes(mode)) return;
+    this.stop();
+    this.speechMode = mode;
+    writeSetting('stt_speech_mode', mode);
   }
 
   /**

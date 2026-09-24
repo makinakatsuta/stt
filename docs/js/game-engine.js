@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.27';
+import { narrator } from './speech-system.js?v=3.31.28';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.27';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.28';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -20,7 +20,7 @@ const EASY_CPU_RETURN_CHANCE = 0.90;
 const EASY_RALLY_RETURN_LIMIT = 8;
 // Normal is the standard reference. Hard makes the player's timing and
 // movement 10% less forgiving than Normal.
-const NORMAL_PADDLE_SPEED = 8;
+const NORMAL_PADDLE_SPEED = 11;
 const NORMAL_CPU_SPEED = 5.2;
 const HARD_DIFFICULTY_FACTOR = 0.9;
 const NORMAL_HIT_ZONE = 90;
@@ -2140,7 +2140,7 @@ export class GameEngine {
     // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
     const maxSpeed = this.difficulty === 'hard'
       ? NORMAL_PADDLE_SPEED * HARD_DIFFICULTY_FACTOR
-      : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 8.5;
+      : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 11.5;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     const isAssistMove = !this.keys['ArrowLeft'] && !this.keys['ArrowRight'] &&
       (physicsKeys['ArrowLeft'] || physicsKeys['ArrowRight']);
@@ -3020,13 +3020,12 @@ export class GameEngine {
 
     // キー状態に反映（updatePhysics で keys['ArrowLeft/Right'] を参照しているため）
     if (this.motionDirection < 0) {
-      // 右向き加速度（体が右に動く → ラケットを右へ）
-      this.keys['ArrowLeft'] = false;
-      this.keys['ArrowRight'] = true;
-    } else if (this.motionDirection > 0) {
-      // 左向き加速度（体が左に動く → ラケットを左へ）
+      // ユーザーからの「左右が逆」というフィードバックを反映して方向を反転
       this.keys['ArrowLeft'] = true;
       this.keys['ArrowRight'] = false;
+    } else if (this.motionDirection > 0) {
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = true;
     } else {
       // 停止閾値内 → 静止
       this.keys['ArrowLeft'] = false;

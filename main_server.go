@@ -19,7 +19,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const appVersion = "3.31.27"
+const appVersion = "3.31.28"
 
 //go:embed docs/*.html docs/*.css docs/app.js docs/wasm_exec.js docs/main.wasm docs/js/*.js docs/sounds/*.m4a LICENSE
 var bundledAssets embed.FS

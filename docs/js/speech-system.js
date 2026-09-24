@@ -1,4 +1,4 @@
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.27';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.28';
 
 export class SpeechSystem {
   constructor() {

@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.26';
+import { narrator } from './speech-system.js?v=3.31.27';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.26';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.27';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -762,12 +762,11 @@ export class GameEngine {
   }
 
   quitGame() {
+    this.clearGameplayTasks();
     document.getElementById('quit-confirm-overlay').classList.add('hidden');
     this.gameplayPausedAt = 0;
     this.isCharging = false;
     this.pendingSwingUntil = 0;
-    clearTimeout(this.pendingScoreTimeout);
-    this.pendingScoreTimeout = null;
     sounds.stopGameplayAudio();
     this.isGameplayPaused = false;
     this.net.disconnect();
@@ -805,11 +804,57 @@ export class GameEngine {
   /**
    * 戻る確認を表示し、確認中のゲーム処理・音響・入力を停止します。
    */
+  // Gameplay delays share the same pause/resume clock as the game loop.
+  scheduleGameplayTask(callback, delay) {
+    if (!this.gameplayTasks) this.gameplayTasks = new Set();
+    const task = { callback, remaining: delay, timer: null, startedAt: 0 };
+    this.gameplayTasks.add(task);
+    if (!this.isGameplayPaused) this.armGameplayTask(task);
+    return task;
+  }
+
+  armGameplayTask(task) {
+    task.startedAt = Date.now();
+    task.timer = setTimeout(() => {
+      task.timer = null;
+      if (!this.gameplayTasks.has(task) || this.isGameplayPaused) return;
+      this.gameplayTasks.delete(task);
+      task.callback();
+    }, task.remaining);
+  }
+
+  cancelGameplayTask(task) {
+    if (!task) return;
+    clearTimeout(task.timer);
+    this.gameplayTasks?.delete(task);
+  }
+
+  clearGameplayTasks() {
+    for (const task of this.gameplayTasks || []) this.cancelGameplayTask(task);
+    this.intervalSkipCallback = null;
+    this.currentIntervalTimer = null;
+    this.pendingScoreTimeout = null;
+  }
+
+  pauseGameplayTasks() {
+    for (const task of this.gameplayTasks || []) {
+      if (task.timer === null) continue;
+      clearTimeout(task.timer);
+      task.timer = null;
+      task.remaining = Math.max(0, task.remaining - (Date.now() - task.startedAt));
+    }
+  }
+
+  resumeGameplayTasks() {
+    for (const task of this.gameplayTasks || []) this.armGameplayTask(task);
+  }
+
   showQuitConfirmation() {
     if (this.isGameplayPaused || this.screens.play.classList.contains('hidden')) return;
 
     this.isGameplayPaused = true;
     this.gameplayPausedAt = Date.now();
+    this.pauseGameplayTasks();
     this.stopLoop();
     this.isCharging = false;
     this.keys['ArrowLeft'] = false;
@@ -851,6 +896,7 @@ export class GameEngine {
     this.startLoop();
     document.getElementById('canvas-container').focus();
     narrator.speak("プレイを再開しました。");
+    this.resumeGameplayTasks();
   }
 
   /**
@@ -1056,7 +1102,7 @@ export class GameEngine {
       if (this.state !== STATE_RALLY) return;
       // 保留中の得点判定があればキャンセル
       if (this.pendingScoreTimeout) {
-        clearTimeout(this.pendingScoreTimeout);
+        this.cancelGameplayTask(this.pendingScoreTimeout);
         this.pendingScoreTimeout = null;
       }
 
@@ -1111,6 +1157,7 @@ export class GameEngine {
    * 新しいマッチ(3ゲーム・2ゲーム先取)を開始します。
    */
   startNewMatch() {
+    this.clearGameplayTasks();
     // Feature #17: 難易度を復元
     if (this.mode === 'cpu' && !this.difficulty) {
       this.difficulty = readSetting('stt_last_difficulty') || 'normal';
@@ -1212,6 +1259,7 @@ export class GameEngine {
    * 画面全体タップでのアクション集中モードを有効にします。
    */
   prepareServeSequence() {
+    this.clearGameplayTasks();
     this.ball.hardCpuAttempted = false;
     this.ball.normalPlanReady = false;
     this.ball.normalCpuAttempted = false;
@@ -1253,7 +1301,7 @@ export class GameEngine {
     } else {
       // CPU対戦かつCPUがサーバーの場合、一定時間後にCPUが自動で「いきます」と発声
       if (this.mode === 'cpu' && this.serverRole === 2) {
-        setTimeout(() => {
+        this.scheduleGameplayTask(() => {
           if (this.state === STATE_PRE_SERVE_READY) {
             this.state = STATE_PRE_SERVE_HEARD;
             this.stateStartTime = Date.now();
@@ -1271,7 +1319,7 @@ export class GameEngine {
   handleActionInput() {
     // Feature #4: インターバルスキップ - STATE_POINT_WON中にアクションでインターバルをスキップ
     if (this.state === STATE_POINT_WON && this.intervalSkipCallback) {
-      clearTimeout(this.currentIntervalTimer);
+      this.cancelGameplayTask(this.currentIntervalTimer);
       this.intervalSkipCallback();
       this.intervalSkipCallback = null;
       return;
@@ -1292,7 +1340,7 @@ export class GameEngine {
           this.net.send('action', { actionType: 'voice_call', call: 'ikimasu' });
         } else {
           // CPU戦の場合、一定時間後にCPUが「はい」と答える
-          setTimeout(() => {
+          this.scheduleGameplayTask(() => {
             if (this.state === STATE_PRE_SERVE_HEARD) {
               this.state = STATE_SERVE_WAITING;
               this.stateStartTime = Date.now();
@@ -1318,7 +1366,7 @@ export class GameEngine {
           if (this.serverRole === 2) {
             const cpuDelay = 1200 + Math.random() * 800;
 
-            setTimeout(() => {
+            this.scheduleGameplayTask(() => {
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.stateStartTime = Date.now();
@@ -1570,39 +1618,17 @@ export class GameEngine {
       }
     }
 
-    // Feature #3: リターンミス時のミス方向音声アナウンス
-    if (reason === 'miss' || reason === 'safe') {
-      const sideText = this.ball.x < CANVAS_WIDTH / 3 ? '左を通りました' : (this.ball.x > CANVAS_WIDTH * 2 / 3 ? '右を通りました' : '中央を通りました');
-      try {
-        const srEl = document.getElementById('sr-announcer');
-        if (srEl) {
-          srEl.textContent = '';
-          setTimeout(() => {
-            srEl.textContent = sideText;
-          }, 80);
-        }
-      } catch (e) {}
-    }
-
+    // 得点案内は審判コールに統一し、別のライブ通知で上書きしない。
     // 主審の宣告コール（例:「セーフ、ポイント プレイヤー。 1 対 0。」 / 「アウト、ポイント CPU。 0 対 1。」）
     const scoreAnnounce = `${reasonText}、ポイント ${winnerName}。 ${this.scores.p1} 対 ${this.scores.p2}。`;
     if (reason === 'stop') {
       // 停止音の再生が終わってから、主審のコールを重ねる。
-      setTimeout(() => narrator.speak(scoreAnnounce, true), 250);
+      this.scheduleGameplayTask(() => narrator.speak(scoreAnnounce, true), 250);
     } else {
       narrator.speak(scoreAnnounce, true);
     }
 
-    // 改善⑧: インターバル中にスキップ可能なことをスクリーンリーダーで案内（2秒後）
-    setTimeout(() => {
-      try {
-        const srEl = document.getElementById('sr-announcer');
-        if (srEl && this.state === STATE_POINT_WON) {
-          srEl.textContent = '';
-          setTimeout(() => { srEl.textContent = 'タップまたはスペースキーで次のサーブへ進めます。'; }, 50);
-        }
-      } catch(e) {}
-    }, 2000);
+    // スキップ方法は操作説明とサーブ・返球ボタンの説明で案内する。
 
     // 1ゲーム（セット）終了判定 (11点先取、デュース時は2点差)
     const p1 = this.scores.p1;
@@ -1611,6 +1637,7 @@ export class GameEngine {
 
     // Feature #4: インターバルスキップ用のコールバックパターンの適用
     this.intervalSkipCallback = () => {
+      this.clearGameplayTasks();
       if (isGameFinished) {
         // ゲーム獲得数をインクリメント
         const gameWinner = p1 > p2 ? 1 : 2;
@@ -1639,7 +1666,7 @@ export class GameEngine {
           // Feature #1 / 改善⑦: CPU戦サーブ交代制（easy含め全難易度でゲームごとに交代）
           this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
 
-          setTimeout(() => {
+          this.scheduleGameplayTask(() => {
             this.prepareServeSequence();
           }, 3000);
         }
@@ -1655,7 +1682,7 @@ export class GameEngine {
       }
     };
 
-    const skipTimer = setTimeout(() => {
+    const skipTimer = this.scheduleGameplayTask(() => {
       if (this.intervalSkipCallback) {
         this.intervalSkipCallback();
         this.intervalSkipCallback = null;
@@ -1675,6 +1702,7 @@ export class GameEngine {
    * マッチ(試合全体)の決着がついた際の終了処理。
    */
   finishMatch(matchWinner) {
+    this.clearGameplayTasks();
     // ゲームループを停止（リザルト表示中に物理計算・描画が走り続けるのを防ぐ）
     this.stopLoop();
     // 改善⑥: CPU戦では「プレイヤー 2」でなく「CPU」と読み上げる
@@ -2077,8 +2105,8 @@ export class GameEngine {
                   this.awardPointTo(evt.winner, evt.reason);
                 } else {
                   // 相手がミスした場合は、遅延パケット到着を考慮して300ms保留する
-                  if (this.pendingScoreTimeout) clearTimeout(this.pendingScoreTimeout);
-                  this.pendingScoreTimeout = setTimeout(() => {
+                  if (this.pendingScoreTimeout) this.cancelGameplayTask(this.pendingScoreTimeout);
+                  this.pendingScoreTimeout = this.scheduleGameplayTask(() => {
                     if (this.state === STATE_RALLY) { // まだラリー中であれば確定
                       if (evt.reason === 'stop') {
                         sounds.updateBallSound(this.ball.x, this.ball.y, 0, 0);
@@ -2320,11 +2348,7 @@ export class GameEngine {
             sounds.startRallyMusic();
             this.addRipple(this.ball.x, this.ball.y, 'hit');
             this.recordRallyReturn(2);
-            // 改善⑤: CPU打球時のスクリーンリーダー向け通知
-            try {
-              const srEl = document.getElementById('sr-announcer');
-              if (srEl) { srEl.textContent = ''; setTimeout(() => { srEl.textContent = 'CPUが打ちました'; }, 20); }
-            } catch(e) {}
+            // CPUの打球は共通の打球音で知らせ、審判の通知を上書きしない。
           }
         }
       }

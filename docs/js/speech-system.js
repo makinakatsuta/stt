@@ -1,4 +1,4 @@
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.26';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.27';
 
 export class SpeechSystem {
   constructor() {
@@ -9,6 +9,7 @@ export class SpeechSystem {
     const savedMode = readSetting('stt_speech_mode');
     this.speechMode = savedMode === 'screen-reader' ? 'screen-reader' : 'builtin';
     this.announcementTimer = null;
+    this.announcementId = 0;
     // Feature #8: 音声速度設定の初期読み込み
     this.speechRate = parseFloat(readSetting('stt_speech_rate') || '1.2');
 
@@ -35,18 +36,14 @@ export class SpeechSystem {
    */
   speak(text, isReferee = true) {
     this.stop();
-    // 1. スクリーンリーダーのテキストを更新 (最優先で読み上げさせる)
-    try {
-      if (this.srAnnouncer && (this.speechMode === 'screen-reader' || !this.synth)) {
-        this.srAnnouncer.textContent = ''; // 一度クリアして確実に変更を検知させる
-        this.announcementTimer = setTimeout(() => {
-          this.announcementTimer = null;
-          this.srAnnouncer.textContent = text;
-        }, 50);
-      }
-    } catch (e) {
-      console.warn("Failed to announce to screen reader:", e);
-    }
+    const announcementId = this.announcementId;
+    let fallbackSent = false;
+    const announceFallback = () => {
+      if (announcementId !== this.announcementId || fallbackSent) return;
+      fallbackSent = true;
+      this.announceToScreenReader(text, announcementId);
+    };
+    if (this.speechMode === 'screen-reader' || !this.synth) announceFallback();
 
     // 2. ビジュアルの審判コールテキストを更新
     try {
@@ -73,10 +70,14 @@ export class SpeechSystem {
         utterance.rate = isReferee ? this.speechRate : Math.max(0.7, this.speechRate - 0.2);
         utterance.pitch = isReferee ? 1.0 : 1.1;
 
+        utterance.onerror = (event) => {
+          if (event.error !== 'canceled' && event.error !== 'interrupted') announceFallback();
+        };
         this.synth.speak(utterance);
       }
     } catch (e) {
       console.warn("Web Speech API failed to speak:", e);
+      announceFallback();
     }
   }
 
@@ -84,6 +85,7 @@ export class SpeechSystem {
    * 音声の出力を強制停止します。
    */
   stop() {
+    this.announcementId++;
     if (this.announcementTimer !== null) {
       clearTimeout(this.announcementTimer);
       this.announcementTimer = null;
@@ -94,6 +96,15 @@ export class SpeechSystem {
     } catch (error) {
       console.warn('Failed to stop built-in speech:', error);
     }
+  }
+
+  announceToScreenReader(text, announcementId) {
+    if (!this.srAnnouncer) return;
+    this.srAnnouncer.textContent = '';
+    this.announcementTimer = setTimeout(() => {
+      this.announcementTimer = null;
+      if (announcementId === this.announcementId) this.srAnnouncer.textContent = text;
+    }, 50);
   }
 
   setSpeechMode(mode) {

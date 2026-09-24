@@ -3,15 +3,15 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -19,7 +19,24 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const appVersion = "3.31.26"
+const appVersion = "3.31.27"
+
+//go:embed docs/*.html docs/*.css docs/app.js docs/wasm_exec.js docs/main.wasm docs/js/*.js docs/sounds/*.m4a LICENSE
+var bundledAssets embed.FS
+
+func staticHandler() http.Handler {
+	assets, err := fs.Sub(bundledAssets, "docs")
+	if err != nil {
+		panic(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/LICENSE", http.FileServer(http.FS(bundledAssets)))
+	mux.Handle("/", http.FileServer(http.FS(assets)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		mux.ServeHTTP(w, r)
+	})
+}
 
 // アップグレーダーの設定。許容するオリジンをすべて許可します（開発・LAN用）。
 // NOTE: インターネット公開時は r.Header.Get("Origin") を検証し、
@@ -519,35 +536,16 @@ func openBrowser(url string) {
 
 func main() {
 	showVersion := flag.Bool("version", false, "Print the application version and exit")
+	noBrowser := flag.Bool("no-browser", false, "Start without opening a browser")
+	listenAddress := flag.String("listen", ":8080", "HTTP listen address")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("STT v%s\n", appVersion)
 		return
 	}
 
-	// ダブルクリック起動時も、実行ファイルと同じ場所の docs を参照する。
-	baseDir, err := os.Getwd()
-	if exePath, exeErr := os.Executable(); exeErr == nil {
-		baseDir = filepath.Dir(exePath)
-	}
-	docsDir := filepath.Join(baseDir, "docs")
-	if _, err := os.Stat(docsDir); err != nil {
-		// go run など、実行ファイルの場所に docs がない場合は作業フォルダを使う。
-		docsDir = "docs"
-	}
-
-	// 静的ファイルの配信設定 (docs ディレクトリ以下をルートとしてサーブ)
-	fs := http.FileServer(http.Dir(docsDir))
-	// JavaScriptのイベント処理を更新した際に、古いモジュールをブラウザが
-	// 使い続けないよう、静的ファイルは常に再検証させる。
-	http.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-		fs.ServeHTTP(w, r)
-	}))
-
-	// サウンドファイルの配信設定 (docs/sounds ディレクトリ)
-	soundsFs := http.StripPrefix("/sounds/", http.FileServer(http.Dir(filepath.Join(docsDir, "sounds"))))
-	http.Handle("/sounds/", soundsFs)
+	// 画面・音源・WASMを実行ファイルから配信し、外部フォルダーを不要にする。
+	http.Handle("/", staticHandler())
 
 	// WebSocket エンドポイントの登録
 	http.HandleFunc("/ws", serveWs)
@@ -557,8 +555,8 @@ func main() {
 
 	// サーバーの起動
 	// 8080 が使用中でも起動できるよう、空きポートへフォールバックする。
-	listener, err := net.Listen("tcp", ":8080")
-	if err != nil {
+	listener, err := net.Listen("tcp", *listenAddress)
+	if err != nil && *listenAddress == ":8080" {
 		log.Printf("Port 8080 is unavailable; selecting a free port: %v", err)
 		listener, err = net.Listen("tcp", ":0")
 		if err != nil {
@@ -604,7 +602,9 @@ func main() {
 	// サーバーが正常に起動してからブラウザを自動で開く (別スレッド)
 	go func() {
 		time.Sleep(200 * time.Millisecond) // サーバーソケットが完全にListenするのを待つ
-		openBrowser(localURL)
+		if !*noBrowser {
+			openBrowser(localURL)
+		}
 	}()
 
 	if err := http.Serve(listener, nil); err != nil {

@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.28';
+import { narrator } from './speech-system.js?v=3.31.29';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.28';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.29';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -1281,12 +1281,12 @@ export class GameEngine {
 
     // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
     if (this.serverRole === 1) {
-      // STT service area: the right half of the server's defensive court.
-      this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p1.x));
+      // Start with the paddle's center aligned to the court's center.
+      this.p1.x = (CANVAS_WIDTH - PADDLE_WIDTH) / 2;
       this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
     } else {
-      this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p2.x));
+      this.p2.x = (CANVAS_WIDTH - PADDLE_WIDTH) / 2;
       this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
       this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
     }
@@ -1947,11 +1947,11 @@ export class GameEngine {
           this.state === STATE_PRE_SERVE_HEARD ||
           this.state === STATE_SERVE_WAITING) {
         if (this.serverRole === 1) {
-          this.p1.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p1.x));
+          this.p1.x = Math.max((CANVAS_WIDTH - PADDLE_WIDTH) / 2, Math.min(PADDLE_MAX_X, this.p1.x));
           this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
         } else {
-          this.p2.x = Math.max(CANVAS_WIDTH / 2, Math.min(PADDLE_MAX_X, this.p2.x));
+          this.p2.x = Math.max((CANVAS_WIDTH - PADDLE_WIDTH) / 2, Math.min(PADDLE_MAX_X, this.p2.x));
           this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
           this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
         }

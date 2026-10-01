@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.29';
+import { narrator } from './speech-system.js?v=3.31.30';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.29';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.30';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -2958,9 +2958,9 @@ export class GameEngine {
    * DeviceMotionEvent を受け取り、横方向加速度をラケット速度に変換します。
    *
    * 座標系（端末を縦向き/横向きに関わらず統一）:
-   *  - 縦向き (portrait)   : accelerationIncludingGravity.x が左右軸
-   *  - 横向き90° (右が上)  : accelerationIncludingGravity.y が左右軸（符号反転）
-   *  - 横向き-90° (左が上) : accelerationIncludingGravity.y が左右軸（符号そのまま）
+   *  - 縦向き (portrait)   : accelerationIncludingGravity.x が左右軸（符号反転）
+   *  - 横向き90° (右が上)  : accelerationIncludingGravity.y が左右軸（符号そのまま）
+   *  - 横向き-90° (左が上) : accelerationIncludingGravity.y が左右軸（符号反転）
    *
    * デッドゾーン  : ±1.5 m/s²（微細な手ブレを無視）
    * フルスケール  : ±8.0 m/s² でラケット最大速度
@@ -2980,13 +2980,13 @@ export class GameEngine {
 
     let rawX = 0;
     if (orientation === 90) {
-      // 右が上になる横向き: Y軸が左右、正方向が右
+      // 右が上になる横向き: Y軸が左右、左傾け時に左へ動く向き
       rawX = -(accel.y || 0);
     } else if (orientation === -90 || orientation === 270) {
-      // 左が上になる横向き: Y軸が左右、正方向が左
+      // 左が上になる横向き: Y軸が左右
       rawX = (accel.y || 0);
     } else {
-      // 縦向き (0° / 180°): X軸が左右
+      // 縦向き (0° / 180°): X軸が左右。左傾け時に左へ動く向きにする
       rawX = (accel.x || 0);
     }
 
@@ -3020,7 +3020,7 @@ export class GameEngine {
 
     // キー状態に反映（updatePhysics で keys['ArrowLeft/Right'] を参照しているため）
     if (this.motionDirection < 0) {
-      // ユーザーからの「左右が逆」というフィードバックを反映して方向を反転
+      // rawX < 0 → 左方向
       this.keys['ArrowLeft'] = true;
       this.keys['ArrowRight'] = false;
     } else if (this.motionDirection > 0) {

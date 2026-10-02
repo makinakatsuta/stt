@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.31';
+import { narrator } from './speech-system.js?v=3.31.32';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.31';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.32';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -170,6 +170,7 @@ export class GameEngine {
     this.motionSpeed = 0;        // 正規化されたラケット速度 (0.0〜1.0)
     this.tiltSpeed = 0;          // updatePhysics で参照する速度 (互換性維持)
     this.motionDirection = 0;    // -1: 左, 1: 右, 0: 静止
+    this.motionOrientation = null; // 前回の画面角度（回転時に平滑化をリセット）
     this.handleMotionBound = null;
 
     // 戻る確認ダイアログ表示中は、ゲームを完全に停止する
@@ -2975,13 +2976,27 @@ export class GameEngine {
     if (!accel) return;
 
     // 画面の向きに応じて左右加速度軸を選択
-    const orientation = ((screen.orientation?.angle ?? window.orientation ?? 0) % 360 + 360) % 360;
+    const screenAngle = window.screen?.orientation?.angle;
+    const angle = Number.isFinite(screenAngle) ? screenAngle
+      : Number.isFinite(window.orientation) ? window.orientation : 0;
+    const orientation = ((angle % 360) + 360) % 360;
+
+    // 縦横の切り替え前の入力を、新しい左右軸へ持ち越さない。
+    if (this.motionOrientation !== orientation) {
+      this.motionOrientation = orientation;
+      this.filteredMotionAccelX = 0;
+      this.motionDirection = 0;
+      this.motionSpeed = 0;
+      this.tiltSpeed = 0;
+      this.keys['ArrowLeft'] = false;
+      this.keys['ArrowRight'] = false;
+    }
 
     let rawX = 0;
     if (orientation === 90) {
       // 右が上になる横向き: Y軸が左右、左傾け時に左へ動く向き
       rawX = (accel.y || 0);
-    } else if (orientation === -90 || orientation === 270) {
+    } else if (orientation === 270) {
       // 左が上になる横向き: Y軸が左右
       rawX = -(accel.y || 0);
     } else if (orientation === 180) {

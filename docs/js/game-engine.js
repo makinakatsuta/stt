@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.30';
+import { narrator } from './speech-system.js?v=3.31.31';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.30';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.31';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -2962,7 +2962,8 @@ export class GameEngine {
    *  - 横向き90° (右が上)  : accelerationIncludingGravity.y が左右軸（符号そのまま）
    *  - 横向き-90° (左が上) : accelerationIncludingGravity.y が左右軸（符号反転）
    *
-   * デッドゾーン  : ±1.5 m/s²（微細な手ブレを無視）
+   *  - 上下逆 (180°)      : accelerationIncludingGravity.x が左右軸（符号そのまま）
+   * デッドゾーン  : 開始 ±1.8 / 停止 ±1.2 m/s²（微細な手ブレを無視）
    * フルスケール  : ±8.0 m/s² でラケット最大速度
    *
    * @param {DeviceMotionEvent} event
@@ -2974,20 +2975,20 @@ export class GameEngine {
     if (!accel) return;
 
     // 画面の向きに応じて左右加速度軸を選択
-    const orientation = window.orientation
-      || (screen.orientation && screen.orientation.angle)
-      || 0;
+    const orientation = ((screen.orientation?.angle ?? window.orientation ?? 0) % 360 + 360) % 360;
 
     let rawX = 0;
     if (orientation === 90) {
       // 右が上になる横向き: Y軸が左右、左傾け時に左へ動く向き
-      rawX = -(accel.y || 0);
+      rawX = (accel.y || 0);
     } else if (orientation === -90 || orientation === 270) {
       // 左が上になる横向き: Y軸が左右
-      rawX = (accel.y || 0);
-    } else {
-      // 縦向き (0° / 180°): X軸が左右。左傾け時に左へ動く向きにする
+      rawX = -(accel.y || 0);
+    } else if (orientation === 180) {
       rawX = (accel.x || 0);
+    } else {
+      // 通常の縦向き: 左側を下げると重力込みのX値は正になるため反転する。
+      rawX = -(accel.x || 0);
     }
 
     this.motionAccelX = rawX;
@@ -3056,7 +3057,7 @@ export class GameEngine {
 
     if (this.isMobile) {
       if (this.useTilt) {
-        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを水平に持ち、体ごと左右に動いてラケットを操作します。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
+        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを画面が上になるように持ち、左側を下げると左へ、右側を下げると右へラケットが動きます。水平に戻すと止まります。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
       } else {
         canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。接続されたキーボード、または画面をダブルタップしてアクションを行います。");
       }

@@ -231,6 +231,29 @@ body {
 }
 
 /* 難易度選択のグリッド配置 */
+.public-mode-menu {
+  grid-template-columns: 1fr;
+}
+
+.public-mode-menu .mode-primary {
+  border: 2px solid var(--color-accent);
+}
+
+.public-mode-menu .mode-coming-soon {
+  padding: 16px 20px;
+  cursor: default;
+}
+
+.public-mode-menu .mode-coming-soon .menu-icon {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+.public-mode-menu .mode-coming-soon:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .difficulty-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;

@@ -10,7 +10,7 @@ let checks = 0;
 // Gravity-inclusive readings for a stationary phone with its screen-left edge down.
 for (const [angle, x, y] of [[0, 4.9, 0], [90, 0, -4.9], [180, -4.9, 0], [270, 0, 4.9], [-90, 0, 4.9]]) {
   for (const legacy of [false, true]) {
-    const context = vm.createContext({screen: legacy ? {} : {orientation: {angle}}, window: {orientation: legacy ? angle : 0}});
+    const context = vm.createContext({window: {screen: legacy ? {} : {orientation: {angle}}, orientation: legacy ? angle : 0}});
     const handler = vm.runInContext(constants + '\n({' + method + '}).handleDeviceMotion', context);
     const state = {useTilt: true, filteredMotionAccelX: 0, motionDirection: 0, keys: {}};
     const feed = (x, y) => {for (let i = 0; i < 40; i++) handler.call(state, {accelerationIncludingGravity: {x, y, z: 8.49}});};

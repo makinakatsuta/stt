@@ -2,11 +2,22 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="robots" content="index, follow">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>サウンドテーブルテニス (STT) オンライン</title>
-  <meta name="description" content="サウンドテーブルテニスのルールに準拠した、視覚障害者も健常者も共に楽しめる3D音響リアルタイムWebゲーム。オンライン対戦対応。">
-  <script src="js/display-settings.js?v=3.31.32"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.32">
+  <title>サウンドテーブルテニス（STT）</title>
+  <meta name="description" content="音を頼りにラケットを操作して遊ぶ、ブラウザ対応のサウンドテーブルテニスゲーム。音声案内やスクリーンリーダー対応を備え、視覚障害の有無にかかわらず楽しめます。現在CPU対戦をプレイできます。">
+  <link rel="canonical" href="https://makinakatsuta.github.io/stt/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:title" content="サウンドテーブルテニス（STT）">
+  <meta property="og:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。インストール不要でCPU対戦を楽しめます。">
+  <meta property="og:url" content="https://makinakatsuta.github.io/stt/">
+  <!-- TODO: 品質を確認したPNG/JPEGのOGP画像を用意し、og:imageとtwitter:imageを追加する。 -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
+  <meta name="twitter:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。現在CPU対戦をプレイできます。">
+  <script src="js/display-settings.js?v=3.31.33"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.33">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -20,7 +31,7 @@
 
   <div class="app-container">
     <header class="game-header">
-      <h1>SOUND TABLE TENNIS <span class="accent">ONLINE</span></h1>
+      <h1>SOUND TABLE TENNIS <span class="accent">STT</span></h1>
       <p class="subtitle">音で狙い、音で打ち返す。共生するバーチャルスポーツ。</p>
     </header>
 
@@ -29,8 +40,8 @@
       <section id="screen-welcome" class="game-card fade-in" aria-labelledby="welcome-title">
         <h2 id="welcome-title">ようこそ、サウンドテーブルテニスへ</h2>
         <p class="description">
-          このゲームは、音が左右・前後に移動する立体音響（Web Audio API）を頼りにプレイする卓球ゲームです。<br>
-          ヘッドホンまたはイヤホンの使用を強く推奨します。
+          音を頼りに遊ぶ卓球ゲームです。視覚障害の有無にかかわらず、CPU対戦を楽しめます。<br>
+          インストール不要。このブラウザだけですぐに遊べます。ヘッドホンまたはイヤホンの使用をおすすめします。
         </p>
         <section aria-labelledby="welcome-difficulty-title">
           <h3 id="welcome-difficulty-title">CPU対戦の難易度</h3>
@@ -80,7 +91,8 @@
           <p class="mobile-hint-text">「1.0」が標準速度です。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
         </div>
         <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
-          <span class="btn-text">オーディオを有効にして開始する</span>
+          <span class="btn-text">ゲームを開始する</span>
+          <span class="btn-subtext">音声・ゲーム音を有効にします</span>
           <span class="btn-subtext">Enter または スペースキー</span>
         </button>
 
@@ -99,17 +111,17 @@
 
       <!-- 2. モード選択画面 (オーディオ有効化後に表示) -->
       <section id="screen-menu" class="game-card hidden" aria-labelledby="menu-title">
-        <h2 id="menu-title">ゲームモード選択</h2>
-        <div class="menu-grid">
-          <button id="btn-mode-cpu" class="btn btn-menu">
-            <span class="menu-icon">🤖</span>
-            <span class="menu-title">CPU対戦 (練習モード)</span>
-            <span class="menu-desc">CPUを相手に、守備と返球の練習をします。</span>
+        <h2 id="menu-title">CPU対戦で遊ぶ</h2>
+        <div class="menu-grid public-mode-menu">
+          <button id="btn-mode-cpu" class="btn btn-menu mode-primary">
+            <span class="menu-icon" aria-hidden="true">🤖</span>
+            <span class="menu-title">CPU対戦</span>
+            <span class="menu-desc">CPUを相手にサウンドテーブルテニスをプレイします。難易度を選んで今すぐ遊べます。</span>
           </button>
-          <button id="btn-mode-online" class="btn btn-menu">
-            <span class="menu-icon">🌐</span>
-            <span class="menu-title">オンライン対戦</span>
-            <span class="menu-desc">ネット越しに他のプレイヤーとリアルタイムで対戦します。</span>
+          <button id="btn-mode-online" class="btn btn-menu mode-coming-soon" aria-disabled="true" aria-describedby="online-mode-description">
+            <span class="menu-icon" aria-hidden="true">🌐</span>
+            <span class="menu-title">オンライン対戦（準備中）</span>
+            <span id="online-mode-description" class="menu-desc">オンライン対戦は現在準備中です。</span>
           </button>
         </div>
         <button id="btn-show-help" class="btn btn-secondary">操作方法とルール説明を見る</button>
@@ -302,8 +314,9 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.32</p>
-      <p>© 2026 Maki Nakatsuta. <a href="LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
+      <p>バージョン 3.31.33</p>
+      <p><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
+      <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
 
@@ -311,13 +324,13 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.32"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.33"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.32"></script>
+  <script type="module" src="app.js?v=3.31.33"></script>
 </body>
 </html>

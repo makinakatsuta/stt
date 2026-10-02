@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.32';
+import { narrator } from './speech-system.js?v=3.31.33';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.32';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.33';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -435,102 +435,13 @@ export class GameEngine {
       this.changeScreen('menu');
     });
 
-    // 3. モード選択: オンライン戦 (Feature #17: サーバーアドレスの復元)
-    // 3. モード選択: オンライン対戦 — 🚧 工事中 (500 Internal Error)
+    // Online mode is paused; keep lobby and networking code for future use.
+    // Keep the aria-disabled button focusable for keyboard and screen readers.
     const btnOnline = document.getElementById('btn-mode-online');
     if (btnOnline) {
-      // ボタンを視覚的に無効化 (disabled 属性は付けず aria-disabled で管理)
-      btnOnline.setAttribute('aria-disabled', 'true');
-      btnOnline.setAttribute('title', '現在このモードは工事中です (500)');
-      btnOnline.style.opacity = '0.4';
-      btnOnline.style.cursor = 'not-allowed';
-      btnOnline.style.filter = 'grayscale(80%)';
-
-      btnOnline.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // 500 Internal Error ダイアログを表示
-        narrator.speak("500 インターナルエラー。オンライン対戦は現在工事中です。しばらくお待ちください。");
-
-        // 既存のエラーオーバーレイがあれば再利用、なければ生成
-        let overlay = document.getElementById('error-overlay-500');
-        if (!overlay) {
-          overlay = document.createElement('div');
-          overlay.id = 'error-overlay-500';
-          overlay.setAttribute('role', 'alertdialog');
-          overlay.setAttribute('aria-modal', 'true');
-          overlay.setAttribute('aria-labelledby', 'error-overlay-500-title');
-          overlay.style.cssText = [
-            'position:fixed', 'inset:0', 'z-index:9999',
-            'display:flex', 'align-items:center', 'justify-content:center',
-            'background:rgba(0,0,0,0.75)', 'backdrop-filter:blur(4px)',
-          ].join(';');
-
-          overlay.innerHTML = `
-            <div style="
-              background:#1a1a2e;
-              border:2px solid #ff4444;
-              border-radius:12px;
-              padding:2rem 2.5rem;
-              max-width:420px;
-              width:90%;
-              text-align:center;
-              color:#fff;
-              font-family:inherit;
-              box-shadow:0 0 40px rgba(255,68,68,0.4);
-            ">
-              <div style="font-size:3rem;margin-bottom:0.5rem;">🚧</div>
-              <h2 id="error-overlay-500-title" style="
-                color:#ff4444;
-                font-size:1.4rem;
-                margin:0 0 0.5rem;
-                letter-spacing:1px;
-              ">500 Internal Error</h2>
-              <p style="margin:0 0 0.4rem;font-size:0.95rem;color:#ccc;">
-                オンライン対戦は現在 <strong style="color:#ffaa00;">工事中</strong> です。
-              </p>
-              <p style="margin:0 0 1.5rem;font-size:0.8rem;color:#888;">
-                This feature is temporarily unavailable.<br>Please check back later.
-              </p>
-              <button id="error-overlay-500-close" style="
-                background:#ff4444;
-                color:#fff;
-                border:none;
-                border-radius:8px;
-                padding:0.6rem 2rem;
-                font-size:1rem;
-                cursor:pointer;
-                font-family:inherit;
-              ">閉じる</button>
-            </div>
-          `;
-
-          document.body.appendChild(overlay);
-
-          // 閉じるボタン
-          overlay.querySelector('#error-overlay-500-close').addEventListener('click', () => {
-            overlay.style.display = 'none';
-          });
-          // オーバーレイ背景クリックでも閉じる
-          overlay.addEventListener('click', (ev) => {
-            if (ev.target === overlay) overlay.style.display = 'none';
-          });
-          // Escキーでも閉じる
-          document.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Escape' && overlay.style.display !== 'none') {
-              overlay.style.display = 'none';
-            }
-          });
-        } else {
-          overlay.style.display = 'flex';
-        }
-
-        // フォーカスを閉じるボタンに移す（アクセシビリティ）
-        setTimeout(() => {
-          const closeBtn = document.getElementById('error-overlay-500-close');
-          if (closeBtn) closeBtn.focus();
-        }, 50);
+      btnOnline.addEventListener('click', (event) => {
+        event.preventDefault();
+        narrator.speak('オンライン対戦は現在準備中です。');
       });
     }
 

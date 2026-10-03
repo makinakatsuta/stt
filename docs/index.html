@@ -16,8 +16,8 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。現在CPU対戦をプレイできます。">
-  <script src="js/display-settings.js?v=3.31.33"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.33">
+  <script src="js/display-settings.js?v=3.31.34"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.34">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -39,6 +39,10 @@
       <!-- 1. ウェルカム / オーディオ有効化画面 (Web Audio APIの自動再生ブロック解除用) -->
       <section id="screen-welcome" class="game-card fade-in" aria-labelledby="welcome-title">
         <h2 id="welcome-title">ようこそ、サウンドテーブルテニスへ</h2>
+        <section id="visitor-counter" class="visitor-counter" aria-label="訪問者情報" hidden>
+          <p>あなたは <strong id="visitor-number">---</strong> 人目の訪問者です。</p>
+          <p>現在の総訪問者数は <strong id="total-visitor-count">---</strong> 人です。</p>
+        </section>
         <p class="description">
           音を頼りに遊ぶ卓球ゲームです。視覚障害の有無にかかわらず、CPU対戦を楽しめます。<br>
           インストール不要。このブラウザだけですぐに遊べます。ヘッドホンまたはイヤホンの使用をおすすめします。
@@ -314,7 +318,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.33</p>
+      <p>バージョン 3.31.34</p>
       <p><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
@@ -324,13 +328,14 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.33"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.34"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.33"></script>
+  <script type="module" src="app.js?v=3.31.34"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.34"></script>
 </body>
 </html>

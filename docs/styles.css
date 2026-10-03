@@ -132,6 +132,19 @@ body {
   line-height: 1.8;
 }
 
+.visitor-counter {
+  max-width: 600px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--text-muted);
+  color: var(--text-main);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.visitor-counter p + p { margin-top: 4px; }
+.visitor-counter strong { font-variant-numeric: tabular-nums; }
+
 /* 5. ボタンコンポーネント */
 .btn {
   font-family: var(--font-title);
@@ -1275,4 +1288,3 @@ html[data-contrast]:not([data-contrast="default"]) :is(.fade-in, .pulse-text) { 
 html[data-contrast="white-on-black"] #game-canvas,
 html[data-contrast="yellow-on-black"] #game-canvas { filter: grayscale(1) contrast(3); }
 html[data-contrast="black-on-white"] #game-canvas { filter: grayscale(1) contrast(3) invert(1); }
-

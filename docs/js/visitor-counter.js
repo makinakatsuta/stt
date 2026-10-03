@@ -2,6 +2,22 @@ const API_BASE = 'https://countapi.mileshilliard.com/api/v1';
 const COUNTER_KEY = 'soundtabletennis-com-total-visitors';
 const STORAGE_KEY = 'sttVisitorNumber';
 const TIMEOUT_MS = 4000;
+const ALLOWED_HOSTS = [
+  'soundtabletennis.com',
+  'www.soundtabletennis.com',
+  'makinakatsuta.github.io',
+];
+
+function parseCounterValue(value) {
+  if (
+    typeof value !== 'number' &&
+    !(typeof value === 'string' && /^[1-9]\d*$/.test(value))
+  ) {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 1 ? number : null;
+}
 
 function readVisitorNumber(value) {
   if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null;
@@ -40,10 +56,11 @@ async function fetchCount(action) {
     });
     if (!response.ok) throw new Error(`Counter HTTP ${response.status}`);
     const data = await response.json();
-    if (!Number.isSafeInteger(data?.value) || data.value < 1) {
+    const count = parseCounterValue(data?.value);
+    if (count === null) {
       throw new Error('Invalid counter value');
     }
-    return data.value;
+    return count;
   } finally {
     clearTimeout(timeout);
   }
@@ -51,7 +68,7 @@ async function fetchCount(action) {
 
 async function initializeVisitorCounter() {
   try {
-    if (!['soundtabletennis.com', 'www.soundtabletennis.com'].includes(window.location.hostname)) return;
+    if (!ALLOWED_HOSTS.includes(window.location.hostname)) return;
     if (!['https:', 'http:'].includes(window.location.protocol) || window.location.port) return;
     const region = document.getElementById('visitor-counter');
     const visitor = document.getElementById('visitor-number');

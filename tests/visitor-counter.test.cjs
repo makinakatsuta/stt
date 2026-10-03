@@ -59,12 +59,31 @@ async function run(options = {}) {
   assert.match(result.calls[0], /\/get\//);
   assert.equal(result.nodes['visitor-number'].textContent, '1,234');
   assert.equal(result.nodes['total-visitor-count'].textContent, '1,334');
-  for (const host of ['localhost', '127.0.0.1', '', 'makinakatsuta.github.io', 'dev.example.com']) {
+  for (const host of ['localhost', '127.0.0.1', '', 'dev.example.com']) {
     assert.equal((await run({ host })).calls.length, 0);
   }
   assert.equal((await run({ port: '8080' })).calls.length, 0);
   assert.equal((await run({ protocol: 'file:' })).calls.length, 0);
   assert.equal((await run({ host: 'www.soundtabletennis.com' })).calls.length, 1);
+  assert.equal((await run({ host: 'makinakatsuta.github.io' })).calls.length, 1);
+  for (const value of [1234, '1234', Number.MAX_SAFE_INTEGER, String(Number.MAX_SAFE_INTEGER)]) {
+    const visitorStorage = storage();
+    result = await run({ local: visitorStorage, data: { value } });
+    assert.match(result.calls[0], /\/hit\//);
+    assert.equal(result.nodes['visitor-counter'].hidden, false);
+    assert.equal(result.nodes['visitor-number'].textContent, Number(value).toLocaleString('ja-JP'));
+    assert.equal(result.nodes['total-visitor-count'].textContent, Number(value).toLocaleString('ja-JP'));
+    assert.equal(visitorStorage.getItem(key), String(value));
+    assert.equal(result.warnings.length, 0);
+    result = await run({ local: visitorStorage, data: { value: String(value) } });
+    assert.equal(result.calls.length, 1);
+    assert.match(result.calls[0], /\/get\//);
+    assert.equal(result.nodes['visitor-counter'].hidden, false);
+    assert.equal(result.nodes['visitor-number'].textContent, Number(value).toLocaleString('ja-JP'));
+  }
+  result = await run({ local: storage({ [key]: '1234' }), data: { value: '1567' } });
+  assert.equal(result.nodes['visitor-number'].textContent, '1,234');
+  assert.equal(result.nodes['total-visitor-count'].textContent, '1,567');
   const session = storage();
   result = await run({ blockGetter: true, session });
   assert.equal(session.getItem(key), '1234');
@@ -100,7 +119,12 @@ async function run(options = {}) {
   for (const saved of ['0', '-1', '1.5', 'NaN', 'Infinity', '', '9007199254740992']) {
     assert.match((await run({ local: storage({ [key]: saved }) })).calls[0], /\/hit\//);
   }
-  for (const data of [{}, { value: '1234' }, { value: null }, { value: 0 }, { value: -1 }, { value: 1.2 }, { value: Infinity }, { value: 9007199254740992 }]) {
+  const invalidValues = [
+    0, '0', -1, '-1', 1.2, '1.2', 'abc', null, undefined,
+    Infinity, -Infinity, NaN, 'Infinity', 9007199254740992, '9007199254740992',
+    '', ' 1234 ', '01', '+1', '1e3', true, false, [], {},
+  ];
+  for (const data of [{}, ...invalidValues.map(value => ({ value }))]) {
     result = await run({ data });
     assert.equal(result.nodes['visitor-counter'].hidden, true);
     assert.equal(result.local.getItem(key), null);

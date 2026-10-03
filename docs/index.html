@@ -6,18 +6,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>サウンドテーブルテニス（STT）</title>
   <meta name="description" content="音を頼りにラケットを操作して遊ぶ、ブラウザ対応のサウンドテーブルテニスゲーム。音声案内やスクリーンリーダー対応を備え、視覚障害の有無にかかわらず楽しめます。現在CPU対戦をプレイできます。">
-  <link rel="canonical" href="https://makinakatsuta.github.io/stt/">
+  <link rel="canonical" href="https://soundtabletennis.com/">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="ja_JP">
   <meta property="og:title" content="サウンドテーブルテニス（STT）">
   <meta property="og:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。インストール不要でCPU対戦を楽しめます。">
-  <meta property="og:url" content="https://makinakatsuta.github.io/stt/">
+  <meta property="og:url" content="https://soundtabletennis.com/">
   <!-- TODO: 品質を確認したPNG/JPEGのOGP画像を用意し、og:imageとtwitter:imageを追加する。 -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。現在CPU対戦をプレイできます。">
-  <script src="js/display-settings.js?v=3.31.35"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.35">
+  <script src="js/display-settings.js?v=3.31.36"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.36">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -318,7 +318,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.35</p>
+      <p>バージョン 3.31.36</p>
       <p><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
@@ -328,14 +328,14 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.35"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.36"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.35"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.35"></script>
+  <script type="module" src="app.js?v=3.31.36"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.36"></script>
 </body>
 </html>

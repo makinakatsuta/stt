@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.36';
+import { narrator } from './speech-system.js?v=3.31.37';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.36';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.37';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -18,11 +18,13 @@ const EXPEDITE_RETURN_LIMIT = 7;
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
 const EASY_CPU_RETURN_CHANCE = 0.90;
 const EASY_RALLY_RETURN_LIMIT = 8;
-// Normal is the standard reference. Hard makes the player's timing and
-// movement 10% less forgiving than Normal.
+// Normal is the standard reference. Hard keeps movement 10% slower;
+// player return acceptance is independently set 5% tighter than Normal.
 const NORMAL_PADDLE_SPEED = 11;
 const NORMAL_CPU_SPEED = 5.2;
 const HARD_DIFFICULTY_FACTOR = 0.9;
+// Return-button acceptance is 5% tighter than Normal; movement stays at 90%.
+const HARD_PLAYER_RETURN_FACTOR = 0.95;
 const NORMAL_HIT_ZONE = 90;
 const NORMAL_PADDLE_MARGIN = 35;
 const NORMAL_OUT_SPEED = 13;
@@ -50,18 +52,13 @@ const MOTION_FILTER_ALPHA = 0.25;
 const MOTION_START_DEADZONE = 1.8;
 const MOTION_STOP_DEADZONE = 1.2;
 
-function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction, isCpu = false) {
+function calculateRallyReturnVelocity(vx, vy, relativeHitPos, difficulty, direction) {
   const incomingSpeed = Math.hypot(vx, vy);
   const acceleration = difficulty === 'easy' ? EASY_RALLY_ACCELERATION
     : difficulty === 'hard' ? HARD_RALLY_ACCELERATION : STANDARD_RALLY_ACCELERATION;
   const maxSpeed = difficulty === 'easy' ? EASY_RALLY_MAX_SPEED
     : difficulty === 'hard' ? HARD_RALLY_MAX_SPEED : STANDARD_RALLY_MAX_SPEED;
-  let targetSpeed = Math.min(incomingSpeed * acceleration, maxSpeed);
-  if (isCpu && difficulty === 'hard') {
-    // CPU alone chooses the pace: equal chances of slow (5–6.5) or fast (10–11.5).
-    // Keep fast shots below the Hard end-frame speed-out threshold (11.7).
-    targetSpeed = (Math.random() < 0.5 ? 5 : 10) + Math.random() * 1.5;
-  }
+  const targetSpeed = Math.min(incomingSpeed * acceleration, maxSpeed);
   const horizontalRatio = Math.max(-0.25, Math.min(0.25, relativeHitPos * 0.25));
   const outVx = targetSpeed * horizontalRatio;
   const outVy = direction * Math.sqrt(Math.max(0, targetSpeed * targetSpeed - outVx * outVx));
@@ -1322,7 +1319,7 @@ export class GameEngine {
                   this.ball.vy = baseVy;
                 } else {
                   // ハード: 強烈かつ鋭角な高速サーブ
-                  // 90% は高速、10% だけ遅い変化球にする。
+                  // 遅球15%、中速50%、高速35%（ToDo 61.1）。
                   const speedCategory = Math.random();
                   let baseVy;
                   if (speedCategory < 0.15) {
@@ -1345,10 +1342,6 @@ export class GameEngine {
                   this.ball.vy = baseVy;
                 }
 
-                // 通常ラリー用に、中央寄りへゆっくり出す。
-                if (this.difficulty !== 'easy') {
-                  this.ball.vx = Math.random() * 1.2 - 0.6;
-                }
                 sounds.playCpuHitSound(this.ball.x, this.ball.y);
                 sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, true);
                 this.addRipple(this.ball.x, this.ball.y, 'serve');
@@ -1380,7 +1373,7 @@ export class GameEngine {
           baseVy *= EASY_SERVE_SPEED_FACTOR;
         }
         if (this.difficulty === 'hard') {
-          // ハードはプレイヤーのサーブも高速主体、遅球は10%。
+          // プレイヤーも遅球15%、中速50%、高速35%。
           const hardSpeedCategory = Math.random();
           if (hardSpeedCategory < 0.15) {
             baseVy = 4.2 + Math.random() * 0.8;
@@ -1763,11 +1756,11 @@ export class GameEngine {
       (this.role === 2 && this.ball.vy < 0);
     const hitZone = this.difficulty === 'easy'
       ? 130
-      : this.difficulty === 'hard' ? NORMAL_HIT_ZONE * HARD_DIFFICULTY_FACTOR : NORMAL_HIT_ZONE;
+      : this.difficulty === 'hard' ? NORMAL_HIT_ZONE * HARD_PLAYER_RETURN_FACTOR : NORMAL_HIT_ZONE;
     const normalPaddleMargin = NORMAL_PADDLE_MARGIN + BALL_RADIUS;
     const paddleMargin = this.difficulty === 'easy'
       ? 45 + BALL_RADIUS
-      : this.difficulty === 'hard' ? normalPaddleMargin * HARD_DIFFICULTY_FACTOR : normalPaddleMargin;
+      : this.difficulty === 'hard' ? normalPaddleMargin * HARD_PLAYER_RETURN_FACTOR : normalPaddleMargin;
     const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
     const hitPaddle = this.ball.x >= paddle.x - paddleMargin &&
       this.ball.x <= paddle.x + PADDLE_WIDTH + paddleMargin;
@@ -2207,12 +2200,12 @@ export class GameEngine {
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
-            : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
+            : this.ball.normalReturnChance;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
             const relativeHitPos = (this.ball.x - (this.p1.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const returnVelocity = this.difficulty === 'normal' ? normalCpuVelocity(this.ball, -1) : calculateRallyReturnVelocity(
+            const returnVelocity = this.difficulty !== 'easy' ? normalCpuVelocity(this.ball, -1) : calculateRallyReturnVelocity(
               this.ball.vx,
               this.ball.vy,
               relativeHitPos,
@@ -2239,12 +2232,12 @@ export class GameEngine {
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
           const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
-            : this.difficulty === 'normal' ? this.ball.normalReturnChance : 0.88;
+            : this.ball.normalReturnChance;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
             const relativeHitPos = (this.ball.x - (this.p2.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
             // 改善①②④: 難易度別の返球横速度・縦加速
-            const returnVelocity = this.difficulty === 'normal' ? normalCpuVelocity(this.ball, 1) : calculateRallyReturnVelocity(
+            const returnVelocity = this.difficulty !== 'easy' ? normalCpuVelocity(this.ball, 1) : calculateRallyReturnVelocity(
               this.ball.vx,
               this.ball.vy,
               relativeHitPos,
@@ -2344,7 +2337,8 @@ export class GameEngine {
    * STT公式ルールに基づく秒数制限をチェックし、違反時は失点処理を行います。
    */
   prepareNormalCpuShot() {
-    if (this.mode !== 'cpu' || this.difficulty !== 'normal' ||
+    // Historical normal* fields hold the shared Normal/Hard shot plan.
+    if (this.mode !== 'cpu' || !['normal', 'hard'].includes(this.difficulty) ||
         this.state !== STATE_RALLY || !this.ball.active || this.ball.normalPlanReady) return;
     const towardCpu = this.role === 1 ? this.ball.vy < 0 : this.ball.vy > 0;
     if (!towardCpu) return;
@@ -2359,8 +2353,9 @@ export class GameEngine {
     const pressure = Math.min(1, Math.max(0, travel - PADDLE_WIDTH / 2) /
       Math.max(PADDLE_WIDTH / 2, frames * NORMAL_CPU_SPEED));
     const incomingSpeed = Math.hypot(this.ball.vx, this.ball.vy);
-    this.ball.normalReturnChance = 0.96 - pressure * 0.18 -
-      Math.min(0.04, Math.max(0, incomingSpeed - 8) * 0.01);
+    // 92–96% after reaching the paddle, above Easy's post-grace 90%.
+    this.ball.normalReturnChance = 0.96 - pressure * 0.03 -
+      Math.min(0.01, Math.max(0, incomingSpeed - 8) * 0.0025);
     const choice = Math.random();
     if (pressure < 0.6 && choice < 0.25) {
       // With time to spare, aim into the space the player has left open.
@@ -2373,6 +2368,19 @@ export class GameEngine {
     this.ball.normalTargetX += (Math.random() - 0.5) * 40;
     this.ball.normalSpeed = Math.max(5.5, Math.min(8,
       incomingSpeed * 0.75 + 6.5 * 0.25 + (Math.random() - 0.5) * 0.6 - pressure * 0.7));
+    if (this.difficulty === 'hard') {
+      // A stronger opponent reaches more balls and attacks the open court.
+      // Share the fixed plan with WASM; accurate tracking must not flatten shots.
+      this.ball.normalReturnChance = 0.99;
+      const playerCenter = player.x + PADDLE_WIDTH / 2;
+      const side = playerCenter === 400 ? (Math.random() < 0.5 ? -1 : 1)
+        : playerCenter < 400 ? 1 : -1;
+      this.ball.normalTargetX = 400 + side * (240 + Math.random() * 80);
+      if (Math.abs(this.ball.normalTargetX - arrivalX) < 120) {
+        this.ball.normalTargetX = 800 - this.ball.normalTargetX;
+      }
+      this.ball.normalSpeed = (Math.random() < 0.5 ? 8.5 : 10) + Math.random() * 1.5;
+    }
     this.ball.normalPlanReady = true;
   }
 
@@ -2396,7 +2404,7 @@ export class GameEngine {
 
   recordRallyReturn(player) {
     if (this.mode === 'cpu' && player === this.role) this.ball.hardCpuAttempted = false;
-    if (this.mode === 'cpu' && this.difficulty === 'normal') {
+    if (this.mode === 'cpu' && ['normal', 'hard'].includes(this.difficulty)) {
       this.normalReturnCount = (this.normalReturnCount || 0) + 1;
       if (player === this.role) {
         this.ball.normalPlanReady = false;

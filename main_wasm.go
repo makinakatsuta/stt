@@ -20,7 +20,7 @@ const (
 	YNet                      = 250.0
 	YDefenseP1                = 400.0
 	YDefenseP2                = 100.0
-	NormalPaddleSpeed         = 8.0
+	NormalPaddleSpeed         = 11.0
 	NormalCPUSpeed            = 5.2
 	HardDifficultyFactor      = 0.9
 	NormalOutSpeed            = 13.0
@@ -50,15 +50,6 @@ func calculateRallyReturnVelocity(vx, vy, relativeHitPos float64, difficulty str
 		maxSpeed = HardRallyMaxSpeed
 	}
 	targetSpeed := math.Min(incomingSpeed*acceleration, maxSpeed)
-	// This function is used only for CPU hits; player returns are handled in JS.
-	// Match the JS slow/fast mix and stay below Hard's 11.7 speed-out threshold.
-	if difficulty == "hard" {
-		targetSpeed = 5.0
-		if rand.Float64() >= 0.5 {
-			targetSpeed = 10.0
-		}
-		targetSpeed += rand.Float64() * 1.5
-	}
 	horizontalRatio := math.Max(-0.25, math.Min(0.25, relativeHitPos*0.25))
 	outVx := targetSpeed * horizontalRatio
 	outVy := direction * math.Sqrt(math.Max(0, targetSpeed*targetSpeed-outVx*outVx))
@@ -167,7 +158,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	// 1. Player paddle movement (Keys)
 	// Normal / Hard はラリー中にボール速度が上がるため、移動量ではなく
 	// ラケットの移動速度を難易度に応じて上げ、左右の深い球にも追いつけるようにする。
-	paddleSpeed := 8.5
+	paddleSpeed := 11.5
 	switch difficulty {
 	case "normal":
 		paddleSpeed = NormalPaddleSpeed
@@ -331,20 +322,20 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			isP1Cpu := (mode == "cpu" && role == 2)
 			if isP1Cpu {
 				hitPaddle := ballX >= p1X && ballX <= p1X+PaddleWidth
-				cpuReturnChance := 0.88
+				cpuReturnChance := 0.99
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
 					if easyReturnCount < 2 {
 						cpuReturnChance = 1
 					}
-				} else if difficulty == "normal" {
+				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
 				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, -1)
-					if difficulty == "normal" {
+					if difficulty != "easy" {
 						ballVx, ballVy = normalCpuVelocity(jsBall, ballX, -1)
 					}
 
@@ -365,20 +356,20 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			isP2Cpu := (mode == "cpu" && role == 1)
 			if isP2Cpu {
 				hitPaddle := ballX >= p2X && ballX <= p2X+PaddleWidth
-				cpuReturnChance := 0.88
+				cpuReturnChance := 0.99
 				if difficulty == "easy" {
 					cpuReturnChance = EasyCPUReturnChance
 					if easyReturnCount < 2 {
 						cpuReturnChance = 1
 					}
-				} else if difficulty == "normal" {
+				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
 				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, 1)
-					if difficulty == "normal" {
+					if difficulty != "easy" {
 						ballVx, ballVy = normalCpuVelocity(jsBall, ballX, 1)
 					}
 

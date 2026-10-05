@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.39';
+import { narrator } from './speech-system.js?v=3.31.41';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.39';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.41';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -293,9 +293,11 @@ export class GameEngine {
       canvasContainer.style.touchAction = 'none';
       canvasContainer.addEventListener('pointerdown', (e) => {
         if (this.isGameplayPaused || !e.isPrimary || isControl(e.target)) return;
+        if (!pointerActiveStates.includes(this.state)) return;
+        // Keep focus in place instead of announcing the court again on each tap.
+        e.preventDefault();
         pointerStartPoint = { id: e.pointerId, x: e.clientX, y: e.clientY };
         if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
-          e.preventDefault();
           this.isCharging = true;
           this.chargeStartTime = Date.now();
         }
@@ -320,8 +322,11 @@ export class GameEngine {
 
     // プレイ画面全体のタップハンドラ (アクションボタン類は除外)
     const handlePlayAreaAction = (e) => {
-      if (window.PointerEvent) return;
+      // AT double-tap activation can send only a click (detail=0).
+      // Physical clicks already have the pointerup path above.
+      if (window.PointerEvent && e.detail !== 0) return;
       if (this.isGameplayPaused) return;
+      if (!screenPlay.contains(e.target)) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
 
@@ -599,6 +604,11 @@ export class GameEngine {
       const isSpaceKey = e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
       const inputCode = e.code || e.key;
       if (inputCode) this.keys[inputCode] = false;
+      // Suppress the court's default Space action on release as well, while
+      // preserving native button activation and menu keyboard behavior.
+      if (!this.screens.play.classList.contains('hidden') && isSpaceKey && !isControl(e.target)) {
+        e.preventDefault();
+      }
 
       if (isSpaceKey) {
         if (this.isCharging) {
@@ -651,7 +661,9 @@ export class GameEngine {
       if (key === screenId) {
         this.screens[key].classList.remove('hidden');
         // フォーカスを適切な要素に移す
-        const focusable = this.screens[key].querySelector('button, input, [tabindex="0"]');
+        const focusable = key === 'play'
+          ? document.getElementById('canvas-container')
+          : this.screens[key].querySelector('button, input, [tabindex="0"]');
         if (focusable) focusable.focus();
       } else {
         this.screens[key].classList.add('hidden');
@@ -1105,10 +1117,6 @@ export class GameEngine {
 
     // UIの切り替え
     this.changeScreen('play');
-    // changeScreen は画面内の先頭ボタン（非表示の調整ボタンを含む）へ
-    // フォーカスを移すため、キーボード操作領域を明示的にフォーカスする。
-    const canvasContainer = document.getElementById('canvas-container');
-    if (canvasContainer) canvasContainer.focus();
 
     // 体移動操作（DeviceMotion）の調整ボタン表示制御
     if (this.isMobile && this.useTilt) {
@@ -1183,26 +1191,7 @@ export class GameEngine {
   updateActionButton() {
     const button = document.getElementById('btn-game-action');
     if (!button) return;
-    const mine = this.isMyTurnToServe();
-    const opponent = this.mode === 'cpu' ? 'CPU' : '相手';
-    let label = 'サーブ・返球';
-    switch (this.state) {
-      case STATE_PRE_SERVE_READY:
-        label = mine ? '『いきます』と伝える' : `${opponent}の『いきます』を待っています`;
-        break;
-      case STATE_PRE_SERVE_HEARD:
-        label = mine ? `${opponent}の『はい』を待っています` : '『はい』と答える';
-        break;
-      case STATE_SERVE_WAITING:
-        label = mine ? 'サーブする' : `${opponent}のサーブを待っています`;
-        break;
-      case STATE_RALLY:
-        label = '返球';
-        break;
-      case STATE_POINT_WON:
-        label = '次のポイントへ';
-        break;
-    }
+    const label = 'サーブ・返球';
     // ネイティブボタンのテキストがアクセシブルネームにもなる。
     // 同じノードを保ち、待機時もフォーカスや操作判定を変更しない。
     if (button.textContent !== label) button.textContent = label;
@@ -1239,7 +1228,10 @@ export class GameEngine {
     // プレイ集中モード: play-instructions テキストボックスを非表示にする
     // (スクリーンリーダーの sr-announcer 経由で音声で案内するため画面テキストは不要)
     const instrEl = document.getElementById('play-instructions');
-    if (instrEl) instrEl.classList.add('hidden');
+    if (instrEl) {
+      instrEl.setAttribute('aria-hidden', 'true');
+      instrEl.classList.add('hidden');
+    }
 
 
     // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
@@ -1258,7 +1250,7 @@ export class GameEngine {
 
     this.updateServerDisplay();
     // 連続した speak() によるキャンセルを避け、サーブ権も一度に案内する。
-    narrator.speak(`プレー。${this.getServerName()}のサーブです。`, true);
+    narrator.speak(`${this.getServerName()}のサーブです。`, true);
 
     if (this.isMyTurnToServe()) {
       // 操作説明はヘルプで案内し、プレイ中は短いコールだけにする。
@@ -1689,6 +1681,7 @@ export class GameEngine {
     // play-instructions を再表示し、リザルト画面に書き換える (Feature #11)
     const instrEl = document.getElementById('play-instructions');
     if (instrEl) {
+      instrEl.removeAttribute('aria-hidden');
       instrEl.classList.remove('hidden');
       const nextMatchActions = this.mode === 'cpu'
         ? `<div class="match-result-next-label">次のステージを選択</div>
@@ -3056,14 +3049,10 @@ export class GameEngine {
     const canvasContainer = document.getElementById('canvas-container');
     if (!canvasContainer) return;
 
-    if (this.isMobile) {
-      if (this.useTilt) {
-        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。スマートフォンを画面が上になるように持ち、左側を下げると左へ、右側を下げると右へラケットが動きます。水平に戻すと止まります。画面をダブルタップして、サーブの準備、返答、サーブ、またはラリーの打ち返しを行います。");
-      } else {
-        canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。接続されたキーボード、または画面をダブルタップしてアクションを行います。");
-      }
-    } else {
-      canvasContainer.setAttribute('aria-label', "サウンドテーブルテニス コート。キーボードの左右矢印キーでラケットを操作し、スペースキーでアクションを行います。");
+    // Instructions belong in Help. Do not rename a focused control when
+    // device/tilt settings change, which can trigger unsolicited speech.
+    if (canvasContainer.getAttribute('aria-label') !== 'コート') {
+      canvasContainer.setAttribute('aria-label', 'コート');
     }
   }
 

@@ -4,12 +4,12 @@ const vm = require('node:vm');
 const calls = [];
 const elements = new Map();
 const document = { getElementById(id) {
-  if (!elements.has(id)) elements.set(id, { textContent: '', classList: { add() {} } });
+  if (!elements.has(id)) elements.set(id, { textContent: '', classList: { add() {} }, setAttribute() {}, removeAttribute() {} });
   return elements.get(id);
 } };
 const context = vm.createContext({ document, window: {}, Date, Math,
   sounds: new Proxy({}, { get: () => () => {} }),
-  narrator: { speak: (...args) => calls.push(args) }, console });
+  narrator: { speak: (...args) => calls.push(args), stop() {} }, console });
 vm.runInContext(fs.readFileSync('docs/js/constants.js', 'utf8').replace(/export \{[^}]+\};/, '') + '\n' +
   fs.readFileSync('docs/js/game-engine.js', 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class', 'class') +
   '\nglobalThis.Engine = GameEngine;', context);
@@ -28,7 +28,7 @@ for (const [mode, role, serverRole, name] of [
   calls.length = 0;
   game(mode, role, serverRole).prepareServeSequence();
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], `プレー。${name}のサーブです。`);
+  assert.equal(calls[0][0], `${name}のサーブです。`);
   assert.equal(calls[0][1], true);
   assert.equal(elements.get('current-server').textContent, `現在のサーブ：${name}`);
 }
@@ -52,32 +52,30 @@ for (const [gamesWon, expected] of [[0, 2], [1, 1]]) {
   assert.equal(elements.get('current-server').textContent, `現在のサーブ：${expected === 1 ? 'あなた' : 'CPU'}`);
 }
 console.log('Passed serve announcements, online perspectives, service rotation and game transitions.');
-for (const [state, mineLabel, otherLabel] of [
-  ['STATE_PRE_SERVE_READY', '『いきます』と伝える', 'CPUの『いきます』を待っています'],
-  ['STATE_PRE_SERVE_HEARD', 'CPUの『はい』を待っています', '『はい』と答える'],
-  ['STATE_SERVE_WAITING', 'サーブする', 'CPUのサーブを待っています'],
-  ['STATE_RALLY', '返球', '返球'],
-  ['STATE_POINT_WON', '次のポイントへ', '次のポイントへ'],
-  ['STATE_MENU', 'サーブ・返球', 'サーブ・返球']
-]) {
-  for (const server of [1, 2]) {
-    const g = game('cpu', 1, server);
-    g.state = vm.runInContext(state, context);
-    g.updateActionButton();
-    const button = elements.get('btn-game-action');
-    assert.equal(button.textContent, server === 1 ? mineLabel : otherLabel);
-    assert.equal(button.disabled, undefined);
+// The name and node stay fixed across every state and perspective.
+const button = elements.get('btn-game-action');
+for (const mode of ['cpu', 'online']) {
+  for (const role of [1, 2]) {
+    for (const server of [1, 2]) {
+      const g = game(mode, role, server);
+      for (const state of vm.runInContext('[STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON, STATE_MENU]', context)) {
+        g.state = state;
+        calls.length = 0;
+        g.updateActionButton();
+        assert.equal(button.textContent, 'サーブ・返球');
+        assert.equal(elements.get('btn-game-action'), button);
+        assert.equal(button.disabled, undefined);
+        assert.equal(calls.length, 0);
+      }
+    }
   }
 }
-const online = game('online', 2, 1);
-online.state = vm.runInContext('STATE_SERVE_WAITING', context);
-online.updateActionButton();
-assert.equal(elements.get('btn-game-action').textContent, '相手のサーブを待っています');
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert.ok(!html.match(/id="current-server"[^>]*aria-live/));
-assert.ok(html.match(/id="canvas-container"[^>]*role="region"/));
+assert.ok(html.match(/id="canvas-container"[^>]*role="group"[^>]*aria-label="コート"/));
 assert.ok(html.includes('id="btn-test-speech"'));
-assert.ok(!html.includes('role="application"'));
+assert.equal((html.match(/role="application"/g) || []).length, 1);
+assert.ok(html.match(/id="game-input-area"[^>]*role="application"/));
 console.log('Passed action labels, focus preservation and accessible markup.');
 // Bind and activate the real test-button listener. Its only effect is one call.
 const source = fs.readFileSync('docs/js/game-engine.js', 'utf8');
@@ -92,3 +90,55 @@ calls.length = 0; click();
 assert.equal(calls.length, 1);
 assert.equal(calls[0][0], '音声案内のテストです。');
 console.log('Passed speech test button without gameplay or settings side effects.');
+
+const actionTag = html.match(/<button\b[^>]*id="btn-game-action"[^>]*>/)[0];
+assert.ok(!actionTag.includes('aria-describedby'));
+assert.ok(html.match(/class="scoreboard"[^>]*aria-hidden="true"/));
+for (const id of ['current-server', 'referee-message', 'play-instructions', 'game-action-hint']) {
+  const tag = html.match(new RegExp('<[^>]*id="' + id + '"[^>]*>'))[0];
+  assert.ok(tag.includes('aria-hidden="true"'), id);
+}
+const announcerTag = html.match(/<div\b[^>]*id="sr-announcer"[^>]*>/)[0];
+assert.ok(!announcerTag.includes('aria-hidden'));
+assert.ok(announcerTag.includes('aria-live="polite"'));
+for (const [reason, label] of [['out', 'アウト'], ['safe', 'セーフ'], ['miss', 'リターンミス']]) {
+  for (const winner of [1, 2]) {
+    calls.length = 0;
+    game('cpu', 1, 1).awardPointTo(winner, reason);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], `${label}、ポイント ${winner === 1 ? 'プレイヤー' : 'CPU'}。 ${winner === 1 ? 1 : 0} 対 ${winner === 2 ? 1 : 0}。`);
+  }
+}
+const handshake = game('cpu', 1, 1);
+let reply;
+handshake.scheduleGameplayTask = fn => { reply = fn; };
+handshake.prepareServeSequence();
+calls.length = 0;
+handshake.handleActionInput();
+reply();
+assert.deepEqual(calls.map(call => call[0]), ['いきます', 'はい']);
+console.log('Passed visual status isolation and existing point, score and handshake announcements.');
+
+// Result actions must become accessible again, including after a rematch.
+const instructionAttributes = new Map();
+elements.set('play-instructions', {
+  classList: { add() {}, remove() {} },
+  setAttribute: (name, value) => instructionAttributes.set(name, value),
+  removeAttribute: name => instructionAttributes.delete(name),
+  querySelectorAll: () => []
+});
+for (const id of ['btn-play-again', 'btn-quit-to-menu']) {
+  elements.set(id, { addEventListener() {}, focus() {} });
+}
+const finished = game('cpu', 1, 1);
+finished.stopLoop = () => {};
+finished.prepareServeSequence();
+assert.equal(instructionAttributes.get('aria-hidden'), 'true');
+calls.length = 0;
+finished.finishMatch(1);
+assert.equal(calls.length, 1);
+assert.equal(calls[0][0], 'マッチ終了！ 勝者は、プレイヤー です！おめでとうございます！');
+assert.equal(instructionAttributes.has('aria-hidden'), false);
+finished.prepareServeSequence();
+assert.equal(instructionAttributes.get('aria-hidden'), 'true');
+console.log('Passed match-end announcement and result/rematch accessibility.');

@@ -10,40 +10,53 @@ function game(d,role=1){const g=Object.create(context.Engine.prototype);Object.a
 
 // Player returns run in JS in both engines. Exercise the actual acceptance
 // method, including strict longitudinal and inclusive horizontal boundaries.
-const oldReturn = vm.runInContext('(function(){' + source
- .replace(/^import .*;\r?\n/gm, '').replace('export class', 'class')
- .replace('const HARD_PLAYER_RETURN_FACTOR = 0.95;', 'const HARD_PLAYER_RETURN_FACTOR = 0.9;')
- + ';return GameEngine.prototype.tryPlayerReturn;})()', context);
-function accepts(difficulty, role, dx, dy, method = context.Engine.prototype.tryPlayerReturn) {
+function accepts(difficulty, role, dx, dy, mode = 'cpu') {
  const g = game(difficulty, role);
  g.ball.x = 400 + dx;
  g.ball.y = (role === 1 ? 400 : 100) + dy;
  g.ball.vy = role === 1 ? 6 : -6;
- return method.call(g);
+ g.mode = mode;
+ g.net = {send(){}};
+ return g.tryPlayerReturn();
 }
 assert.equal(vm.runInContext('HARD_DIFFICULTY_FACTOR', context), 0.9);
-assert.equal(vm.runInContext('HARD_PLAYER_RETURN_FACTOR', context), 0.95);
+assert.equal(vm.runInContext('NORMAL_PADDLE_SPEED', context), 11);
 for (const role of [1, 2]) for (const sign of [-1, 1]) {
  assert.equal(accepts('hard', role, 0, sign * 85.499), true);
  assert.equal(accepts('hard', role, 0, sign * 85.5), false);
  assert.equal(accepts('normal', role, 0, sign * 85.5), true);
  assert.equal(accepts('normal', role, 0, sign * 89.999), true);
- assert.equal(accepts('normal', role, 0, sign * 90), false);
+ assert.equal(accepts('normal', role, 0, sign * 104.999), true);
+ assert.equal(accepts('normal', role, 0, sign * 105), false);
  assert.equal(accepts('easy', role, 0, sign * 129.999), true);
  assert.equal(accepts('easy', role, 0, sign * 130), false);
  assert.equal(accepts('hard', role, sign * 92.75, 0), true);
  assert.equal(accepts('hard', role, sign * 92.751, 0), false);
- assert.equal(accepts('normal', role, sign * 95, 0), true);
- assert.equal(accepts('normal', role, sign * 95.001, 0), false);
+ assert.equal(accepts('normal', role, sign * 100, 0), true);
+ assert.equal(accepts('normal', role, sign * 100.001, 0), false);
  assert.equal(accepts('easy', role, sign * 105, 0), true);
  assert.equal(accepts('easy', role, sign * 105.001, 0), false);
- for (const [dx, dy] of [[0, sign * 83], [sign * 92, 0], [sign * 92, sign * 83]]) {
-  assert.equal(accepts('hard', role, dx, dy, oldReturn), false, 'old 90% rejects');
-  assert.equal(accepts('hard', role, dx, dy), true, 'new 95% accepts');
+ // Online keeps the original Normal acceptance boundaries.
+ assert.equal(accepts('normal', role, 0, sign * 89.999, 'online'), true);
+ assert.equal(accepts('normal', role, 0, sign * 90, 'online'), false);
+ assert.equal(accepts('normal', role, sign * 95, 0, 'online'), true);
+ assert.equal(accepts('normal', role, sign * 95.001, 0, 'online'), false);
+}
+assert.equal(vm.runInContext('HARD_HIT_ZONE', context), 85.5);
+assert.equal(vm.runInContext('HARD_PADDLE_MARGIN', context), 42.75);
+// Fast incoming shots exercise the Normal cap and unchanged Hard range.
+for (const role of [1, 2]) for (let i = 0; i < 100; i++) {
+ for (const d of ['normal', 'hard']) {
+  const g = game(d, role);g.ball.vy = role === 1 ? -20 : 20;
+  g.prepareNormalCpuShot();
+  if (d === 'normal') assert.equal(g.ball.normalSpeed, 7.5);
+  else assert.ok(g.ball.normalSpeed >= 8.5 && g.ball.normalSpeed < 11.5);
+ }
+ for (const [d, mode] of [['easy', 'cpu'], ['normal', 'online'], ['hard', 'online']]) {
+  const g = game(d, role);g.mode = mode;g.prepareNormalCpuShot();
+  assert.equal(g.ball.normalSpeed, undefined);
  }
 }
-assert.equal(vm.runInContext('NORMAL_HIT_ZONE * HARD_PLAYER_RETURN_FACTOR', context), 85.5);
-assert.equal(vm.runInContext('(NORMAL_PADDLE_MARGIN + BALL_RADIUS) * HARD_PLAYER_RETURN_FACTOR', context), 42.75);
 
 (async()=>{
  const go=new Go();const {instance}=await WebAssembly.instantiate(fs.readFileSync('docs/main.wasm'),go.importObject);go.run(instance);
@@ -73,7 +86,7 @@ assert.equal(vm.runInContext('(NORMAL_PADDLE_MARGIN + BALL_RADIUS) * HARD_PLAYER
    if(d==='easy'){if(random()<0.9)hits++;const v=context.velocity(0,6,0,d,1);effort+=Math.max(0,Math.abs(g.ball.x-(g.p1.x+50))-105)*v.vy/300/11.5;continue;}
    if(random()<g.ball.normalReturnChance)hits++;
    const v=vm.runInContext('normalCpuVelocity',context)(g.ball,1);const target=g.ball.x+v.vx*300/v.vy;
-   effort+=Math.max(0,Math.abs(target-(g.p1.x+50))-(d==='hard'?92.75:95))*Math.abs(v.vy)/300/(d==='hard'?9.9:11);if(Math.abs(v.vx)<0.5)straight++;
+   effort+=Math.max(0,Math.abs(target-(g.p1.x+50))-(d==='hard'?92.75:100))*Math.abs(v.vy)/300/(d==='hard'?9.9:11);if(Math.abs(v.vx)<0.5)straight++;
    // Same shared shot plan is consumed by both physical engines, on either side.
    if(i<40) for(const role of [1,2]){
     g.role=role;g.ball.x=400;g.p1.x=g.p2.x=350;g.ball.y=role===1?106:394;g.ball.vy=role===1?-6:6;

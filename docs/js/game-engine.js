@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.37';
+import { narrator } from './speech-system.js?v=3.31.38';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.37';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.38';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -18,15 +18,18 @@ const EXPEDITE_RETURN_LIMIT = 7;
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
 const EASY_CPU_RETURN_CHANCE = 0.90;
 const EASY_RALLY_RETURN_LIMIT = 8;
-// Normal is the standard reference. Hard keeps movement 10% slower;
-// player return acceptance is independently set 5% tighter than Normal.
+// Hard keeps movement 10% slower than Normal.
 const NORMAL_PADDLE_SPEED = 11;
 const NORMAL_CPU_SPEED = 5.2;
 const HARD_DIFFICULTY_FACTOR = 0.9;
-// Return-button acceptance is 5% tighter than Normal; movement stays at 90%.
-const HARD_PLAYER_RETURN_FACTOR = 0.95;
-const NORMAL_HIT_ZONE = 90;
-const NORMAL_PADDLE_MARGIN = 35;
+// Keep Hard and online acceptance independent of CPU Normal tuning.
+const NORMAL_HIT_ZONE = 105;
+const HARD_HIT_ZONE = 85.5;
+const NORMAL_PADDLE_MARGIN = 40;
+const HARD_PADDLE_MARGIN = 42.75; // Includes BALL_RADIUS.
+const ONLINE_HIT_ZONE = 90;
+const ONLINE_PADDLE_MARGIN = 35;
+const NORMAL_RETURN_MAX_SPEED = 7.5;
 const NORMAL_OUT_SPEED = 13;
 const NORMAL_SERVE_SPEED_FACTOR = 1.10;
 const NORMAL_FAST_SERVE_CHANCE = 0.15;
@@ -1756,11 +1759,13 @@ export class GameEngine {
       (this.role === 2 && this.ball.vy < 0);
     const hitZone = this.difficulty === 'easy'
       ? 130
-      : this.difficulty === 'hard' ? NORMAL_HIT_ZONE * HARD_PLAYER_RETURN_FACTOR : NORMAL_HIT_ZONE;
-    const normalPaddleMargin = NORMAL_PADDLE_MARGIN + BALL_RADIUS;
+      : this.difficulty === 'hard' ? HARD_HIT_ZONE
+        : this.mode === 'cpu' ? NORMAL_HIT_ZONE : ONLINE_HIT_ZONE;
+    const normalPaddleMargin = (this.mode === 'cpu'
+      ? NORMAL_PADDLE_MARGIN : ONLINE_PADDLE_MARGIN) + BALL_RADIUS;
     const paddleMargin = this.difficulty === 'easy'
       ? 45 + BALL_RADIUS
-      : this.difficulty === 'hard' ? normalPaddleMargin * HARD_PLAYER_RETURN_FACTOR : normalPaddleMargin;
+      : this.difficulty === 'hard' ? HARD_PADDLE_MARGIN : normalPaddleMargin;
     const isNearPaddle = Math.abs(this.ball.y - defenseY) < hitZone;
     const hitPaddle = this.ball.x >= paddle.x - paddleMargin &&
       this.ball.x <= paddle.x + PADDLE_WIDTH + paddleMargin;
@@ -2366,7 +2371,7 @@ export class GameEngine {
       this.ball.normalTargetX = 400 + (Math.random() - 0.5) * (440 - pressure * 240);
     }
     this.ball.normalTargetX += (Math.random() - 0.5) * 40;
-    this.ball.normalSpeed = Math.max(5.5, Math.min(8,
+    this.ball.normalSpeed = Math.max(5.5, Math.min(NORMAL_RETURN_MAX_SPEED,
       incomingSpeed * 0.75 + 6.5 * 0.25 + (Math.random() - 0.5) * 0.6 - pressure * 0.7));
     if (this.difficulty === 'hard') {
       // A stronger opponent reaches more balls and attacks the open court.

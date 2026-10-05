@@ -29,10 +29,10 @@ const (
 	EasyRallyReturnLimit      = 8
 	EasyRallyAcceleration     = 1.01
 	StandardRallyAcceleration = 1.02
-	HardRallyAcceleration     = 1.04
+	HardRallyAcceleration     = 1.03
 	EasyRallyMaxSpeed         = 8.0
 	StandardRallyMaxSpeed     = 13.0
-	HardRallyMaxSpeed         = 15.0
+	HardRallyMaxSpeed         = 14.0
 	EasySideOutChance         = 0.10
 	NormalSideOutChance       = 0.15
 	HardSideOutChance         = 0.20
@@ -99,6 +99,12 @@ func predictedBallX(x, y, vx, vy, defenseY float64) float64 {
 }
 
 func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
+	// The engine supplies the same random source used by JS physics and shot
+	// planning. Keep the legacy fallback for standalone callers.
+	randomFloat := rand.Float64
+	if len(args) > 10 && args[10].Type() == js.TypeFunction {
+		randomFloat = func() float64 { return args[10].Invoke().Float() }
+	}
 	if len(args) < 9 {
 		return nil
 	}
@@ -163,7 +169,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 	case "normal":
 		paddleSpeed = NormalPaddleSpeed
 	case "hard":
-		paddleSpeed = NormalPaddleSpeed * HardDifficultyFactor
+		paddleSpeed = NormalPaddleSpeed
 	}
 	if len(args) > 9 && args[9].Type() == js.TypeNumber {
 		paddleSpeed *= math.Max(0, math.Min(1, args[9].Float()))
@@ -262,7 +268,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			} else if difficulty == "hard" {
 				sideOutChance = HardSideOutChance
 			}
-			if rand.Float64() < sideOutChance {
+			if randomFloat() < sideOutChance {
 				sideOut = true
 				winner := 1
 				if ballVy < 0 {
@@ -285,7 +291,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			} else if difficulty == "hard" {
 				sideOutChance = HardSideOutChance
 			}
-			if rand.Float64() < sideOutChance {
+			if randomFloat() < sideOutChance {
 				sideOut = true
 				winner := 1
 				if ballVy < 0 {
@@ -306,7 +312,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		wasAboveNet := oldBallY < YNet
 		isBelowNet := ballY >= YNet
 		if !sideOut && wasAboveNet != isBelowNet && math.Abs(ballVx) > 8 {
-			if rand.Float64() < 0.25 {
+			if randomFloat() < 0.25 {
 				ballVy = -ballVy * 0.3
 				ballVx *= 0.5
 				events = append(events, map[string]interface{}{
@@ -331,7 +337,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
-				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
+				if canCpuReturn() && hitPaddle && randomFloat() < cpuReturnChance {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, -1)
@@ -365,7 +371,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
-				if canCpuReturn() && hitPaddle && rand.Float64() < cpuReturnChance {
+				if canCpuReturn() && hitPaddle && randomFloat() < cpuReturnChance {
 					ballY = YDefenseP2
 					relativeHitPos := (ballX - (p2X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
 					ballVx, ballVy = calculateRallyReturnVelocity(ballVx, ballVy, relativeHitPos, difficulty, 1)

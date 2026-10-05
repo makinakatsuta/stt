@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js?v=3.31.42';
 
 // The recorded racket hit was perceived at less than half the required
 // loudness on the target speakers. Compensate at playback for both players.
@@ -661,13 +661,14 @@ export class SoundSystem {
 
 
   /**
-   * ラケットが中央（X=350〜450）に合ったときに鳴る目印の確認音（ピピッ/カチッ）とバイブレーション
+   * ラケットが中央付近に入ったときの位置確認。対応環境では振動で通知する。
+   * 合成確認音は assetsOnly が false の場合のみ再生する（通常設定は true）。
    * @param {number} x ラケットの中央X座標
    */
   playCenterBeep(x = CANVAS_WIDTH / 2) {
     if (!this.ctx || this.isMuted) return;
 
-    // 1. スマホ端末向けバイブレーション（難聴・触覚アクセシビリティ対応）
+    // 1. 振動対応の端末・ブラウザでラケットの中央位置を通知
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       try {
         navigator.vibrate(25); // 25msの軽いパルス振動

@@ -144,7 +144,7 @@ async function run(options = {}) {
   assert.match(region, /hidden/);
   assert.doesNotMatch(region, /aria-live|role=|tabindex/);
   assert.doesNotMatch(source, /sr-announcer|\.focus\(|addEventListener/);
-  assert.match(html, /type="module" src="js\/visitor-counter.js\?v=3.31.41"/);
+  assert.match(html, /type="module" src="js\/visitor-counter.js\?v=3.31.42"/);
   // A failed counter request must not block the independent game bootstrap
   // or its existing keyboard activation handlers.
   const handlers = {};

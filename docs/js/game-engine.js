@@ -1,16 +1,16 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
-import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.41';
-import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.41';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.42';
+import { sounds } from './sound-system.js?v=3.31.42';
+import { narrator } from './speech-system.js?v=3.31.42';
+import { NetworkSystem } from './network-system.js?v=3.31.42';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.42';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
 const STANDARD_RALLY_ACCELERATION = 1.02;
-const HARD_RALLY_ACCELERATION = 1.04;
+const HARD_RALLY_ACCELERATION = 1.03;
 const EASY_RALLY_MAX_SPEED = 8;
 const STANDARD_RALLY_MAX_SPEED = 13;
-const HARD_RALLY_MAX_SPEED = 15;
+const HARD_RALLY_MAX_SPEED = 14;
 const GAME_TIME_LIMIT_MS = 10 * 60 * 1000;
 const EXPEDITE_RETURN_LIMIT = 7;
 // Easy keeps its beginner-friendly serve and rally style, but the CPU is
@@ -18,15 +18,15 @@ const EXPEDITE_RETURN_LIMIT = 7;
 const EASY_CPU_DIFFICULTY_FACTOR = 1.07;
 const EASY_CPU_RETURN_CHANCE = 0.90;
 const EASY_RALLY_RETURN_LIMIT = 8;
-// Hard keeps movement 10% slower than Normal.
+// Normal and Hard share responsive player movement.
 const NORMAL_PADDLE_SPEED = 11;
 const NORMAL_CPU_SPEED = 5.2;
 const HARD_DIFFICULTY_FACTOR = 0.9;
 // Keep Hard and online acceptance independent of CPU Normal tuning.
 const NORMAL_HIT_ZONE = 105;
-const HARD_HIT_ZONE = 85.5;
+const HARD_HIT_ZONE = 95;
 const NORMAL_PADDLE_MARGIN = 40;
-const HARD_PADDLE_MARGIN = 42.75; // Includes BALL_RADIUS.
+const HARD_PADDLE_MARGIN = 50; // Includes BALL_RADIUS.
 const ONLINE_HIT_ZONE = 90;
 const ONLINE_PADDLE_MARGIN = 35;
 const NORMAL_RETURN_MAX_SPEED = 7.5;
@@ -35,7 +35,7 @@ const NORMAL_SERVE_SPEED_FACTOR = 1.10;
 const NORMAL_FAST_SERVE_CHANCE = 0.15;
 const NORMAL_FAST_SERVE_VY_MIN = 8.5;
 const NORMAL_FAST_SERVE_VY_MAX = 9.5;
-const HARD_FAST_SERVE_CHANCE = 0.35;
+const HARD_FAST_SERVE_CHANCE = 0.25;
 // Easy serves remain deliberately slow and drift left or right.
 const EASY_SERVE_VY_MIN = 3.2;
 const EASY_SERVE_VY_MAX = 4.5;
@@ -1370,8 +1370,7 @@ export class GameEngine {
                   this.ball.vx = cpuServeVx;
                   this.ball.vy = baseVy;
                 } else {
-                  // ハード: 強烈かつ鋭角な高速サーブ
-                  // 遅球15%、中速50%、高速35%（ToDo 61.1）。
+                  // Hard: straight 50%, left/right 25%; slow/standard/fast 15/60/25%.
                   const speedCategory = Math.random();
                   let baseVy;
                   if (speedCategory < 0.15) {
@@ -1379,16 +1378,16 @@ export class GameEngine {
                   } else if (speedCategory < 1 - HARD_FAST_SERVE_CHANCE) {
                     baseVy = 5.8 + Math.random() * 1.0;
                   } else {
-                    baseVy = 8.5 + Math.random() * 1.5;
+                    baseVy = 7.5 + Math.random() * 1.3;
                   }
                   const serveAngle = Math.random();
                   let cpuServeVx;
-                  if (serveAngle < 0.33) {
-                    cpuServeVx = (Math.random() * 1.0 - 0.5) * 1.15;
-                  } else if (serveAngle < 0.66) {
-                    cpuServeVx = -(1.8 + Math.random() * 3.0) * 1.15;
+                  if (serveAngle < 0.5) {
+                    cpuServeVx = Math.random() * 0.8 - 0.4;
+                  } else if (serveAngle < 0.75) {
+                    cpuServeVx = -(1.0 + Math.random() * 1.5);
                   } else {
-                    cpuServeVx = (1.8 + Math.random() * 3.0) * 1.15;
+                    cpuServeVx = (1.0 + Math.random() * 1.5);
                   }
                   this.ball.vx = cpuServeVx;
                   this.ball.vy = baseVy;
@@ -1429,7 +1428,7 @@ export class GameEngine {
           const hardSpeedCategory = Math.random();
           if (hardSpeedCategory < 0.15) {
             baseVy = 4.2 + Math.random() * 0.8;
-          } else if (hardSpeedCategory < 1 - HARD_FAST_SERVE_CHANCE) {
+          } else if (hardSpeedCategory < 0.65) {
             baseVy = 5.8 + Math.random() * 1.0;
           } else {
             baseVy = 8.5 + Math.random() * 1.5;
@@ -1934,7 +1933,8 @@ export class GameEngine {
         this.role,
         this.difficulty,
         Date.now(),
-        this.useTilt && this.tiltSpeed !== undefined ? Math.max(0, Math.min(1, this.tiltSpeed)) : 1
+        this.useTilt && this.tiltSpeed !== undefined ? Math.max(0, Math.min(1, this.tiltSpeed)) : 1,
+        Math.random
       );
 
       if (result) {
@@ -1961,7 +1961,7 @@ export class GameEngine {
         const myCenterPos = myPaddleX + PADDLE_WIDTH / 2;
         const isInCenter = Math.abs(myCenterPos - (CANVAS_WIDTH / 2)) < 30;
 
-        // 中央に入った瞬間にピピッ/振動（目印音）を再生
+        // 中央に入った瞬間に位置確認処理を呼ぶ。振動は対応環境のみ、合成音は通常設定では無効。
         if (isInCenter && !this.wasInCenter) {
           sounds.playCenterBeep(myCenterPos);
         }
@@ -2101,10 +2101,10 @@ export class GameEngine {
     // 1. プレイヤーのラケット移動 (矢印キー / A,Dキー / チルト比例制御)
     // チルト操作時: 傾き比率 (0〜1) × 難易度別の最大速度で比例移動
     // キーボード操作時: 難易度別の最大速度で移動
-    // Normalを標準速度とし、Hardはその90%にして操作を厳しくする。
+    // Normal and Hard use the same responsive paddle speed.
     // チルト操作時は、この最大速度に傾き比率 (0〜1) を掛けて比例移動する。
     const maxSpeed = this.difficulty === 'hard'
-      ? NORMAL_PADDLE_SPEED * HARD_DIFFICULTY_FACTOR
+      ? NORMAL_PADDLE_SPEED
       : this.difficulty === 'normal' ? NORMAL_PADDLE_SPEED : 11.5;
     const paddle = this.role === 1 ? this.p1 : this.p2;
     const isAssistMove = !this.keys['ArrowLeft'] && !this.keys['ArrowRight'] &&
@@ -2416,30 +2416,35 @@ export class GameEngine {
     // 92–96% after reaching the paddle, above Easy's post-grace 90%.
     this.ball.normalReturnChance = 0.96 - pressure * 0.03 -
       Math.min(0.01, Math.max(0, incomingSpeed - 8) * 0.0025);
-    const choice = Math.random();
-    if (pressure < 0.6 && choice < 0.25) {
-      // With time to spare, aim into the space the player has left open.
+    // Both players count; six returns means three exchanges.
+    const returns = this.normalReturnCount || 0;
+    const hard = this.difficulty === 'hard';
+    const spread = returns === 0 ? (hard ? 30 : 15)
+      : returns < 6 ? (hard ? 90 : 80) : (hard ? 150 : 120);
+    let offset = (Math.random() * 2 - 1) * spread;
+    if (hard && returns >= 6 && pressure < 0.6 && Math.random() < 0.3) {
       const playerCenter = player.x + PADDLE_WIDTH / 2;
-      this.ball.normalTargetX = 400 + Math.max(-220, Math.min(220, (400 - playerCenter) * 0.8));
-    } else {
-      // Under pressure, recover toward the middle instead of forcing an attack.
-      this.ball.normalTargetX = 400 + (Math.random() - 0.5) * (440 - pressure * 240);
+      const side = playerCenter === 400 ? (Math.random() < 0.5 ? -1 : 1)
+        : playerCenter < 400 ? 1 : -1;
+      offset = side * (130 + Math.random() * 30);
     }
-    this.ball.normalTargetX += (Math.random() - 0.5) * 40;
+    this.ball.normalTargetX = Math.max(BALL_RADIUS,
+      Math.min(CANVAS_WIDTH - BALL_RADIUS, arrivalX + offset));
     this.ball.normalSpeed = Math.max(5.5, Math.min(NORMAL_RETURN_MAX_SPEED,
       incomingSpeed * 0.75 + 6.5 * 0.25 + (Math.random() - 0.5) * 0.6 - pressure * 0.7));
     if (this.difficulty === 'hard') {
       // A stronger opponent reaches more balls and attacks the open court.
       // Share the fixed plan with WASM; accurate tracking must not flatten shots.
-      this.ball.normalReturnChance = 0.99;
-      const playerCenter = player.x + PADDLE_WIDTH / 2;
-      const side = playerCenter === 400 ? (Math.random() < 0.5 ? -1 : 1)
-        : playerCenter < 400 ? 1 : -1;
-      this.ball.normalTargetX = 400 + side * (240 + Math.random() * 80);
-      if (Math.abs(this.ball.normalTargetX - arrivalX) < 120) {
-        this.ball.normalTargetX = 800 - this.ball.normalTargetX;
-      }
-      this.ball.normalSpeed = (Math.random() < 0.5 ? 8.5 : 10) + Math.random() * 1.5;
+      // Moving the CPU and sustaining a rally earn more chances to score.
+      // Twelve total returns add fatigue; keep one fixed shared JS/WASM plan.
+      let hardReturnChance = 0.955 - pressure * 0.025 -
+        Math.min(0.01, Math.max(0, incomingSpeed - 8) * 0.0025);
+      if (returns >= 6) hardReturnChance -= 0.02;
+      if (returns >= 12) hardReturnChance -= 0.025;
+      this.ball.normalReturnChance = Math.max(0.88, Math.min(0.955, hardReturnChance));
+      const minSpeed = returns === 0 ? 7.5 : returns < 6 ? 7.8 : 8.2;
+      const maxSpeed = returns === 0 ? 8.2 : returns < 6 ? 8.8 : 9.5;
+      this.ball.normalSpeed = minSpeed + Math.random() * (maxSpeed - minSpeed);
     }
     this.ball.normalPlanReady = true;
   }

@@ -1,6 +1,7 @@
 # 実行ファイル
 stt.exe
 *.exe
+*.exe~
 
 # 公式ルールブック
 STT_rulebook_all.html
@@ -10,6 +11,11 @@ STT_rulebook_all.html
 .DS_Store
 Thumbs.db
 
-# 著作権保護対象の音源ファイル
+# ローカルのビルドキャッシュと配布準備ファイル
 .gocache/
 .release-artifacts/
+
+# ローカル認証情報・環境設定
+.env
+.env.*
+!.env.example

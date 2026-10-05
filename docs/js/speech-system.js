@@ -1,4 +1,4 @@
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.38';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.39';
 
 export class SpeechSystem {
   constructor() {
@@ -10,6 +10,8 @@ export class SpeechSystem {
     this.speechMode = savedMode === 'screen-reader' ? 'screen-reader' : 'builtin';
     this.announcementTimer = null;
     this.announcementId = 0;
+    this.announcementQueue = [];
+    this.utterances = new Set();
     // Feature #8: 音声速度設定の初期読み込み
     this.speechRate = parseFloat(readSetting('stt_speech_rate') || '1.2');
 
@@ -35,7 +37,6 @@ export class SpeechSystem {
    * @param {boolean} isReferee 主審としての発声かどうか (主審は少し高く、低テンポ)
    */
   speak(text, isReferee = true) {
-    this.stop();
     const announcementId = this.announcementId;
     let fallbackSent = false;
     const announceFallback = () => {
@@ -71,8 +72,12 @@ export class SpeechSystem {
         utterance.pitch = isReferee ? 1.0 : 1.1;
 
         utterance.onerror = (event) => {
+          this.utterances.delete(utterance);
           if (event.error !== 'canceled' && event.error !== 'interrupted') announceFallback();
         };
+        utterance.onend = () => this.utterances.delete(utterance);
+        // ネイティブの発声キューを使い、通常案内で前の発声を取り消さない。
+        this.utterances.add(utterance);
         this.synth.speak(utterance);
       }
     } catch (e) {
@@ -86,6 +91,8 @@ export class SpeechSystem {
    */
   stop() {
     this.announcementId++;
+    this.announcementQueue.length = 0;
+    this.utterances.clear();
     if (this.announcementTimer !== null) {
       clearTimeout(this.announcementTimer);
       this.announcementTimer = null;
@@ -99,11 +106,25 @@ export class SpeechSystem {
   }
 
   announceToScreenReader(text, announcementId) {
-    if (!this.srAnnouncer) return;
+    if (!this.srAnnouncer || announcementId !== this.announcementId) return;
+    this.announcementQueue.push({ text, announcementId });
+    if (this.announcementTimer === null) this.processAnnouncementQueue();
+  }
+
+  processAnnouncementQueue() {
+    const next = this.announcementQueue.shift();
+    if (!next) return;
+    // 同一文の繰り返しも通知できるよう、次の通知を出すときだけクリア。
+    // 後続の speak() は現在の通知とタイマーを上書きしない。
     this.srAnnouncer.textContent = '';
     this.announcementTimer = setTimeout(() => {
-      this.announcementTimer = null;
-      if (announcementId === this.announcementId) this.srAnnouncer.textContent = text;
+      if (next.announcementId !== this.announcementId) return;
+      this.srAnnouncer.textContent = next.text;
+      // aria-live には読み上げ完了イベントがないため、通知間隔を確保する。
+      this.announcementTimer = setTimeout(() => {
+        this.announcementTimer = null;
+        if (next.announcementId === this.announcementId) this.processAnnouncementQueue();
+      }, Math.max(1200, next.text.length * 100));
     }, 50);
   }
 

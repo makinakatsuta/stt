@@ -16,8 +16,8 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。現在CPU対戦をプレイできます。">
-  <script src="js/display-settings.js?v=3.31.38"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.38">
+  <script src="js/display-settings.js?v=3.31.39"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.39">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -25,9 +25,9 @@
   <!-- 
     スクリーンリーダー用の音声アナウンス専用領域 (aria-live)。
     ゲームの状態変化（得点、サーブ権、反則など）をテキストとして書き込み、
-    スクリーンリーダーに最優先で読み上げさせます (assertive)。
+    スクリーンリーダーの現在の読み上げを中断せず、順次読み上げさせます (polite)。
   -->
-  <div id="sr-announcer" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+  <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <div class="app-container">
     <header class="game-header">
@@ -85,7 +85,8 @@
               <option value="screen-reader">スクリーンリーダー</option>
             </select>
           </div>
-          <p id="speech-mode-hint">案内は選んだ方式だけで読み上げます。球音や打球音はどちらでも鳴ります。中断メニューでも変更できます。</p>
+          <p id="speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。案内は選んだ方式だけで読み上げます。球音や打球音はどちらでも鳴ります。中断メニューでも変更できます。</p>
+          <button id="btn-test-speech" type="button" class="btn btn-secondary">読み上げをテスト</button>
         </fieldset>
         <!-- 音声読み上げ速度設定 -->
         <div class="speech-rate-panel">
@@ -229,6 +230,8 @@
           </div>
         </div>
 
+        <p id="current-server" class="current-server">現在のサーブ：あなた</p>
+
         <!-- 審判のテキストコール表示 (ビジュアル補助用) -->
         <div class="referee-call" id="referee-message">
           「プレー」
@@ -243,7 +246,7 @@
         <div class="game-play-layout">
           <div class="game-main-area">
             <!-- 3Dゲーム画面 (Canvas) -->
-            <div class="canvas-container" id="canvas-container" tabindex="0" role="application" aria-label="サウンドテーブルテニス コート。キーボードの左右矢印でラケットを操作します。">
+            <div class="canvas-container" id="canvas-container" tabindex="0" role="region" aria-label="サウンドテーブルテニス コート。キーボードの左右矢印でラケットを操作します。">
               <canvas id="game-canvas" width="800" height="500"></canvas>
             </div>
           </div>
@@ -265,11 +268,12 @@
             <p id="quit-confirm-message">再開、操作方法の確認、TOPへ戻ることができます。</p>
             <div class="display-setting">
               <label for="select-paused-speech-mode">読み上げ方式</label>
-              <select id="select-paused-speech-mode">
+              <select id="select-paused-speech-mode" aria-describedby="paused-speech-mode-hint">
                 <option value="builtin">ゲームの内蔵音声</option>
                 <option value="screen-reader">スクリーンリーダー</option>
               </select>
             </div>
+            <p id="paused-speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。</p>
             <div class="quit-confirm-buttons">
               <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
               <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
@@ -318,7 +322,7 @@
     </main>
 
     <footer class="game-footer">
-      <p>バージョン 3.31.38</p>
+      <p>バージョン 3.31.39</p>
       <p><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
@@ -328,14 +332,14 @@
   <script src="wasm_exec.js"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.38"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.39"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.38"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.38"></script>
+  <script type="module" src="app.js?v=3.31.39"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.39"></script>
 </body>
 </html>

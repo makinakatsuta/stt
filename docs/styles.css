@@ -410,6 +410,14 @@ body {
 }
 
 /* 8. ゲームプレイ画面 */
+.current-server {
+  text-align: center;
+  font-size: 1.1em;
+  font-weight: 700;
+  margin: 0.75em 0;
+  overflow-wrap: anywhere;
+}
+
 .scoreboard {
   display: flex;
   align-items: center;

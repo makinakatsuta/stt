@@ -1,8 +1,8 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js';
 import { sounds } from './sound-system.js';
-import { narrator } from './speech-system.js?v=3.31.38';
+import { narrator } from './speech-system.js?v=3.31.39';
 import { NetworkSystem } from './network-system.js';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.38';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.39';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -105,6 +105,7 @@ export class GameEngine {
     this.difficulty = 'normal'; // 'easy' or 'normal' or 'hard'
     this.role = 1;      // 1: Player 1 (手前 / サーバー), 2: Player 2 (奥 / レシーバー)
     this.state = STATE_MENU;
+    this.updateActionButton();
 
     // ゲームオブジェクトのステート
     this.ball = { x: 400, y: 250, vx: 0, vy: 0, active: false, easyPlayerReturns: 0,
@@ -211,6 +212,10 @@ export class GameEngine {
 
     // Use only native click for touch, keyboard and assistive-technology activation.
     const actionButton = document.getElementById('btn-game-action');
+    const speechTestButton = document.getElementById('btn-test-speech');
+    if (speechTestButton) speechTestButton.addEventListener('click', () => {
+      narrator.speak('音声案内のテストです。');
+    });
     if (actionButton) actionButton.addEventListener('click', (event) => {
       event.stopPropagation();
       if (this.isGameplayPaused || this.screens.play.classList.contains('hidden')) return;
@@ -458,6 +463,7 @@ export class GameEngine {
 
       this.changeScreen('waiting');
       this.state = STATE_WAITING_OPPONENT;
+      this.updateActionButton();
       document.getElementById('lbl-current-room').textContent = roomId || '自動マッチング';
       this.net.disconnectHandled = false;
       this.clearNetworkError();
@@ -653,7 +659,10 @@ export class GameEngine {
     });
 
     // 状態を同期
-    if (screenId === 'menu') this.state = STATE_MENU;
+    if (screenId === 'menu') {
+      this.state = STATE_MENU;
+      this.updateActionButton();
+    }
   }
 
   /**
@@ -683,6 +692,7 @@ export class GameEngine {
     this.isGameplayPaused = false;
     this.net.disconnect();
     this.state = STATE_MENU;
+    this.updateActionButton();
     this.stopLoop(); // アニメーションループを確実に停止
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     sounds.stopRallyMusic();
@@ -972,6 +982,7 @@ export class GameEngine {
       // 相手の発声イベント同期
       if (payload.call === 'ikimasu') {
         this.state = STATE_PRE_SERVE_HEARD;
+        this.updateActionButton();
         this.stateStartTime = Date.now();
 
         // 自分がレシーバーの場合、発声を再生
@@ -985,6 +996,7 @@ export class GameEngine {
       }
       else if (payload.call === 'hai') {
         this.state = STATE_SERVE_WAITING;
+        this.updateActionButton();
         this.stateStartTime = Date.now();
         narrator.speak("はい", false);
 
@@ -1002,6 +1014,7 @@ export class GameEngine {
       this.ball.vy = payload.vy;
       this.ball.active = true;
       this.state = STATE_RALLY;
+      this.updateActionButton();
       // 音声のみでラリー開始を案円（画面テキストは非表示中）
       // ビープ音によるボール接近通知が開始される
       // 音波エフェクト（サーブ位置）
@@ -1158,6 +1171,43 @@ export class GameEngine {
     return this.serverRole === this.role;
   }
 
+  getServerName() {
+    return this.isMyTurnToServe() ? 'あなた' : this.mode === 'cpu' ? 'CPU' : '対戦相手';
+  }
+
+  updateServerDisplay() {
+    const display = document.getElementById('current-server');
+    if (display) display.textContent = `現在のサーブ：${this.getServerName()}`;
+  }
+
+  updateActionButton() {
+    const button = document.getElementById('btn-game-action');
+    if (!button) return;
+    const mine = this.isMyTurnToServe();
+    const opponent = this.mode === 'cpu' ? 'CPU' : '相手';
+    let label = 'サーブ・返球';
+    switch (this.state) {
+      case STATE_PRE_SERVE_READY:
+        label = mine ? '『いきます』と伝える' : `${opponent}の『いきます』を待っています`;
+        break;
+      case STATE_PRE_SERVE_HEARD:
+        label = mine ? `${opponent}の『はい』を待っています` : '『はい』と答える';
+        break;
+      case STATE_SERVE_WAITING:
+        label = mine ? 'サーブする' : `${opponent}のサーブを待っています`;
+        break;
+      case STATE_RALLY:
+        label = '返球';
+        break;
+      case STATE_POINT_WON:
+        label = '次のポイントへ';
+        break;
+    }
+    // ネイティブボタンのテキストがアクセシブルネームにもなる。
+    // 同じノードを保ち、待機時もフォーカスや操作判定を変更しない。
+    if (button.textContent !== label) button.textContent = label;
+  }
+
   /**
    * 自分がレシーブする番かどうかを判定します。
    */
@@ -1180,6 +1230,7 @@ export class GameEngine {
     this.ball.easyCpuAttempted = false;
     sounds.stopRallyMusic();
     this.state = STATE_PRE_SERVE_READY;
+    this.updateActionButton();
     this.stateStartTime = Date.now();
     this.ball.active = false;
     this.pendingSwingUntil = 0;
@@ -1205,8 +1256,9 @@ export class GameEngine {
     this.ball.vx = 0;
     this.ball.vy = 0;
 
-    // 主審の「プレー」宣告
-    narrator.speak("プレー", true);
+    this.updateServerDisplay();
+    // 連続した speak() によるキャンセルを避け、サーブ権も一度に案内する。
+    narrator.speak(`プレー。${this.getServerName()}のサーブです。`, true);
 
     if (this.isMyTurnToServe()) {
       // 操作説明はヘルプで案内し、プレイ中は短いコールだけにする。
@@ -1216,6 +1268,7 @@ export class GameEngine {
         this.scheduleGameplayTask(() => {
           if (this.state === STATE_PRE_SERVE_READY) {
             this.state = STATE_PRE_SERVE_HEARD;
+            this.updateActionButton();
             this.stateStartTime = Date.now();
             narrator.speak("いきます", false);
           }
@@ -1243,6 +1296,7 @@ export class GameEngine {
       // 1. サーバー側の「いきます」発声
       if (this.isMyTurnToServe()) {
         this.state = STATE_PRE_SERVE_HEARD;
+        this.updateActionButton();
         this.stateStartTime = Date.now();
 
         narrator.speak("いきます", false);
@@ -1255,6 +1309,7 @@ export class GameEngine {
           this.scheduleGameplayTask(() => {
             if (this.state === STATE_PRE_SERVE_HEARD) {
               this.state = STATE_SERVE_WAITING;
+              this.updateActionButton();
               this.stateStartTime = Date.now();
               narrator.speak("はい", false);
             }
@@ -1266,6 +1321,7 @@ export class GameEngine {
       // 2. レシーバー側の「はい」返答
       if (this.isMyTurnToReceive()) {
         this.state = STATE_SERVE_WAITING;
+        this.updateActionButton();
         this.stateStartTime = Date.now();
 
         narrator.speak("はい", false);
@@ -1281,6 +1337,7 @@ export class GameEngine {
             this.scheduleGameplayTask(() => {
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
+                this.updateActionButton();
                 this.stateStartTime = Date.now();
                 this.ball.active = true;
 
@@ -1388,6 +1445,7 @@ export class GameEngine {
         }
 
         this.state = STATE_RALLY;
+        this.updateActionButton();
         this.ball.active = true;
 
         // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
@@ -1449,6 +1507,7 @@ export class GameEngine {
     // example, crossing an end line and stopping). Only one point is legal.
     if (this.state === STATE_POINT_WON) return;
     this.state = STATE_POINT_WON;
+    this.updateActionButton();
     this.ball.active = false;
 
     // 得点が入ってプレイが止まったらボールの転がり音をミュートし、ラリーBGMも停止する
@@ -1573,6 +1632,7 @@ export class GameEngine {
 
           // Feature #1 / 改善⑦: CPU戦サーブ交代制（easy含め全難易度でゲームごとに交代）
           this.serverRole = nextGameNum % 2 === 1 ? 1 : 2;
+          this.updateServerDisplay();
 
           this.scheduleGameplayTask(() => {
             this.prepareServeSequence();
@@ -1584,6 +1644,7 @@ export class GameEngine {
         const serviceChangePoints = p1 >= 10 && p2 >= 10 ? 1 : 2;
         if (total > 0 && total % serviceChangePoints === 0) {
           this.serverRole = this.serverRole === 1 ? 2 : 1;
+          this.updateServerDisplay();
         }
 
         this.prepareServeSequence();
@@ -1610,6 +1671,7 @@ export class GameEngine {
    * マッチ(試合全体)の決着がついた際の終了処理。
    */
   finishMatch(matchWinner) {
+    narrator.stop();
     this.clearGameplayTasks();
     // ゲームループを停止（リザルト表示中に物理計算・描画が走り続けるのを防ぐ）
     this.stopLoop();

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>ご支援のお願い | Sound Table Tennis</title>
+<meta content="Sound Table Tennisの継続的な開発・アクセシビリティ改善・公開環境の維持を支えるためのご支援案内です。" name="description"/>
+<style>
+    :root {
+      --max-width: 760px;
+      --space: 1.25rem;
+      --border: #777;
+      --soft: #f3f3f3;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.8;
+      color: #111;
+      background: #fff;
+    }
+    a {
+      color: inherit;
+    }
+    a:focus,
+    button:focus {
+      outline: 3px solid currentColor;
+      outline-offset: 3px;
+    }
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+    }
+    .skip-link:focus {
+      left: 1rem;
+      top: 1rem;
+      padding: .75rem 1rem;
+      background: #fff;
+      border: 2px solid #111;
+      z-index: 999;
+    }
+    header,
+    main,
+    footer {
+      width: min(100% - 2rem, var(--max-width));
+      margin-inline: auto;
+    }
+    header {
+      padding: 2rem 0 1rem;
+    }
+    main {
+      padding-bottom: 3rem;
+    }
+    section {
+      margin-top: 2.5rem;
+    }
+    h1 {
+      font-size: clamp(1.8rem, 5vw, 2.5rem);
+      line-height: 1.35;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 1.5rem;
+      line-height: 1.45;
+    }
+    .lead {
+      font-size: 1.1rem;
+    }
+    .summary,
+    .account-box,
+    .notice {
+      padding: var(--space);
+      border: 2px solid var(--border);
+      border-radius: .5rem;
+    }
+    .summary {
+      background: var(--soft);
+    }
+    .amount {
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+    dl {
+      margin: 0;
+    }
+    dt {
+      margin-top: 1rem;
+      font-weight: 700;
+    }
+    dd {
+      margin-left: 0;
+    }
+    ul {
+      padding-left: 1.4rem;
+    }
+    .progress-wrap {
+      margin-top: 1rem;
+    }
+    progress {
+      width: 100%;
+      height: 1.5rem;
+    }
+    .button-link {
+      display: inline-block;
+      padding: .8rem 1.2rem;
+      border: 2px solid #111;
+      border-radius: .4rem;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    footer {
+      padding: 1.5rem 0 3rem;
+      border-top: 1px solid #aaa;
+    }
+    .small {
+      font-size: .95rem;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main">本文へ移動</a>
+<header>
+<p><a href="/">Sound Table Tennis トップページへ戻る</a></p>
+<h1>Sound Table Tennis ご支援のお願い</h1>
+<p class="lead">音で遊ぶ卓球ゲーム「Sound Table Tennis」を、もっと遊びやすく、もっと多くの人へ届けるため、開発と運営へのご支援を募集しています。</p>
+</header>
+<main id="main">
+<section aria-labelledby="summary-heading" class="summary">
+<h2 id="summary-heading">支援募集の概要</h2>
+<p class="amount">目標金額：30,000円</p>
+<p>1口1,000円以上で、口数・金額は自由です。</p>
+<p>ご支援は任意です。物品や金銭などの返礼はありません。いただいた支援金は、Sound Table Tennisの開発・改善・公開・運営に使用します。</p>
+<div class="progress-wrap">
+<p id="progress-text">現在の支援総額：0円 / 30,000円</p>
+<progress id="support-progress" max="30000" value="0">0円 / 30,000円</progress>
+</div>
+</section>
+<section aria-labelledby="about-heading">
+<h2 id="about-heading">Sound Table Tennisとは</h2>
+<p>Sound Table Tennis（STT）は、音を頼りにプレイできるブラウザ向け卓球ゲームです。特別なアプリをインストールしなくても、対応するWebブラウザからアクセスして遊べます。</p>
+<p>現在はCPUとの対戦ができ、実際にブラウザ上でプレイできる状態で公開しています。「これから作りたいゲーム」ではなく、すでに遊べるゲームを、これからさらに育てていく活動です。</p>
+<p>画面を見ることだけを前提にせず、音やキーボード操作、スクリーンリーダーでの利用も意識しながら、より多くの人が遊びやすいゲームを目指して改善を続けています。</p>
+<a class="button-link" href="/">Sound Table Tennisを遊ぶ</a>
+</section>
+<section aria-labelledby="reason-heading">
+<h2 id="reason-heading">なぜ支援を募集するのか</h2>
+<p>Sound Table Tennisは個人開発から始まりました。現在は正式な公開先として soundtabletennis.com から遊べるようになっています。</p>
+<p>これからも継続して公開し、アクセシビリティの改善や動作検証、オンライン対戦などの機能追加を進めていくためには、ドメイン維持費や開発・検証環境などの費用が必要になります。</p>
+<p>今回は、その活動を続けていくための最初の目標として30,000円のご支援を募集します。</p>
+</section>
+<section aria-labelledby="usage-heading">
+<h2 id="usage-heading">支援金の使い道</h2>
+<p>いただいた支援金は、主に次の用途に使用します。</p>
+<ul>
+<li>soundtabletennis.com のドメインの更新・維持費</li>
+<li>アクセシビリティ改善のための開発・検証費</li>
+<li>ゲームの公開・運営環境に関する費用</li>
+<li>オンライン対戦など、今後の機能開発に必要な費用</li>
+<li>告知・公開準備など、Sound Table Tennisの運営に必要な費用</li>
+</ul>
+<p>実際の金額はサービス料金や開発状況によって変わる場合があります。その場合も、Sound Table Tennisの開発・アクセシビリティ改善・公開・運営に関係する用途に使用します。</p>
+</section>
+<section aria-labelledby="notice-heading" class="notice">
+<h2 id="notice-heading">ご支援にあたって</h2>
+<ul>
+<li>ご支援は任意です。</li>
+<li>物品や金銭などの返礼はありません。</li>
+<li>原則として、お振り込み後の返金には対応できません。</li>
+<li>銀行振込時には、口座名義人に振込人名義が表示されます。</li>
+<li>いただいた支援金は、Sound Table Tennisに関係する開発・改善・公開・運営費として使用します。</li>
+</ul>
+</section>
+<section aria-labelledby="howto-heading">
+<h2 id="howto-heading">ご支援の方法</h2>
+<p>ご賛同いただける方は、下記口座へ1口1,000円以上でお振り込みください。複数口や1,000円を超える金額でのご支援も歓迎します。</p>
+<div class="account-box">
+<h3>ゆうちょ銀行から振り込む場合</h3>
+<dl>
+<dt>記号</dt>
+<dd>14380</dd>
+<dt>番号</dt>
+<dd>04594161</dd>
+<dt>口座名義</dt>
+<dd>ナカツタマキ</dd>
+</dl>
+<h3>他の金融機関から振り込む場合</h3>
+<dl>
+<dt>銀行名</dt>
+<dd>ゆうちょ銀行</dd>
+<dt>店名</dt>
+<dd>四三八</dd>
+<dt>店番</dt>
+<dd>438</dd>
+<dt>預金種目</dt>
+<dd>普通預金</dd>
+<dt>口座番号</dt>
+<dd>459416</dd>
+<dt>口座名義</dt>
+<dd>ナカツタマキ</dd>
+</dl>
+</div>
+<p class="small">※振込手数料が発生する場合は、ご支援者さまのご負担をお願いいたします。</p>
+</section>
+<section aria-labelledby="future-heading">
+<h2 id="future-heading">これから目指すこと</h2>
+<p>今回の支援募集がSound Table Tennisのゴールではありません。アクセシビリティの改善、オンライン対戦をはじめとした機能追加、継続的な動作検証を行いながら、少しずつゲームを育てていきます。</p>
+<p>実際に遊んでくださった方からの意見も、今後の改善につなげていきます。</p>
+</section>
+<section aria-labelledby="message-heading">
+<h2 id="message-heading">最後に</h2>
+<p>Sound Table Tennisは、小さな個人開発から始まったゲームです。音で状況を判断しながらラリーを続けるという、一般的な卓球ゲームとは少し違った楽しさがあります。</p>
+<p>すでに遊べるところまでは作りました。これからは、より多くの人に遊んでもらいながら、長く公開し続けられるゲームに育てていきたいと考えています。</p>
+<p>1口1,000円から、その一歩を応援していただければうれしいです。</p>
+<p><strong>Sound Table Tennisを、一緒に育ててください。</strong></p>
+</section>
+</main>
+<footer>
+<p><a href="/">Sound Table Tennis トップページへ戻る</a></p>
+<p class="small">© 2026 Maki Nakatsuta.</p>
+</footer>
+<script>
+    /*
+      支援総額を更新するときは、下の数字だけ変更してください。
+      例：12,000円集まった場合 → const CURRENT_AMOUNT = 12000;
+    */
+    const CURRENT_AMOUNT = 0;
+    const GOAL_AMOUNT = 30000;
+    const progress = document.getElementById("support-progress");
+    const text = document.getElementById("progress-text");
+    progress.max = GOAL_AMOUNT;
+    progress.value = Math.min(CURRENT_AMOUNT, GOAL_AMOUNT);
+    text.textContent =
+      `現在の支援総額：${CURRENT_AMOUNT.toLocaleString("ja-JP")}円 / ` +
+      `${GOAL_AMOUNT.toLocaleString("ja-JP")}円`;
+  </script>
+</body>
+</html>

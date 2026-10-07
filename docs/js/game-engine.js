@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.42';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.42';
 import { sounds } from './sound-system.js?v=3.31.42';
 import { narrator } from './speech-system.js?v=3.31.42';
 import { NetworkSystem } from './network-system.js?v=3.31.42';
@@ -105,6 +105,7 @@ export class GameEngine {
     this.difficulty = 'normal'; // 'easy' or 'normal' or 'hard'
     this.role = 1;      // 1: Player 1 (手前 / サーバー), 2: Player 2 (奥 / レシーバー)
     this.state = STATE_MENU;
+    this.selectedServeType = null;
     this.updateActionButton();
 
     // ゲームオブジェクトのステート
@@ -127,9 +128,6 @@ export class GameEngine {
     this.rallyReturnCount = 0;
     this.timerInterval = null;
 
-    // Feature #2, #4: チャージサーブおよびインターバルスキップ用の状態管理変数
-    this.chargeStartTime = 0;
-    this.isCharging = false;
     this.intervalSkipCallback = null;
 
     // キー入力状態
@@ -192,7 +190,6 @@ export class GameEngine {
       const panel = document.getElementById('mobile-settings-panel');
       if (panel) panel.classList.remove('hidden');
     }
-    this.updateCanvasAriaLabel();
 
     // Feature #8: 音声速度設定スライダーのバインド＆初期化
     const speechModeSelects = ['select-speech-mode', 'select-paused-speech-mode']
@@ -211,18 +208,11 @@ export class GameEngine {
     }
 
     // Use only native click for touch, keyboard and assistive-technology activation.
-    const actionButton = document.getElementById('btn-game-action');
+    this.setupServeSelection();
     const speechTestButton = document.getElementById('btn-test-speech');
     if (speechTestButton) speechTestButton.addEventListener('click', () => {
       narrator.speak('音声案内のテストです。');
     });
-    if (actionButton) actionButton.addEventListener('click', (event) => {
-      event.stopPropagation();
-      if (this.isGameplayPaused || this.screens.play.classList.contains('hidden')) return;
-      this.isCharging = false;
-      this.handleActionInput();
-    });
-
     const rangeSpeechRate = document.getElementById('range-speech-rate');
     const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
     if (rangeSpeechRate && lblSpeechRateVal) {
@@ -262,7 +252,6 @@ export class GameEngine {
           this.filteredMotionAccelX = 0;
           this.motionDirection = 0;
           document.getElementById('btn-calibrate-tilt').classList.add('hidden');
-          this.updateCanvasAriaLabel();
         }
       });
     }
@@ -284,39 +273,37 @@ export class GameEngine {
     // Do not treat a swipe/drag used for movement as a swing on touchend.
     let touchStartPoint = null;
     let pointerStartPoint = null;
+    let lastGestureAt = -Infinity;
     // Pointer events provide one authoritative tap path and prevent the
     // touchend + synthetic click pair from being interpreted twice.
     const isControl = target => target?.closest?.('button, a, input, label, select, textarea');
     const pointerActiveStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
 
-    if (canvasContainer) {
-      canvasContainer.style.touchAction = 'none';
-      canvasContainer.addEventListener('pointerdown', (e) => {
+    if (screenPlay && canvasContainer) {
+      screenPlay.style.touchAction = 'none';
+      screenPlay.addEventListener('pointerdown', (e) => {
         if (this.isGameplayPaused || !e.isPrimary || isControl(e.target)) return;
         if (!pointerActiveStates.includes(this.state)) return;
         // Keep focus in place instead of announcing the court again on each tap.
         e.preventDefault();
         pointerStartPoint = { id: e.pointerId, x: e.clientX, y: e.clientY };
-        if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
-          this.isCharging = true;
-          this.chargeStartTime = Date.now();
-        }
       }, { passive: false });
 
-      canvasContainer.addEventListener('pointerup', (e) => {
+      screenPlay.addEventListener('pointerup', (e) => {
         if (this.isGameplayPaused || !e.isPrimary || !pointerStartPoint || pointerStartPoint.id !== e.pointerId) return;
         const start = pointerStartPoint;
         pointerStartPoint = null;
         if (isControl(e.target)) return;
         const moved = Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12;
+        lastGestureAt = Date.now();
         if (moved || !pointerActiveStates.includes(this.state)) return;
         e.preventDefault();
         this.handleActionInput();
       }, { passive: false });
 
-      canvasContainer.addEventListener('pointercancel', () => {
+      screenPlay.addEventListener('pointercancel', () => {
+        lastGestureAt = Date.now();
         pointerStartPoint = null;
-        this.isCharging = false;
       }, { passive: true });
     }
 
@@ -324,7 +311,7 @@ export class GameEngine {
     const handlePlayAreaAction = (e) => {
       // AT double-tap activation can send only a click (detail=0).
       // Physical clicks already have the pointerup path above.
-      if (window.PointerEvent && e.detail !== 0) return;
+      if (Date.now() - lastGestureAt < 500) return;
       if (this.isGameplayPaused) return;
       if (!screenPlay.contains(e.target)) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
@@ -344,6 +331,7 @@ export class GameEngine {
     // スマホ向けのタッチイベント（touchend で click より早く応答）(Feature #4: STATE_POINT_WON を追加)
     document.addEventListener('touchend', (e) => {
       if (window.PointerEvent) return;
+      if (!screenPlay.contains(e.target)) return;
       if (this.isGameplayPaused) return;
       const activeStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
       if (!activeStates.includes(this.state)) return;
@@ -357,34 +345,23 @@ export class GameEngine {
         ? Math.hypot(touch.clientX - touchStartPoint.x, touch.clientY - touchStartPoint.y) > 12
         : false;
       touchStartPoint = null;
+      lastGestureAt = Date.now();
       if (moved) return;
 
       this.handleActionInput();
     }, { passive: false });
 
     document.addEventListener('touchcancel', () => {
+      if (touchStartPoint) lastGestureAt = Date.now();
       touchStartPoint = null;
     }, { passive: true });
 
-    // スマホ用のtouchstartでチャージ開始 (Feature #2)
+    // Keep gesture detection without charging.
     document.addEventListener('touchstart', (e) => {
-      if (window.PointerEvent) return;
-      if (this.isGameplayPaused) return;
-      const activeStates = [STATE_SERVE_WAITING];
-
-      // Ignore controls and their descendants.
-      if (isControl(e.target)) return;
-
+      if (window.PointerEvent || this.isGameplayPaused || !screenPlay.contains(e.target) || isControl(e.target)) return;
       const touch = e.touches && e.touches[0];
       touchStartPoint = touch ? { x: touch.clientX, y: touch.clientY } : null;
-      if (!activeStates.includes(this.state)) return;
-
-      if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
-        e.preventDefault();
-        this.isCharging = true;
-        this.chargeStartTime = Date.now();
-      }
-    }, { passive: false });
+    }, { passive: true });
 
     // 1. オーディオ有効化ボタン
     const btnEnableAudio = document.getElementById('btn-enable-audio');
@@ -520,7 +497,7 @@ export class GameEngine {
       this.resumeGameplay();
     });
 
-    // キーボード入力の監視 (Feature #2: スペースキー長押しによるサーブチャージ)
+    // キーボード入力の監視（Spaceは単押しアクション）
     document.addEventListener('keydown', (e) => {
       // 中断確認中でもEscでプレイへ戻れるようにする。
       // 一般キーを無視する処理より先に判定する必要がある。
@@ -554,11 +531,10 @@ export class GameEngine {
         return;
       }
       if (this.screens.play.classList.contains('hidden')) return;
-      // Preserve native form/button activation. Arrow keys on the action button
-      // still move the paddle; Escape still opens the pause menu.
+      if (this.state === STATE_SERVE_SELECT && this.handleServeSelectionKey(e)) return;
+      // Preserve native controls; Escape opens the pause menu.
       const control = isControl(e.target);
-      if (control && !isEscapeKey && !(control.id === 'btn-game-action'
-          && ['ArrowLeft', 'ArrowRight'].includes(e.code || e.key))) return;
+      if (control && !isEscapeKey) return;
 
       // code はブラウザやキーボード・スクリーンリーダーによって空になる
       // ことがあるため、key も併用して操作キーを判定する。
@@ -579,15 +555,7 @@ export class GameEngine {
       // スペースキーによるアクション制御 (スクロール防止)
       if (isSpaceKey) {
         e.preventDefault();
-        if (!e.repeat) {
-          if (this.state === STATE_SERVE_WAITING && this.isMyTurnToServe()) {
-            // サーブチャージ開始
-            this.isCharging = true;
-            this.chargeStartTime = Date.now();
-          } else {
-            this.handleActionInput();
-          }
-        }
+        if (!e.repeat) this.handleActionInput();
       }
 
       // Escキーによる中断
@@ -610,12 +578,6 @@ export class GameEngine {
         e.preventDefault();
       }
 
-      if (isSpaceKey) {
-        if (this.isCharging) {
-          // チャージ完了でサーブ実行
-          this.handleActionInput();
-        }
-      }
     }, true);
 
     // ウィンドウ切り替えなどで keyup を取りこぼしても、ラケットが
@@ -640,15 +602,8 @@ export class GameEngine {
       }
     });
 
-    // タブ切り替え・画面非表示時のチャージ状態リセット
-    // （Alt+Tab等で keyup が発火しないまま isCharging が残るケースを防ぐ）
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        clearMovementInput();
-      }
-      if (document.hidden && this.isCharging) {
-        this.isCharging = false;
-      }
+      if (document.hidden) clearMovementInput();
     });
   }
 
@@ -657,12 +612,15 @@ export class GameEngine {
    * @param {string} screenId 画面ID ('welcome', 'menu', 'lobby', 'waiting', 'play', 'help')
    */
   changeScreen(screenId) {
+    this.setGameplayChromeHidden(screenId === 'play');
     Object.keys(this.screens).forEach(key => {
       if (key === screenId) {
         this.screens[key].classList.remove('hidden');
-        // フォーカスを適切な要素に移す
+        // Release the previous control so document-level Space input works.
+        if (key === 'play') document.activeElement?.blur?.();
+        // Menus retain their initial focus.
         const focusable = key === 'play'
-          ? document.getElementById('canvas-container')
+          ? null
           : this.screens[key].querySelector('button, input, [tabindex="0"]');
         if (focusable) focusable.focus();
       } else {
@@ -698,7 +656,6 @@ export class GameEngine {
     this.clearGameplayTasks();
     document.getElementById('quit-confirm-overlay').classList.add('hidden');
     this.gameplayPausedAt = 0;
-    this.isCharging = false;
     this.pendingSwingUntil = 0;
     sounds.stopGameplayAudio();
     this.isGameplayPaused = false;
@@ -723,7 +680,6 @@ export class GameEngine {
     this.tiltSpeed = 0;
     this.filteredMotionAccelX = 0;
     this.motionDirection = 0;
-    this.updateCanvasAriaLabel();
 
 
 
@@ -790,7 +746,6 @@ export class GameEngine {
     this.gameplayPausedAt = Date.now();
     this.pauseGameplayTasks();
     this.stopLoop();
-    this.isCharging = false;
     this.keys['ArrowLeft'] = false;
     this.keys['ArrowRight'] = false;
     this.keys['KeyA'] = false;
@@ -828,7 +783,7 @@ export class GameEngine {
       sounds.updateBallSound(this.ball.x, this.ball.y, this.ball.vx, this.ball.vy);
     }
     this.startLoop();
-    document.getElementById('canvas-container').focus();
+    document.activeElement?.blur?.();
     narrator.speak("プレイを再開しました。");
     this.resumeGameplayTasks();
   }
@@ -858,7 +813,7 @@ export class GameEngine {
     this.net.disconnectHandled = true;
 
     // プレイ中や待機中に予期せず切断された場合
-    if (this.state === STATE_WAITING_OPPONENT || this.state === STATE_RALLY || this.state === STATE_PRE_SERVE_READY || this.state === STATE_PRE_SERVE_HEARD || this.state === STATE_SERVE_WAITING) {
+    if (this.state === STATE_SERVE_SELECT || this.state === STATE_WAITING_OPPONENT || this.state === STATE_RALLY || this.state === STATE_PRE_SERVE_READY || this.state === STATE_PRE_SERVE_HEARD || this.state === STATE_SERVE_WAITING) {
       const msg = "サーバーから切断されました。\nメインメニューに戻ります。";
       narrator.speak(msg.replace('\n', ''), true);
       // 改善①③: 視覚的エラーメッセージとカウントダウンを表示（5秒）
@@ -980,6 +935,23 @@ export class GameEngine {
    * 相手から届いたゲーム内の動的アクションを反映します。
    */
   handleOpponentAction(payload) {
+    if (payload.actionType === 'serve_selected') {
+      if (this.mode === 'online' && this.state === STATE_SERVE_SELECT &&
+          this.isMyTurnToReceive() && [1, 2, 3].includes(payload.serveType)) {
+        this.selectedServeType = payload.serveType;
+        this.beginServicePlay();
+      }
+      return;
+    }
+    if (payload.actionType === 'voice_call' &&
+        (payload.call === 'ikimasu' ? this.state !== STATE_PRE_SERVE_READY :
+          payload.call === 'hai' ? this.state !== STATE_PRE_SERVE_HEARD : true)) return;
+    if (payload.actionType === 'serve' && this.state !== STATE_SERVE_WAITING) return;
+    if (['voice_call', 'serve'].includes(payload.actionType) &&
+        [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING].includes(this.state)) {
+      this.checkTimeouts();
+      if (this.state === STATE_POINT_WON) return;
+    }
     if (payload.actionType === 'paddle') {
       // 相手のラケット位置同期
       // 相手の画面から送られてくるラケット位置をそのままセット
@@ -1032,7 +1004,7 @@ export class GameEngine {
       // 音波エフェクト（サーブ位置）
       this.addRipple(this.ball.x, this.ball.y, 'serve');
       sounds.playHitSound(this.ball.x, this.ball.y);
-      sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y);
+      sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, false, this.selectedServeType);
     }
     else if (payload.actionType === 'ball_hit') {
       // 得点確定後に遅れて届いた打球通知でラリー音や球を再開しない。
@@ -1080,7 +1052,7 @@ export class GameEngine {
       const instr = document.getElementById('play-instructions');
       if (instr) {
         instr.classList.add('hidden');
-        instr.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。';
+        instr.innerHTML = '左右矢印キーでラケット移動。自分のサービスは「プレー」前に1～3キーまたはサーブ1～3ボタンで種類を選択。選択後はSpaceキーまたはゲーム画面のタップでアクション。';
       }
       this.startNewMatch();
     }
@@ -1126,7 +1098,6 @@ export class GameEngine {
       const btnCalibrate = document.getElementById('btn-calibrate-tilt');
       if (btnCalibrate) btnCalibrate.classList.add('hidden');
     }
-    this.updateCanvasAriaLabel();
 
     this.updateScoreboard();
 
@@ -1189,12 +1160,21 @@ export class GameEngine {
   }
 
   updateActionButton() {
-    const button = document.getElementById('btn-game-action');
-    if (!button) return;
-    const label = 'サーブ・返球';
-    // ネイティブボタンのテキストがアクセシブルネームにもなる。
-    // 同じノードを保ち、待機時もフォーカスや操作判定を変更しない。
-    if (button.textContent !== label) button.textContent = label;
+    this.updateServeSelectionUI();
+  }
+
+  setGameplayChromeHidden(hidden) {
+    for (const id of ['game-header', 'game-footer']) {
+      const element = document.getElementById(id);
+      if (!element) continue;
+      if (hidden) {
+        element.setAttribute('aria-hidden', 'true');
+        element.setAttribute('inert', '');
+      } else {
+        element.removeAttribute('aria-hidden');
+        element.removeAttribute('inert');
+      }
+    }
   }
 
   /**
@@ -1204,12 +1184,74 @@ export class GameEngine {
     return !this.isMyTurnToServe();
   }
 
+  setupServeSelection() {
+    for (const type of [1, 2, 3]) {
+      const button = document.getElementById(`btn-serve-${type}`);
+      if (button) button.addEventListener('click', event => {
+        event.stopPropagation();
+        this.selectServeType(type, true);
+      });
+    }
+  }
+
+  updateServeSelectionUI() {
+    const visible = this.state === STATE_SERVE_SELECT && this.isMyTurnToServe();
+    const group = document.getElementById('serve-selection');
+    for (const type of [1, 2, 3]) {
+      const button = document.getElementById(`btn-serve-${type}`);
+      if (button) {
+        button.disabled = !visible;
+      }
+    }
+    if (group) {
+      // Release only a disappearing selection control before the announcement.
+      if (!visible && [1, 2, 3].some(n => document.activeElement ===
+          document.getElementById(`btn-serve-${n}`))) document.activeElement?.blur?.();
+      group.hidden = !visible;
+    }
+  }
+
+  handleServeSelectionKey(event) {
+    const match = /^(?:Digit|Numpad)([123])$/.exec(event.code || '') || /^([123])$/.exec(event.key || '');
+    if (!match || this.state !== STATE_SERVE_SELECT || !this.isMyTurnToServe()) return false;
+    if (event.target?.closest?.('input, select, textarea')) return false;
+    event.preventDefault();
+    if (!event.repeat) this.selectServeType(Number(match[1]));
+    return true;
+  }
+
+  selectServeType(type, fromButton = false) {
+    if (this.isGameplayPaused || this.state !== STATE_SERVE_SELECT ||
+        !this.isMyTurnToServe() || ![1, 2, 3].includes(type)) return false;
+    this.selectedServeType = type;
+    if (this.mode === 'online') this.net.send('action', { actionType: 'serve_selected', serveType: type });
+    this.beginServicePlay(`サーブ${type}。`);
+    return true;
+  }
+
+  // Only the first CPU receive uses these probabilities; rallies retain their tuning.
+  preparePlayerServe(baseVy) {
+    this.ball.playerServePending = this.mode === 'cpu';
+    this.ball.isPowerServe = false;
+    this.ball.serveReturnChance = null;
+    if (this.mode !== 'cpu') return baseVy;
+    const type = this.selectedServeType;
+    this.ball.isPowerServe = Math.random() < [0.10, 0.20, 0.30][type - 1];
+    const speed = baseVy * (this.ball.isPowerServe ? 1.08 : 1);
+    const difficultyBonus = { easy: 0, normal: 0.035, hard: 0.07 }[this.difficulty];
+    const missChance = [0.035, 0.08, 0.13][type - 1] + difficultyBonus +
+      (this.ball.isPowerServe ? 0.08 : 0) + Math.min(0.025, Math.max(0, speed - 4) * 0.004);
+    this.ball.serveReturnChance = 1 - Math.min(0.30, missChance);
+    return speed;
+  }
+
   /**
    * サーブ開始シーケンスを初期化します。
    * プレイ中は画面からルール説明テキストを非表示にし、
    * 画面全体タップでのアクション集中モードを有効にします。
    */
   prepareServeSequence() {
+    this.setGameplayChromeHidden(true);
     this.clearGameplayTasks();
     this.ball.hardCpuAttempted = false;
     this.ball.normalPlanReady = false;
@@ -1218,9 +1260,13 @@ export class GameEngine {
     this.ball.easyReturnCount = 0;
     this.ball.easyCpuAttempted = false;
     sounds.stopRallyMusic();
-    this.state = STATE_PRE_SERVE_READY;
+    this.selectedServeType = null;
+    this.ball.playerServePending = false;
+    this.ball.isPowerServe = false;
+    this.ball.serveReturnChance = null;
+    this.stateStartTime = 0;
+    this.state = this.isMyTurnToServe() || this.mode === 'online' ? STATE_SERVE_SELECT : STATE_PRE_SERVE_READY;
     this.updateActionButton();
-    this.stateStartTime = Date.now();
     this.ball.active = false;
     this.pendingSwingUntil = 0;
     this.rallyReturnCount = 0;
@@ -1234,7 +1280,7 @@ export class GameEngine {
     }
 
 
-    // ボールをサーバーのラケットに吸着させる準備（位置は毎フレーム更新される）
+    // サービスエリアにボールを静止させ、打球まで位置を固定する。
     if (this.serverRole === 1) {
       // Start with the paddle's center aligned to the court's center.
       this.p1.x = (CANVAS_WIDTH - PADDLE_WIDTH) / 2;
@@ -1249,8 +1295,22 @@ export class GameEngine {
     this.ball.vy = 0;
 
     this.updateServerDisplay();
+    if (this.state === STATE_SERVE_SELECT) {
+      narrator.speak(this.isMyTurnToServe() ? 'サーブを選択してください。' : '対戦相手がサーブを選択しています。', true);
+      return;
+    }
+    this.beginServicePlay();
+  }
+
+  beginServicePlay(selection = '') {
+    if ((this.isMyTurnToServe() || this.mode === 'online') && this.selectedServeType == null) return;
+    this.state = STATE_PRE_SERVE_READY;
+    this.updateServeSelectionUI();
     // 連続した speak() によるキャンセルを避け、サーブ権も一度に案内する。
-    narrator.speak(`${this.getServerName()}のサーブです。`, true);
+    narrator.speak(`${selection}プレー。${this.getServerName()}のサーブです。`, true);
+    this.updateActionButton();
+    // 主審の「プレー」宣告を10秒計測の起点にする。
+    this.stateStartTime = Date.now();
 
     if (this.isMyTurnToServe()) {
       // 操作説明はヘルプで案内し、プレイ中は短いコールだけにする。
@@ -1258,6 +1318,7 @@ export class GameEngine {
       // CPU対戦かつCPUがサーバーの場合、一定時間後にCPUが自動で「いきます」と発声
       if (this.mode === 'cpu' && this.serverRole === 2) {
         this.scheduleGameplayTask(() => {
+          this.checkTimeouts();
           if (this.state === STATE_PRE_SERVE_READY) {
             this.state = STATE_PRE_SERVE_HEARD;
             this.updateActionButton();
@@ -1274,6 +1335,12 @@ export class GameEngine {
    * STT特有の「いきます」「はい」「サーブ打球」などのシークエンスを進めます。
    */
   handleActionInput() {
+    // フレーム更新前の入力でも制限時間超過を見逃さない。
+    const serviceStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING];
+    if (serviceStates.includes(this.state)) {
+      this.checkTimeouts();
+      if (!serviceStates.includes(this.state)) return;
+    }
     // Feature #4: インターバルスキップ - STATE_POINT_WON中にアクションでインターバルをスキップ
     if (this.state === STATE_POINT_WON && this.intervalSkipCallback) {
       this.cancelGameplayTask(this.currentIntervalTimer);
@@ -1299,6 +1366,7 @@ export class GameEngine {
         } else {
           // CPU戦の場合、一定時間後にCPUが「はい」と答える
           this.scheduleGameplayTask(() => {
+            this.checkTimeouts();
             if (this.state === STATE_PRE_SERVE_HEARD) {
               this.state = STATE_SERVE_WAITING;
               this.updateActionButton();
@@ -1327,6 +1395,7 @@ export class GameEngine {
             const cpuDelay = 1200 + Math.random() * 800;
 
             this.scheduleGameplayTask(() => {
+              this.checkTimeouts();
               if (this.state === STATE_SERVE_WAITING) {
                 this.state = STATE_RALLY;
                 this.updateActionButton();
@@ -1405,11 +1474,9 @@ export class GameEngine {
     else if (this.state === STATE_SERVE_WAITING) {
       // 3. サーバーによるサーブ実行
       if (this.isMyTurnToServe()) {
-        // Feature #2: チャージ量を計算して初速に反映
-        const chargeTime = this.isCharging ? Math.min((Date.now() - this.chargeStartTime) / 1500, 1.0) : 0;
-        this.isCharging = false;
-        const chargeRatio = chargeTime;
-        let baseVy = 4.05 + (chargeRatio * 3.15); // 4.05〜7.2
+        if (this.selectedServeType == null) return;
+        // Hold duration does not affect serve speed.
+        let baseVy = 4.05;
         if (this.difficulty === 'normal') {
           baseVy *= NORMAL_SERVE_SPEED_FACTOR;
           if (Math.random() < NORMAL_FAST_SERVE_CHANCE) {
@@ -1435,6 +1502,7 @@ export class GameEngine {
           }
         }
 
+        baseVy = this.preparePlayerServe(baseVy);
         this.state = STATE_RALLY;
         this.updateActionButton();
         this.ball.active = true;
@@ -1465,13 +1533,14 @@ export class GameEngine {
           this.ball.vx = Math.random() * 1.2 - 0.6;
         }
         sounds.playHitSound(this.ball.x, this.ball.y);
-        sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y);
+        sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, false, this.selectedServeType);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
 
         if (this.mode === 'online') {
           // 相手にボールの初期軌跡を同期
           this.net.send('action', {
             actionType: 'serve',
+            serveType: this.selectedServeType,
             x: this.ball.x,
             y: this.ball.y,
             vx: this.ball.vx,
@@ -1586,7 +1655,7 @@ export class GameEngine {
       narrator.speak(scoreAnnounce, true);
     }
 
-    // スキップ方法は操作説明とサーブ・返球ボタンの説明で案内する。
+    // スキップ方法は操作説明とゲーム画面の説明で案内する。
 
     // 1ゲーム（セット）終了判定 (11点先取、デュース時は2点差)
     const p1 = this.scores.p1;
@@ -1662,6 +1731,7 @@ export class GameEngine {
    * マッチ(試合全体)の決着がついた際の終了処理。
    */
   finishMatch(matchWinner) {
+    this.setGameplayChromeHidden(false);
     narrator.stop();
     this.clearGameplayTasks();
     // ゲームループを停止（リザルト表示中に物理計算・描画が走り続けるのを防ぐ）
@@ -1721,7 +1791,7 @@ export class GameEngine {
           this.difficulty = button.dataset.resultDifficulty;
           writeSetting('stt_last_difficulty', this.difficulty);
           instrEl.classList.add('hidden');
-          instrEl.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。';
+          instrEl.innerHTML = '左右矢印キーでラケット移動。自分のサービスは「プレー」前に1～3キーまたはサーブ1～3ボタンで種類を選択。選択後はSpaceキーまたはゲーム画面のタップでアクション。';
           this.startNewMatch();
         });
       });
@@ -1729,7 +1799,7 @@ export class GameEngine {
       if (btnPlayAgain) {
         btnPlayAgain.addEventListener('click', () => {
           instrEl.classList.add('hidden');
-          instrEl.innerHTML = '左右矢印キーでラケット移動。スペースキーでアクション。'; // 元に戻す
+          instrEl.innerHTML = '左右矢印キーでラケット移動。自分のサービスは「プレー」前に1～3キーまたはサーブ1～3ボタンで種類を選択。選択後はSpaceキーまたはゲーム画面のタップでアクション。'; // 元に戻す
 
           if (this.mode === 'online') {
             // Feature #13: オンライン対戦時は相手に rematch_accept を送信
@@ -1906,19 +1976,17 @@ export class GameEngine {
     this.prepareNormalCpuShot();
     try {
       const physicsKeys = this.getBallAssistKeys();
-      // サービス前のボール吸着処理 (物理演算呼び出し前に行う)
-      if (this.state === STATE_PRE_SERVE_READY ||
+      // 待機中はラケットを動かしてもボールを動かさない（JS/WASM共通）。
+      if (this.state === STATE_SERVE_SELECT || this.state === STATE_PRE_SERVE_READY ||
           this.state === STATE_PRE_SERVE_HEARD ||
           this.state === STATE_SERVE_WAITING) {
         if (this.serverRole === 1) {
           this.p1.x = Math.max((CANVAS_WIDTH - PADDLE_WIDTH) / 2, Math.min(PADDLE_MAX_X, this.p1.x));
-          this.ball.x = this.p1.x + PADDLE_WIDTH / 2;
-          this.ball.y = Y_DEFENSE_P1 - BALL_RADIUS;
         } else {
           this.p2.x = Math.max((CANVAS_WIDTH - PADDLE_WIDTH) / 2, Math.min(PADDLE_MAX_X, this.p2.x));
-          this.ball.x = this.p2.x + PADDLE_WIDTH / 2;
-          this.ball.y = Y_DEFENSE_P2 + BALL_RADIUS;
         }
+        this.ball.vx = 0;
+        this.ball.vy = 0;
       }
 
       // Go WebAssembly版の物理演算がロードされている場合はそれを使用
@@ -2259,7 +2327,7 @@ export class GameEngine {
         const isP1Cpu = (this.mode === 'cpu' && this.role === 2);
         if (isP1Cpu) {
           const hitPaddle = this.ball.x >= this.p1.x && this.ball.x <= this.p1.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
+          const cpuReturnChance = this.ball.playerServePending ? this.ball.serveReturnChance : this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
             : this.ball.normalReturnChance;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P1;
@@ -2291,7 +2359,7 @@ export class GameEngine {
         const isP2Cpu = (this.mode === 'cpu' && this.role === 1);
         if (isP2Cpu) {
           const hitPaddle = this.ball.x >= this.p2.x && this.ball.x <= this.p2.x + PADDLE_WIDTH;
-          const cpuReturnChance = this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
+          const cpuReturnChance = this.ball.playerServePending ? this.ball.serveReturnChance : this.difficulty === 'easy' ? (this.ball.easyReturnCount < 2 ? 1 : EASY_CPU_RETURN_CHANCE)
             : this.ball.normalReturnChance;
           if (this.canCpuReturn() && hitPaddle && Math.random() < cpuReturnChance) {
             this.ball.y = Y_DEFENSE_P2;
@@ -2468,6 +2536,7 @@ export class GameEngine {
   }
 
   recordRallyReturn(player) {
+    this.ball.playerServePending = false;
     if (this.mode === 'cpu' && player === this.role) this.ball.hardCpuAttempted = false;
     if (this.mode === 'cpu' && ['normal', 'hard'].includes(this.difficulty)) {
       this.normalReturnCount = (this.normalReturnCount || 0) + 1;
@@ -2935,7 +3004,6 @@ export class GameEngine {
     this.handleMotionBound = (e) => this.handleDeviceMotion(e);
     window.addEventListener('devicemotion', this.handleMotionBound);
 
-    this.updateCanvasAriaLabel();
     console.log("DeviceMotion (body movement) control successfully initialized.");
   }
 
@@ -3048,17 +3116,6 @@ export class GameEngine {
       }
     }
     console.log("Paddle position reset to center.");
-  }
-
-  updateCanvasAriaLabel() {
-    const canvasContainer = document.getElementById('canvas-container');
-    if (!canvasContainer) return;
-
-    // Instructions belong in Help. Do not rename a focused control when
-    // device/tilt settings change, which can trigger unsolicited speech.
-    if (canvasContainer.getAttribute('aria-label') !== 'コート') {
-      canvasContainer.setAttribute('aria-label', 'コート');
-    }
   }
 
   // ==========================================================================

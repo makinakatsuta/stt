@@ -5,7 +5,8 @@ const source = fs.readFileSync('docs/js/game-engine.js', 'utf8');
 const html = fs.readFileSync('docs/index.html', 'utf8');
 const listeners = new Map();
 const documentListeners = new Map();
-const attributes = new Map([['aria-label', 'コート']]);
+const attributes = new Map();
+let now = 1000;
 let focusCount = 0, labelChanges = 0, actions = 0, speech = 0;
 const court = {
   style: {}, closest: () => null,
@@ -14,16 +15,15 @@ const court = {
   setAttribute: (name, value) => { labelChanges++; attributes.set(name, value); },
   focus: () => focusCount++
 };
-const actionButton = { id: 'btn-game-action', closest() { return this; } };
 const quitButton = { id: 'btn-quit-game', closest() { return this; } };
-const play = { contains: target => [court, actionButton, quitButton].includes(target),
+const play = { style: {}, addEventListener: (type, callback) => listeners.set(type, callback), contains: target => [court, play, quitButton].includes(target),
   classList: { contains: () => false, remove() {}, add() {} },
   querySelector() { throw Error('Must focus the court directly'); } };
 const help = { classList: { contains: () => true, add() {} } };
 const context = vm.createContext({
-  document: { getElementById: id => id === 'screen-play' ? play : court,
+  document: { getElementById: id => id === 'screen-play' ? play : id === 'btn-test-speech' ? null : court,
     addEventListener: (type, callback) => documentListeners.set(type, callback) },
-  window: { PointerEvent: function() {} }, Date, Math,
+  window: { PointerEvent: function() {} }, Date: { now: () => now }, Math,
   narrator: { speak: () => speech++ }
 });
 vm.runInContext(fs.readFileSync('docs/js/constants.js', 'utf8').replace(/export \{[^}]+\};/, ''), context);
@@ -59,14 +59,12 @@ assert.equal(actions, 1);
 const released = event(court, { code: 'Space', key: ' ' });
 documentListeners.get('keyup')(released);
 assert.equal(released.prevented, true);
-// Native action-button Space remains available without a duplicate game action.
-const buttonSpace = event(actionButton, { code: 'Space', key: ' ' });
+// Native pause controls retain their keyboard activation.
+const buttonSpace = event(quitButton, { code: 'Space', key: ' ' });
 documentListeners.get('keydown')(buttonSpace);
 assert.equal(buttonSpace.prevented, false);
 assert.equal(actions, 1);
-const buttonArrow = event(actionButton, { code: 'ArrowLeft', key: 'ArrowLeft' });
-documentListeners.get('keydown')(buttonArrow);
-assert.equal(buttonArrow.prevented, true);
+
 documentListeners.get('keydown')(event(court, { code: 'Escape', key: 'Escape' }));
 assert.equal(game.pauses, 1);
 // Pointer tap plus its compatibility click produces only one action.
@@ -77,12 +75,19 @@ listeners.get('pointerup')(event());
 assert.equal(actions, 2);
 documentListeners.get('click')(event(court, { detail: 1 }));
 assert.equal(actions, 2);
+documentListeners.get('click')(event(court, { detail: 0 }));
+assert.equal(actions, 2, 'pointer tap and AT-style compatibility click are deduplicated');
+now += 600;
 // AT double-tap generates a click without pointer events in many browsers.
 documentListeners.get('click')(event(court, { detail: 0 }));
 assert.equal(actions, 3);
 documentListeners.get('click')(event(quitButton, { detail: 0 }));
 documentListeners.get('click')(event({ closest: () => null }, { detail: 0 }));
 assert.equal(actions, 3);
+now += 600;
+documentListeners.get('click')(event(play, { detail: 1 }));
+assert.equal(actions, 4, 'ordinary click anywhere in game screen');
+actions--;
 // Movement gestures and paused-game activation remain ignored.
 listeners.get('pointerdown')(event());
 listeners.get('pointerup')(event(court, { clientX: 60 }));
@@ -91,28 +96,95 @@ game.isGameplayPaused = true;
 documentListeners.get('click')(event(court, { detail: 0 }));
 assert.equal(actions, 3);
 game.isGameplayPaused = false;
-// Space charging retains press/release behavior on the court.
+// Space serves on keydown, independent of hold duration.
 game.state = state('STATE_SERVE_WAITING');
 documentListeners.get('keydown')(event(court, { code: 'Space', key: ' ' }));
-assert.equal(game.isCharging, true);
-assert.equal(actions, 3);
+assert.equal(game.isCharging, undefined);
+assert.equal(actions, 4);
 documentListeners.get('keyup')(event(court, { code: 'Space', key: ' ' }));
 assert.equal(actions, 4);
-// Extract real methods to check fixed naming and a single initial focus.
+documentListeners.get('keydown')(event(court, { code: 'Space', key: ' ', repeat: true }));
+assert.equal(actions, 4);
+listeners.get('pointerdown')(event());
+listeners.get('pointerup')(event());
+assert.equal(actions, 5);
+assert.equal(game.isCharging, undefined);
+// No accessible court naming or forced focus; release the old menu control.
 function method(name, end) {
   const start = source.indexOf('  ' + name + '(');
   return vm.runInContext('({' + source.slice(start, source.indexOf(end, start)) + '})', context)[name];
 }
-const updateLabel = method('updateCanvasAriaLabel', '\n  // =====');
-for (const isMobile of [true, false]) {
-  for (const useTilt of [true, false]) updateLabel.call({ isMobile, useTilt });
-}
+assert.ok(!source.includes("setAttribute('aria-label', 'プレイ領域')"));
+assert.ok(!source.includes("getElementById('canvas-container').focus()"));
+assert.ok(!source.includes("getElementById('canvas-container')?.focus()"));
 assert.equal(labelChanges, 0);
 const changeScreen = method('changeScreen', '\n  openHelp(');
-changeScreen.call({ screens: { play }, updateActionButton() {} }, 'play');
-assert.equal(focusCount, 1);
+let blurCount = 0;
+context.document.body = { closest: () => null };
+context.document.activeElement = { blur() {
+  blurCount++;
+  context.document.activeElement = context.document.body;
+} };
+changeScreen.call({ screens: { play }, setGameplayChromeHidden() {}, updateActionButton() {} }, 'play');
+assert.equal(focusCount, 0);
+assert.equal(blurCount, 1);
+const afterMenu = actions;
+documentListeners.get('keydown')(event(context.document.activeElement, { code: 'Space', key: ' ' }));
+assert.equal(actions, afterMenu + 1, 'Space works after leaving a menu control');
 assert.equal(speech, 0);
+const resume = method('resumeGameplay', '\n  /**');
+court.classList = { add() {} };
+context.document.activeElement = { blur() {
+  blurCount++;
+  context.document.activeElement = context.document.body;
+} };
+resume.call({ isGameplayPaused: true, gameplayPausedAt: now - 250,
+  state: state('STATE_PRE_SERVE_READY'), stateStartTime: 100, gameStartTime: 0,
+  startLoop() {}, resumeGameplayTasks() {} });
+assert.equal(blurCount, 2, 'resume releases the old pause control');
+assert.equal(focusCount, 0, 'resume never focuses the game area');
+const afterResume = actions;
+documentListeners.get('keydown')(event(context.document.activeElement, { code: 'Space', key: ' ' }));
+assert.equal(actions, afterResume + 1, 'Space works after resuming');
 assert.equal((html.match(/role="application"/g) || []).length, 1);
 assert.ok(html.match(/id="game-canvas"[^>]*aria-hidden="true"/));
 assert.ok(!html.match(/id="sr-announcer"[^>]*aria-hidden/));
-console.log('Passed quiet gameplay input, focus, fixed court name, taps, AT clicks and preserved controls.');
+// Legacy touch fallback also accepts a tap and preserves drag detection.
+context.window.PointerEvent = undefined;
+bind('    const screenPlay =', '    // 1. オーディオ有効化ボタン');
+let before = actions;
+documentListeners.get('touchstart')(event(court, { touches: [{ clientX: 20, clientY: 20 }] }));
+documentListeners.get('touchend')(event(court, { changedTouches: [{ clientX: 20, clientY: 20 }] }));
+assert.equal(actions, before + 1);
+documentListeners.get('click')(event(court, { detail: 1 }));
+assert.equal(actions, before + 1, 'touchend plus synthetic click only acts once');
+assert.equal(game.isCharging, undefined);
+documentListeners.get('touchstart')(event(court, { touches: [{ clientX: 20, clientY: 20 }] }));
+documentListeners.get('touchend')(event(court, { changedTouches: [{ clientX: 80, clientY: 20 }] }));
+assert.equal(actions, before + 1);
+console.log('Passed quiet gameplay input without court role/name/focus, taps, AT clicks and preserved controls.');
+
+now += 600;
+const count = actions;
+for (const input of ['pointerdown', 'pointerup']) listeners.get(input)(event(quitButton));
+documentListeners.get('touchend')(event(quitButton, { changedTouches: [{ clientX: 20, clientY: 20 }] }));
+assert.equal(actions, count, 'pause control never triggers pointer/touch game input');
+game.state = state('STATE_SERVE_SELECT');
+documentListeners.get('click')(event(court, { detail: 0 }));
+listeners.get('pointerdown')(event()); listeners.get('pointerup')(event());
+assert.equal(actions, count, 'play taps do not advance serve selection');
+game.state = state('STATE_RALLY');
+documentListeners.get('touchend')(event({closest: () => null}, {changedTouches:[{clientX:20,clientY:20}]}));
+assert.equal(actions, count, 'outside game cannot trigger legacy touch');
+assert.ok(!html.includes('btn-game-action'));
+const areaTag = html.match(/<div[^>]*id="canvas-container"[^>]*>/)[0];
+assert.doesNotMatch(areaTag, /role="button"|aria-label=|tabindex="0"/);
+assert.ok(!html.includes('>サーブ・返球</button>'));
+
+now += 600;
+let previous = actions;
+documentListeners.get('click')(event(court, {detail:0}));
+assert.equal(actions, previous + 1, 'TalkBack click uses common action');
+previous = actions;
+documentListeners.get('click')(event(court, {detail:0}));
+assert.equal(actions, previous + 1, 'VoiceOver click uses same common action');

@@ -700,16 +700,14 @@ export class SoundSystem {
   }
 
   /**
-   * サーブ音 (置き換え後の実録音源を難易度別に再生)
-   *  - 初級(easy): serve1.m4a
-   *  - 中級(normal): serve2.m4a
-   *  - 応用/上級(hard): serve3.m4a
+   * プレイヤーは事前選択したserve1〜3、CPUは従来の音源分布を使用。
    * @param {number} x 打球X座標
    * @param {string|null} difficulty 難易度 ('easy' | 'normal' | 'hard') または null (完全ランダム)
    * @param {number} y 打球Y座標
    * @param {boolean} isCpuServe CPUサーブの場合は1〜3を低頻度でランダム選択する
+   * @param {number|null} selectedServeType 「プレー」前に確定した種類 (1 | 2 | 3)
    */
-  playServeSound(x, difficulty = null, y = Y_DEFENSE_P1, isCpuServe = false) {
+  playServeSound(x, difficulty = null, y = Y_DEFENSE_P1, isCpuServe = false, selectedServeType = null) {
     if (!this.ctx || this.isMuted) return;
     if (this.serveBuffers) {
       try {
@@ -722,6 +720,8 @@ export class SoundSystem {
             : roll < 0.9
               ? this.serveBuffers.normal
               : this.serveBuffers.hard;
+        } else if ([1, 2, 3].includes(selectedServeType)) {
+          buffer = this.serveBuffers[['easy', 'normal', 'hard'][selectedServeType - 1]];
         } else if (difficulty && this.serveBuffers[difficulty]) {
           // Use the replaced difficulty-specific serve recording every time:
           // Easy=serve1, Normal=serve2, Hard=serve3.

@@ -337,6 +337,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
 				}
+				if mode == "cpu" && getBoolSafe(jsBall, "playerServePending") {
+					cpuReturnChance = jsBall.Get("serveReturnChance").Float()
+				}
 				if canCpuReturn() && hitPaddle && randomFloat() < cpuReturnChance {
 					ballY = YDefenseP1
 					relativeHitPos := (ballX - (p1X + PaddleWidth/2.0)) / (PaddleWidth / 2.0)
@@ -370,6 +373,9 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 					}
 				} else if difficulty != "easy" {
 					cpuReturnChance = jsBall.Get("normalReturnChance").Float()
+				}
+				if mode == "cpu" && getBoolSafe(jsBall, "playerServePending") {
+					cpuReturnChance = jsBall.Get("serveReturnChance").Float()
 				}
 				if canCpuReturn() && hitPaddle && randomFloat() < cpuReturnChance {
 					ballY = YDefenseP2

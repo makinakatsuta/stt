@@ -16,8 +16,8 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="音を頼りに遊ぶブラウザゲーム。音声案内・スクリーンリーダーに対応。現在CPU対戦をプレイできます。">
-  <script src="js/display-settings.js?v=3.31.43"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.43">
+  <script src="js/display-settings.js?v=3.31.44"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.44">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -30,7 +30,7 @@
   <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <div class="app-container">
-    <header class="game-header">
+    <header class="game-header" id="game-header">
       <h1>SOUND TABLE TENNIS <span class="accent">STT</span></h1>
       <p class="subtitle">音で狙い、音で打ち返す。共生するバーチャルスポーツ。</p>
     </header>
@@ -108,7 +108,7 @@
             <label for="chk-use-tilt">スマホを左右に傾けてラケットを操作する（加速度センサー）</label>
           </div>
           <p class="mobile-hint-text">
-            ※スマホを画面が上になるように持ち、左側を下げると左へ、右側を下げると右へラケットが動きます。水平に戻すと止まります。画面タップ（スクリーンリーダー時はダブルタップ）でサーブや打ち返しを行います。OFFの場合は外付けのBluetoothキーボードで操作できます。
+            ※スマホを画面が上になるように持ち、左側を下げると左へ、右側を下げると右へラケットが動きます。水平に戻すと止まります。自分のサービスでは「プレー」前にサーブ1～3ボタンから種類を選択し、その後のサービス実行や返球はゲーム画面のタップで行います。スクリーンリーダーでは各ボタンを選んでダブルタップできます。OFFの場合は外付けのBluetoothキーボードで操作できます。
           </p>
         </div>
 
@@ -239,7 +239,7 @@
 
         <!-- ゲームの状態や操作指示を表示する領域 -->
         <div id="play-instructions" class="play-instructions" aria-hidden="true">
-          左右矢印キーでラケット移動。スペースキーでアクション。
+          左右矢印キーでラケット移動。自分のサービスは「プレー」前に1～3キーまたはサーブ1～3ボタンで種類を選択。選択後はSpaceキーまたはゲーム画面のタップでアクション。
         </div>
 
         <!-- ゲームプレイのレイアウトコンテナ -->
@@ -247,7 +247,7 @@
         <div class="game-play-layout">
           <div class="game-main-area">
             <!-- 3Dゲーム画面 (Canvas) -->
-            <div class="canvas-container" id="canvas-container" tabindex="0" role="group" aria-label="コート">
+            <div class="canvas-container" id="canvas-container">
               <canvas id="game-canvas" width="800" height="500" aria-hidden="true"></canvas>
             </div>
           </div>
@@ -256,13 +256,16 @@
         </div>
 
         <div class="play-controls" style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-          <button id="btn-game-action" type="button" class="btn btn-primary">サーブ・返球</button>
-          <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small hidden">ラケット位置をリセット（中央に戻す）</button>
+          <div id="serve-selection" role="group" aria-label="次のサーブを選択" hidden>
+            <button id="btn-serve-1" type="button" class="btn btn-primary" disabled>サーブ1</button>
+            <button id="btn-serve-2" type="button" class="btn btn-primary" disabled>サーブ2</button>
+            <button id="btn-serve-3" type="button" class="btn btn-primary" disabled>サーブ3</button>
+          </div>
           <button id="btn-quit-game" class="btn btn-danger btn-small">中断メニュー</button>
         </div>
         </div>
 
-        <p id="game-action-hint" class="play-instructions" aria-hidden="true">サーブ・返球ボタンで準備、返事、サーブ、返球、得点後の待ち時間のスキップができます。スクリーンリーダーではボタンを選んで実行してください。ボタンのサーブは長押し不要です。</p>
+        <p id="game-action-hint" class="play-instructions" aria-hidden="true">自分のサービスでは「プレー」前に1～3キーまたはサーブ1～3ボタンで種類を選択します。選択だけでは打ちません。選択後はゲーム画面のタップで準備、返事、サーブ、返球、得点後の待ち時間のスキップができます。長押し不要です。</p>
 
         <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
           <div class="quit-confirm-dialog">
@@ -276,6 +279,7 @@
               </select>
             </div>
             <p id="paused-speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。</p>
+            <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small">ラケット位置をリセット（中央に戻す）</button>
             <div class="quit-confirm-buttons">
               <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
               <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
@@ -300,9 +304,11 @@
           <ul>
             <li><strong>左矢印キー (←)</strong>: ラケットを左に移動</li>
             <li><strong>右矢印キー (→)</strong>: ラケットを右に移動</li>
+            <li><strong>1・2・3キー（テンキーも対応）</strong>: 自分がサーバーのとき、「プレー」前にサーブ1・2・3を事前選択。数字キーだけでは打ちません。</li>
+            <li><strong>サーブ1・サーブ2・サーブ3ボタン</strong>: 選択中だけ表示される種類選択ボタン。スマートフォンはタップで選択できます。VoiceOver・TalkBackでは「サーブ1、ボタン」等をスワイプや探索で選び、ダブルタップして確定します。NVDAでも各ボタンを操作できます。</li>
             <li><strong>スペースキー (Space)</strong>: アクションの決定 (サーブの構え、レシーブの返事「はい」、サーブ打球、ラリー中の打ち返し)</li>
             <li><strong>エスケープキー (Esc)</strong>: プレイの中断</li>
-            <li><strong>サーブ・返球ボタン</strong>: 準備、返事、サーブ、返球、得点後の待ち時間のスキップ。スクリーンリーダーでボタンを選んで実行できます。長押し不要のサーブです。</li>
+            <li><strong>ゲーム画面のタップ</strong>: 準備、返事、サーブ、返球、得点後の待ち時間のスキップ。長押し不要のサーブです。</li>
             <li><strong>読み上げ方式</strong>: 起動画面・中断メニューで内蔵音声かスクリーンリーダーを選べます。球音と打球音は共通です。</li>
           </ul>
 
@@ -311,36 +317,39 @@
 
           <h3>📜 試合のルール・流れ</h3>
           <ol>
-            <li><strong>審判の「プレー」宣告</strong>でスタートします。</li>
-            <li><strong>サーブの準備</strong>: サーバーはボールを静止させ、準備ができたらスペースキーを押して<strong>「いきます」</strong>と発声します（10秒以内）。</li>
+            <li><strong>サーブ種類の事前選択（ゲーム操作）</strong>: 自分がサーバーになるたびにサーブ1～3を選択します。選択するまで「プレー」は宣告されず、選択時間は10秒制限に含まれません。確定後はそのサービスが終了するまで種類を変更できません。CPUサービス時は選択不要です。</li>
+            <li><strong>審判の「プレー」宣告</strong>: プレイヤーサービスでは選択後、CPUサービスでは選択なしで宣告され、ここから10秒を計測します。</li>
+            <li><strong>サーブの準備</strong>: サーバーはボールを静止させ、準備ができたらスペースキーを押して<strong>「いきます」</strong>と発声します（「プレー」から10秒以内）。</li>
             <li><strong>レシーブの返事</strong>: レシーバーは<strong>「いきます」</strong>の後、スペースキーを押して<strong>「はい」</strong>と返答します（5秒以内）。</li>
             <li><strong>サーブ</strong>: レシーバーが<strong>「はい」</strong>と答えてから、サーバーは5秒以内にスペースキーでサーブを打ちます。</li>
             <li><strong>ラリー</strong>: 交互に打ち合います。ボールがパドルに近づいたタイミングでスペースキーを押して打ち返します。</li>
             <li><strong>得点判定</strong>: 打球が相手の守備コート内で「停止」するか、相手のエンドフレーム内側面に触れた後、最初に台面またはフレーム上面に当たれば「セーフ」となり、打った側のポイントになります。エンドフレームに触れずに飛び出した場合、内側面に触れず上面に直接当たって飛び出した場合、またはエンドフレーム後に台面・フレーム上面以外に当たった場合は「アウト」となり、相手のポイントになります。</li>
           </ol>
+          <p>「プレー」以降の準備・返事・実際のサービス実行・返球は、ゲーム画面のタップでも操作できます。プレイ中の操作ボタンは「中断メニュー」だけです。</p>
+          <p>CPU対戦ではサーブ1は安定寄り、2は中間、3は攻撃寄りで、1より2、2より3の方がサービスエースを狙いやすくなります。同じ種類ではEasyよりNormal、NormalよりHardの方がエースを狙いやすい設計ですが、HardでもCPUが返球する方が基本です。返球されれば通常ラリーになります。使用音源はserve1.m4a～serve3.m4aの3種類で、強いサーブ用の第4音源はありません。オンライン対戦にCPU用の確率補正は適用しません。</p>
         </div>
         <button id="btn-close-help" class="btn btn-secondary">メニューに戻る</button>
       </section>
     </main>
-    <footer class="game-footer">
-      <p>バージョン 3.31.43</p>
+    <footer class="game-footer" id="game-footer">
+      <p>バージョン 3.31.44</p>
       <p><a href="/support/">Sound Table Tennisを支援する</a><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
 
   <!-- WebAssembly とゲームのコアロジックスクリプトのインポート -->
-  <script src="wasm_exec.js?v=3.31.43"></script>
+  <script src="wasm_exec.js?v=3.31.44"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.43"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.44"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.43"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.43"></script>
+  <script type="module" src="app.js?v=3.31.44"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.44"></script>
 </body>
 </html>

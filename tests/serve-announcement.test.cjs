@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const calls = [];
 const elements = new Map();
 const document = { getElementById(id) {
-  if (!elements.has(id)) elements.set(id, { textContent: '', classList: { add() {} }, setAttribute() {}, removeAttribute() {} });
+  if (!elements.has(id)) elements.set(id, { textContent: '', classList: { add() {}, toggle() {} }, setAttribute() {}, removeAttribute() {} });
   return elements.get(id);
 } };
 const context = vm.createContext({ document, window: {}, Date, Math,
@@ -26,9 +26,19 @@ for (const [mode, role, serverRole, name] of [
   ['online', 2, 1, '対戦相手'], ['online', 2, 2, 'あなた']
 ]) {
   calls.length = 0;
-  game(mode, role, serverRole).prepareServeSequence();
+  const g = game(mode, role, serverRole);
+  g.net = { send() {} };
+  g.prepareServeSequence();
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], `${name}のサーブです。`);
+  assert.equal(calls[0][0], name === 'CPU' ? 'プレー。CPUのサーブです。' :
+    name === 'あなた' ? 'サーブを選択してください。' : '対戦相手がサーブを選択しています。');
+  if (name !== 'CPU') {
+    calls.length = 0;
+    if (g.isMyTurnToServe()) g.selectServeType(2);
+    else g.handleOpponentAction({ actionType: 'serve_selected', serveType: 2 });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], `${name === 'あなた' ? 'サーブ2。' : ''}プレー。${name}のサーブです。`);
+  }
   assert.equal(calls[0][1], true);
   assert.equal(elements.get('current-server').textContent, `現在のサーブ：${name}`);
 }
@@ -53,7 +63,6 @@ for (const [gamesWon, expected] of [[0, 2], [1, 1]]) {
 }
 console.log('Passed serve announcements, online perspectives, service rotation and game transitions.');
 // The name and node stay fixed across every state and perspective.
-const button = elements.get('btn-game-action');
 for (const mode of ['cpu', 'online']) {
   for (const role of [1, 2]) {
     for (const server of [1, 2]) {
@@ -62,9 +71,6 @@ for (const mode of ['cpu', 'online']) {
         g.state = state;
         calls.length = 0;
         g.updateActionButton();
-        assert.equal(button.textContent, 'サーブ・返球');
-        assert.equal(elements.get('btn-game-action'), button);
-        assert.equal(button.disabled, undefined);
         assert.equal(calls.length, 0);
       }
     }
@@ -72,7 +78,9 @@ for (const mode of ['cpu', 'online']) {
 }
 const html = fs.readFileSync('docs/index.html', 'utf8');
 assert.ok(!html.match(/id="current-server"[^>]*aria-live/));
-assert.ok(html.match(/id="canvas-container"[^>]*role="group"[^>]*aria-label="コート"/));
+const areaTag = html.match(/<div[^>]*id="canvas-container"[^>]*>/)[0];
+assert.doesNotMatch(areaTag, /role="button"|aria-label=|tabindex="0"/);
+assert.ok(!html.includes('>サーブ・返球</button>'));
 assert.ok(html.includes('id="btn-test-speech"'));
 assert.equal((html.match(/role="application"/g) || []).length, 1);
 assert.ok(html.match(/id="game-input-area"[^>]*role="application"/));
@@ -84,15 +92,14 @@ elements.set('btn-test-speech', { addEventListener(type, listener) {
   assert.equal(type, 'click'); click = listener;
 } });
 const start = source.indexOf("    const speechTestButton =");
-const end = source.indexOf('    if (actionButton)', start);
+const end = source.indexOf('    const rangeSpeechRate', start);
 vm.runInContext(source.slice(start, end), context);
 calls.length = 0; click();
 assert.equal(calls.length, 1);
 assert.equal(calls[0][0], '音声案内のテストです。');
 console.log('Passed speech test button without gameplay or settings side effects.');
 
-const actionTag = html.match(/<button\b[^>]*id="btn-game-action"[^>]*>/)[0];
-assert.ok(!actionTag.includes('aria-describedby'));
+assert.ok(!html.includes("btn-game-action"));
 assert.ok(html.match(/class="scoreboard"[^>]*aria-hidden="true"/));
 for (const id of ['current-server', 'referee-message', 'play-instructions', 'game-action-hint']) {
   const tag = html.match(new RegExp('<[^>]*id="' + id + '"[^>]*>'))[0];
@@ -113,6 +120,7 @@ const handshake = game('cpu', 1, 1);
 let reply;
 handshake.scheduleGameplayTask = fn => { reply = fn; };
 handshake.prepareServeSequence();
+handshake.selectServeType(1);
 calls.length = 0;
 handshake.handleActionInput();
 reply();
@@ -132,13 +140,21 @@ for (const id of ['btn-play-again', 'btn-quit-to-menu']) {
 }
 const finished = game('cpu', 1, 1);
 finished.stopLoop = () => {};
+const chromeAttributes = new Map();
+elements.set('game-footer', {
+  setAttribute: (name, value) => chromeAttributes.set(name, value),
+  removeAttribute: name => chromeAttributes.delete(name)
+});
 finished.prepareServeSequence();
+assert.equal(chromeAttributes.has('inert'), true);
 assert.equal(instructionAttributes.get('aria-hidden'), 'true');
 calls.length = 0;
 finished.finishMatch(1);
+assert.equal(chromeAttributes.has('inert'), false);
 assert.equal(calls.length, 1);
 assert.equal(calls[0][0], 'マッチ終了！ 勝者は、プレイヤー です！おめでとうございます！');
 assert.equal(instructionAttributes.has('aria-hidden'), false);
 finished.prepareServeSequence();
+assert.equal(chromeAttributes.has('inert'), true);
 assert.equal(instructionAttributes.get('aria-hidden'), 'true');
 console.log('Passed match-end announcement and result/rematch accessibility.');

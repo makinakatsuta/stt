@@ -1293,6 +1293,4 @@ html[data-contrast]:not([data-contrast="default"]) .btn {
 html[data-contrast]:not([data-contrast="default"]) .btn-subtext { opacity: 1; }
 html[data-contrast]:not([data-contrast="default"]) a { text-decoration: underline; }
 html[data-contrast]:not([data-contrast="default"]) :is(.fade-in, .pulse-text) { animation: none; }
-html[data-contrast="white-on-black"] #game-canvas,
-html[data-contrast="yellow-on-black"] #game-canvas { filter: grayscale(1) contrast(3); }
-html[data-contrast="black-on-white"] #game-canvas { filter: grayscale(1) contrast(3) invert(1); }
+/* Canvas draws the selected palette directly; do not recolour or invert it. */

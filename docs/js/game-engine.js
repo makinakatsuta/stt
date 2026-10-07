@@ -1,8 +1,8 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.42';
-import { sounds } from './sound-system.js?v=3.31.42';
-import { narrator } from './speech-system.js?v=3.31.42';
-import { NetworkSystem } from './network-system.js?v=3.31.42';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.42';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.45';
+import { sounds } from './sound-system.js?v=3.31.45';
+import { narrator } from './speech-system.js?v=3.31.45';
+import { NetworkSystem } from './network-system.js?v=3.31.45';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.45';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -143,6 +143,8 @@ export class GameEngine {
 
     // 描画演出用のエフェクト配列 (波紋など)
     this.ripples = [];
+    // Rendering history only; never used by physics, CPU, audio or narration.
+    this.ballTrail = [];
 
     // ネットワーク初期化
     this.net = new NetworkSystem((msg) => this.handleNetworkMessage(msg));
@@ -1268,6 +1270,7 @@ export class GameEngine {
     this.state = this.isMyTurnToServe() || this.mode === 'online' ? STATE_SERVE_SELECT : STATE_PRE_SERVE_READY;
     this.updateActionButton();
     this.ball.active = false;
+    this.ballTrail = [];
     this.pendingSwingUntil = 0;
     this.rallyReturnCount = 0;
 
@@ -2666,280 +2669,111 @@ export class GameEngine {
    */
   draw() {
     const ctx = this.ctx;
-
-    // 矢印の頭を描画するヘルパー関数
-    const drawArrowhead = (x, y, angle) => {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-3, -6);
-      ctx.lineTo(3, -6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+    // Display preferences affect rendering only, in every difficulty.
+    const contrast = document.documentElement?.dataset.contrast || 'default';
+    const palettes = {
+      default: { background: '#05070a', table: '#164854', line: '#ffffff',
+        mesh: '#9bbac2', ball: '#ffffff', outline: '#05070a', p1: '#00f0ff', p2: '#ff9bc9' },
+      'white-on-black': { background: '#000000', table: '#000000', line: '#ffffff',
+        mesh: '#a0a0a0', ball: '#ffffff', outline: '#000000', p1: '#ffffff', p2: '#ffffff' },
+      'black-on-white': { background: '#ffffff', table: '#ffffff', line: '#000000',
+        mesh: '#606060', ball: '#000000', outline: '#ffffff', p1: '#000000', p2: '#000000' },
+      'yellow-on-black': { background: '#000000', table: '#000000', line: '#ffff00',
+        mesh: '#a0a000', ball: '#ffff00', outline: '#000000', p1: '#ffff00', p2: '#ffff00' }
     };
-
-    // 1. 背景のクリア (濃いグレー・漆黒)
-    ctx.fillStyle = '#05070a';
+    const palette = palettes[contrast] || palettes.default;
+    ctx.save();
+    ctx.fillStyle = palette.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    // 2. テーブル（コート）の描画
-    // 外枠フレーム
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5, 5, CANVAS_WIDTH - 10, CANVAS_HEIGHT - 10);
-
-    // 内枠コート (黒色)
-    ctx.fillStyle = '#0a0d14';
+    ctx.fillStyle = palette.table;
     ctx.fillRect(10, 10, CANVAS_WIDTH - 20, CANVAS_HEIGHT - 20);
-
-    // 3. コート内ラインの描画
+    ctx.strokeStyle = palette.line;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(10, 10, CANVAS_WIDTH - 20, CANVAS_HEIGHT - 20);
+    // Familiar table centre line; no guidance about where to return a shot.
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-
-    // 守備ライン (自分側・相手側)
-    ctx.beginPath();
-    ctx.moveTo(10, Y_DEFENSE_P1);
-    ctx.lineTo(CANVAS_WIDTH - 10, Y_DEFENSE_P1);
-    ctx.moveTo(10, Y_DEFENSE_P2);
-    ctx.lineTo(CANVAS_WIDTH - 10, Y_DEFENSE_P2);
-    ctx.stroke();
-
-    // センターライン (守備エリアのみ)
     ctx.beginPath();
     ctx.moveTo(CANVAS_WIDTH / 2, 10);
-    ctx.lineTo(CANVAS_WIDTH / 2, Y_DEFENSE_P2);
-    ctx.moveTo(CANVAS_WIDTH / 2, Y_DEFENSE_P1);
     ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10);
     ctx.stroke();
 
-    // ネットの描画 (中央の一本の白いラインと影)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(5, Y_NET);
-    ctx.lineTo(CANVAS_WIDTH - 5, Y_NET);
-    ctx.stroke();
-
-    // ネットの影 (立体感の演出)
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.fillRect(10, Y_NET + 2, CANVAS_WIDTH - 20, 4);
-
-    // ==========================================================================
-    // 見える人向けの寸法ガイド描画 (ネオン半透明)
-    // ==========================================================================
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.2)';
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.5)';
-    ctx.font = '10px "Outfit", "Noto Sans JP", sans-serif';
+    // Keep the existing mesh and posts centred on the unchanged Y_NET.
+    const meshTop = Y_NET - 10;
+    const meshBottom = Y_NET + 10;
+    ctx.fillStyle = palette.background;
+    ctx.fillRect(10, meshTop, CANVAS_WIDTH - 20, meshBottom - meshTop);
+    ctx.strokeStyle = palette.mesh;
     ctx.lineWidth = 1;
-
-    // 1. 全長 274cm (左端の寸法線)
     ctx.beginPath();
-    ctx.moveTo(15, 10);
-    ctx.lineTo(32, 10);
-    ctx.moveTo(15, CANVAS_HEIGHT - 10);
-    ctx.lineTo(32, CANVAS_HEIGHT - 10);
+    for (let x = 10; x <= CANVAS_WIDTH - 10; x += 8) {
+      ctx.moveTo(x, meshTop);
+      ctx.lineTo(x, meshBottom);
+    }
+    for (let y = meshTop; y <= meshBottom; y += 5) {
+      ctx.moveTo(10, y);
+      ctx.lineTo(CANVAS_WIDTH - 10, y);
+    }
     ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(24, 15);
-    ctx.lineTo(24, CANVAS_HEIGHT - 15);
-    ctx.stroke();
-    drawArrowhead(24, 15, -Math.PI / 2);
-    drawArrowhead(24, CANVAS_HEIGHT - 15, Math.PI / 2);
-
-    ctx.save();
-    ctx.translate(19, CANVAS_HEIGHT / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center';
-    ctx.fillText('全長 274 cm', 0, 0);
-    ctx.restore();
-
-    // 2. 幅 152.5cm (下端の寸法線)
-    ctx.beginPath();
-    ctx.moveTo(10, CANVAS_HEIGHT - 15);
-    ctx.lineTo(10, CANVAS_HEIGHT - 32);
-    ctx.moveTo(CANVAS_WIDTH - 10, CANVAS_HEIGHT - 15);
-    ctx.lineTo(CANVAS_WIDTH - 10, CANVAS_HEIGHT - 32);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(15, CANVAS_HEIGHT - 24);
-    ctx.lineTo(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 24);
-    ctx.stroke();
-    drawArrowhead(15, CANVAS_HEIGHT - 24, Math.PI);
-    drawArrowhead(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 24, 0);
-
-    ctx.textAlign = 'center';
-    ctx.fillText('幅 152.5 cm', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 28);
-
-    // 3. サイドフレーム 60cm (右端・手前側の寸法線)
-    ctx.strokeStyle = 'rgba(255, 0, 127, 0.2)';
-    ctx.fillStyle = 'rgba(255, 0, 127, 0.5)';
-    ctx.beginPath();
-    ctx.moveTo(CANVAS_WIDTH - 15, Y_DEFENSE_P1);
-    ctx.lineTo(CANVAS_WIDTH - 32, Y_DEFENSE_P1);
-    ctx.moveTo(CANVAS_WIDTH - 15, CANVAS_HEIGHT - 10);
-    ctx.lineTo(CANVAS_WIDTH - 32, CANVAS_HEIGHT - 10);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(CANVAS_WIDTH - 24, Y_DEFENSE_P1 + 5);
-    ctx.lineTo(CANVAS_WIDTH - 24, CANVAS_HEIGHT - 15);
-    ctx.stroke();
-    drawArrowhead(CANVAS_WIDTH - 24, Y_DEFENSE_P1 + 5, -Math.PI / 2);
-    drawArrowhead(CANVAS_WIDTH - 24, CANVAS_HEIGHT - 15, Math.PI / 2);
-
-    ctx.save();
-    ctx.translate(CANVAS_WIDTH - 19, Y_DEFENSE_P1 + 45);
-    ctx.rotate(Math.PI / 2);
-    ctx.textAlign = 'center';
-    ctx.fillText('フレーム 60 cm', 0, 0);
-    ctx.restore();
-
-    // 4. ネット断面規格図 (右側空きスペース Y=140〜225, X=635〜760)
-    // プレイに支障がない隅っこに配置
-    const viewX = CANVAS_WIDTH - 155;
-    const viewY = 140;
-    const viewW = 125;
-    const viewH = 85;
-
-    // 背景・外枠
-    ctx.fillStyle = 'rgba(10, 13, 20, 0.85)';
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
-    ctx.lineWidth = 1;
-    ctx.fillRect(viewX, viewY, viewW, viewH);
-    ctx.strokeRect(viewX, viewY, viewW, viewH);
-
-    // 図解タイトル
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = 'bold 8.5px "Outfit", "Noto Sans JP", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ネット断面 (側観)', viewX + viewW / 2, viewY + 12);
-
-    // テーブル面 (横線)
-    const tblY = viewY + 65;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.beginPath();
-    ctx.moveTo(viewX + 8, tblY);
-    ctx.lineTo(viewX + viewW - 8, tblY);
-    ctx.stroke();
-
-    // ネットの支柱と布ネット
-    const netGap = 13;   // スケール換算の隙間
-    const netH = 32;     // ネットの高さ
-    const netTopY = tblY - netGap - netH;
-    const netBottomY = tblY - netGap;
-    const netX = viewX + viewW / 2;
-
-    // ネット (半透明の青)
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
-    ctx.fillRect(netX - 2.5, netTopY, 5, netH);
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
-    ctx.strokeRect(netX - 2.5, netTopY, 5, netH);
-
-    // ネット支柱
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.fillRect(netX - 0.8, netTopY - 3, 1.6, netH + netGap + 3);
-
-    // ボールが隙間を通過する点線軌跡
-    ctx.strokeStyle = 'rgba(57, 255, 20, 0.4)';
-    ctx.setLineDash([2, 1.5]);
-    ctx.beginPath();
-    ctx.moveTo(viewX + 15, tblY - 6);
-    ctx.lineTo(viewX + viewW - 15, tblY - 6);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // ボール (ネオングリーン) × 2個 (通過中と停止位置を示す)
-    ctx.fillStyle = '#39ff14';
-    ctx.beginPath();
-    ctx.arc(netX - 20, tblY - 6, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(netX, tblY - 6, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 寸法引出線 (オレンジ/黄)
-    ctx.strokeStyle = 'rgba(255, 170, 0, 0.6)';
-    ctx.fillStyle = 'rgba(255, 170, 0, 0.85)';
-    ctx.font = '7.5px "Outfit", "Noto Sans JP", sans-serif';
-
-    // ネット下の隙間 4.2cm
-    ctx.beginPath();
-    ctx.moveTo(netX + 12, tblY);
-    ctx.lineTo(netX + 12, netBottomY);
-    ctx.stroke();
-    drawArrowhead(netX + 12, tblY, Math.PI / 2);
-    drawArrowhead(netX + 12, netBottomY, -Math.PI / 2);
-
-    ctx.textAlign = 'left';
-    ctx.fillText('隙間 4.2cm', netX + 18, tblY - 3);
-
-    // ネットの高さ 15.25cm
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.5)';
-    ctx.fillStyle = 'rgba(0, 240, 255, 0.85)';
-    ctx.beginPath();
-    ctx.moveTo(netX - 12, tblY);
-    ctx.lineTo(netX - 12, netTopY);
-    ctx.stroke();
-    drawArrowhead(netX - 12, tblY, Math.PI / 2);
-    drawArrowhead(netX - 12, netTopY, -Math.PI / 2);
-
-    ctx.textAlign = 'right';
-    ctx.fillText('高 15.25cm', netX - 18, netTopY + 12);
-
-    ctx.restore(); // 寸法ガイド描画のスタイルの復元
-
-    // 4. 音の波紋エフェクトの描画・更新
+    // Solid tapes and posts remain visible without resolving the fine mesh.
+    ctx.strokeStyle = palette.line;
     ctx.lineWidth = 3;
-    for (let i = this.ripples.length - 1; i >= 0; i--) {
-      const r = this.ripples[i];
-      r.radius += r.speed;
-      r.alpha = 1.0 - (r.radius / r.maxRadius);
-
-      if (r.alpha <= 0) {
-        this.ripples.splice(i, 1);
-        continue;
-      }
-
-      ctx.strokeStyle = r.color.replace(')', `, ${r.alpha})`).replace('rgb', 'rgba');
-      ctx.beginPath();
-      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
-      ctx.stroke();
+    ctx.strokeRect(10, meshTop, CANVAS_WIDTH - 20, meshBottom - meshTop);
+    ctx.fillStyle = palette.line;
+    for (const x of [10, CANVAS_WIDTH - 10]) {
+      ctx.fillRect(x - 3, meshTop - 5, 6, meshBottom - meshTop + 10);
+      ctx.fillRect(x - 6, meshBottom + 3, 12, 4);
     }
 
-    // 5. ラケット (パドル) の描画
-    // 自分 (Player 1) - シアンネオン調
-    ctx.fillStyle = '#00f0ff';
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#00f0ff';
-    ctx.fillRect(this.p1.x, Y_DEFENSE_P1 + 5, PADDLE_WIDTH, PADDLE_HEIGHT);
 
-    // 相手 (Player 2) - マゼンタネオン調
-    ctx.fillStyle = '#ff007f';
-    ctx.shadowColor = '#ff007f';
-    ctx.fillRect(this.p2.x, Y_DEFENSE_P2 - 20, PADDLE_WIDTH, PADDLE_HEIGHT);
+    // Numbered, outlined paddles: identification never depends on colour.
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const [player, y, color, label] of [
+      [this.p1, Y_DEFENSE_P1 + 5, palette.p1, '1'],
+      [this.p2, Y_DEFENSE_P2 - 20, palette.p2, '2']
+    ]) {
+      ctx.fillStyle = color;
+      ctx.fillRect(player.x, y, PADDLE_WIDTH, PADDLE_HEIGHT);
+      ctx.strokeStyle = palette.outline;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(player.x, y, PADDLE_WIDTH, PADDLE_HEIGHT);
+      ctx.strokeStyle = palette.line;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(player.x, y, PADDLE_WIDTH, PADDLE_HEIGHT);
+      ctx.fillStyle = palette.outline;
+      ctx.fillText(label, player.x + PADDLE_WIDTH / 2, y + PADDLE_HEIGHT / 2);
+    }
 
-    // シャドウリセット
-    ctx.shadowBlur = 0;
-
-    // 6. ボールの描画 (アクティブ時のみ)
     if (this.ball.active) {
-      // 軌跡 (少し余韻を引くように発光)
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = '#39ff14';
-      ctx.fillStyle = '#39ff14'; // ネオングリーン
-
+      // Only recorded past positions, at most four ghosts; no prediction.
+      const trail = this.ballTrail || (this.ballTrail = []);
+      const last = trail[trail.length - 1];
+      if (!last || last.x !== this.ball.x || last.y !== this.ball.y) {
+        trail.push({ x: this.ball.x, y: this.ball.y });
+        if (trail.length > 5) trail.shift();
+      }
+      ctx.save();
+      ctx.fillStyle = palette.ball;
+      for (let i = 0; i < trail.length - 1; i++) {
+        ctx.globalAlpha = 0.08 + 0.10 * i;
+        ctx.beginPath();
+        ctx.arc(trail[i].x, trail[i].y, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      // A dark/light outer ring keeps the ball distinct even over white lines.
+      ctx.fillStyle = palette.ball;
+      ctx.strokeStyle = palette.outline;
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(this.ball.x, this.ball.y, BALL_RADIUS, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.shadowBlur = 0; // シャドウリセット
+      ctx.stroke();
+    } else {
+      this.ballTrail = [];
     }
+    ctx.restore();
   }
 
   // ==========================================================================

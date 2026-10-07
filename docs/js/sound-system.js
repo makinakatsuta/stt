@@ -1,4 +1,4 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js?v=3.31.42';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, Y_NET, Y_DEFENSE_P1 } from './constants.js?v=3.31.45';
 
 // The recorded racket hit was perceived at less than half the required
 // loudness on the target speakers. Compensate at playback for both players.

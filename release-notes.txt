@@ -1,6 +1,39 @@
 サウンドテーブルテニス (STT) オンライン リリースノート
 
 =========================================
+バージョン 3.31.45 (2026年10月8日リリース)
+-----------------------------------------
+【変更内容】
+【視覚UI】
+・晴眼者・ロービジョン者・全盲者が同じSTTを、それぞれ利用できる情報で楽しめることを目標に、3難易度共通のゲーム画面を整理しました。
+・プレイ中の全長・幅・フレーム寸法、ネット断面図・高さ・隙間等の技術説明をCanvasから削除しました。
+・卓球台の境界、中央のメッシュネット・上下端・支柱、ボールの輪郭を強化。ラケットは輪郭と「1」「2」の表示で、色以外でも識別できるようにしました。
+・既存の標準・白黒・白黒反転・黄黒設定をCanvas描画に反映。直接描画する配色を再変換してしまう旧CSSフィルターを除去しました。
+・ボールの残像は描画した過去位置のみ最大4個。未来軌道・着地点・正解のラケット位置等を表示する変更は行っていません。
+
+【ゲームバランス・アクセシビリティ】
+・既存のEasy / Normal / HardとEasy ＜ Normal ＜ Hardの関係を維持。CPU判断・返球確率・配球、球速・物理・当たり判定、得点・サーブ順・操作・ゲーム進行は今回変更していません。
+・3難易度すべてで共通の視覚UIとアクセシビリティ設計を使用。Canvasのaria-hidden="true"を維持し、視覚装飾を読み上げ・フォーカス対象に追加していません。既存の音響定位、必要な音声案内、キーボード・タップ入力、中断操作を維持しています。
+・実機スクリーンリーダー・音響定位、晴眼者・ロービジョン利用者による今回の版のプレイ確認は未実施。ブラウザ操作環境を利用できず、実画面の見た目も未確認です。自動テストの成功を実機確認済みとは扱いません。
+
+【テスト】
+・Easy / Hardには既存の動作・難易度差テストがありましたが、同等の固定balance fixtureがなかったため、視覚UI変更前の実装からeasy-balance.json / hard-balance.jsonを新規取得。両側・ラリー回数・球位置・CPU接触結果・返球速度・難易度定数を固定し、balance-snapshots.test.cjsで検証します。既存Normal fixture・期待値は変更していません。
+・canvas-rendering.test.cjsを追加。3難易度×4配色、台・ネット・支柱・ボール・番号付きラケット、短い過去位置の残像、予測情報を描かないこと、描画による物理状態の不変性、Canvasの読み上げ・フォーカス除外と難易度ボタンのマークアップを検証します。旧CSSフィルターの再適用も防止します。
+・UI実装後にnode --test tests/*.test.cjsを省略オプションなしで実行し、全11ファイル成功（失敗・スキップ0）。JS/WASMそれぞれ各難易度200試合、熟練Hard200試合、計180,000回のサーブ、得点・サービス進行・入力・中断・音声案内・設定等の既存回帰テストを通過しました。
+・通常の仮想プレイヤーの勝利数／得点はJS/WASMともEasy 200勝／2200点、Normal 171勝／2136点、Hard 6勝／958点。熟練Hardは94勝／1799点でした。自動テスト条件での結果であり、実プレイヤーの成績を保証するものではありません。
+・Easy / Hard初期基準値の取得にはnode tests/balance-snapshots.test.cjs --capture-baselineを使用。既存fixtureを上書きしない方式です。node tests/difficulty.test.cjs --contracts-onlyも成功し、Normal固定値・snapshotとJS/WASM整合性を確認しました。
+・版番号更新・旧CSSフィルター除去後は、node --test tests/balance-snapshots.test.cjs tests/canvas-rendering.test.cjs tests/game-input-accessibility.test.cjs tests/gameplay-ui.test.cjs tests/motion-control.test.cjs tests/serve-announcement.test.cjs tests/service-rules.test.cjs tests/speech-system.test.cjs tests/visitor-counter.test.cjsを実行し、9ファイルすべて成功。node tests/difficulty.test.cjs --contracts-only、node tests/serve-selection.test.cjs --selection-onlyも再実行して成功しました。長時間の200試合・18万サービス部分は、この追加修正後には再実行していません。
+・node --check docs/js/game-engine.js、docs/app.js、docs/js/sound-system.js、docs/js/speech-system.jsは成功。go test ./...も成功（テストファイルなし）。git diff --checkは成功しました。今回はゲーム数値・Normal fixture・WASMソースと既存WASMを変更していません。
+・紹介文・検索／共有用説明の最終更新後にnode --test tests/balance-snapshots.test.cjs tests/canvas-rendering.test.cjs tests/game-input-accessibility.test.cjs tests/gameplay-ui.test.cjs tests/serve-announcement.test.cjs tests/visitor-counter.test.cjsを実行し、全6ファイル成功。最終HTMLを含めてWindows版を再ビルドし、STT v3.31.45を再確認。GitのHEADと比較して過去のrelease-notes・ToDo本文、Normal fixture、WASMソース・バイナリ、物理定数の保持とモジュール読み込みURLの整合性も確認しました。
+
+【ドキュメント・公開準備】
+・READMEを現在の遊び方、共通の視覚・音響情報、見やすさ設定、PC・スマートフォン・スクリーンリーダー操作、3難易度の回帰テストに合わせて更新。ToDoには完了項目と未実施の実機・利用者確認を分けて記録しました。
+・起動画面の紹介文と検索・共有用の説明も、ボールの動きや音を使う現在の設計に合わせました。
+・既存のリリースごとの更新方式に従い、サーバー・画面・モジュールの読み込みURLを3.31.45へ統一しました。visitor-counterの既存テストも読み込みURLの版番号のみ更新。Git tag・GitHub Release・push・公開サイトの更新は今回行っていません。
+・main_wasm.goは未変更のためWASM再生成は不要。過去の.release-artifactsは変更せず、stt.exeは従来どおりGit管理対象外です。
+・GOOS=windows、GOARCH=amd64でgo build -trimpath -o stt.exe main_server.goを実行して成功。最新の埋め込みWebアセットを含むWindows x64版を再ビルドし、.\stt.exe --versionでSTT v3.31.45を確認しました。
+
+=========================================
 バージョン 3.31.44 (2026年10月7日リリース)
 -----------------------------------------
 【変更内容】

@@ -51,6 +51,30 @@ async function inspect(page, label) {
   assert.deepEqual(problems, [], label + ': ' + problems.join(', '));
 }
 async function inspectWelcome(page, label) {
+  assert.deepEqual(await page.locator('#screen-welcome h2, #screen-welcome h3, #screen-welcome h4').evaluateAll(nodes => nodes.map(el => [el.tagName, el.textContent.trim()])), [
+    ['H2', 'ようこそ、サウンドテーブルテニスへ'], ['H3', 'CPU対戦の難易度'],
+    ['H3', '画面の見やすさ'], ['H4', '配色・コントラスト'], ['H4', '文字の大きさ'],
+    ['H3', '音声案内'], ['H4', '読み上げ方式'], ['H4', '内蔵音声の速さ'],
+    ['H3', 'スマートフォンでのラケット操作'],
+  ], label + ': heading hierarchy');
+  assert.equal(await page.getByRole('slider', { name: '内蔵音声の速さ', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('checkbox', { name: 'スマホを傾けてラケットを左右に動かす', exact: true }).count(), 1);
+  assert.deepEqual(await page.evaluate(() => {
+    const errors = [], ids = new Set();
+    for (const el of document.querySelectorAll('[id]')) {
+      if (ids.has(el.id)) errors.push('duplicate ' + el.id);
+      ids.add(el.id);
+    }
+    for (const el of document.querySelectorAll('#screen-welcome [aria-describedby]')) {
+      for (const id of el.getAttribute('aria-describedby').split(/\s+/)) if (!ids.has(id)) errors.push('missing ' + id);
+    }
+    for (const el of document.querySelectorAll('#screen-welcome h3, #screen-welcome h4')) {
+      if (!el.getClientRects().length) continue;
+      const r = el.getBoundingClientRect();
+      if (r.left < 0 || r.right > innerWidth + 2 || el.scrollWidth > el.clientWidth + 2) errors.push('heading overflow ' + el.textContent);
+    }
+    return errors;
+  }), [], label + ': heading reflow and IDs');
   const metrics = await page.evaluate(() => {
     const title = document.getElementById('welcome-title');
     const prose = document.querySelector('#screen-welcome > .description');

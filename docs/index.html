@@ -10,14 +10,14 @@
   <meta property="og:type" content="website">
   <meta property="og:locale" content="ja_JP">
   <meta property="og:title" content="サウンドテーブルテニス（STT）">
-  <meta property="og:description" content="ボールの動きや音を使って遊ぶ卓球ゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、CPU対戦はEasy・Normal・Hardから選べます。">
+  <meta property="og:description" content="ボールの動きや音から位置を判断してラケットを操作する、ブラウザ対応のサウンドテーブルテニスゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、晴眼者・ロービジョン者・全盲者が利用できる情報で遊ぶ設計です。CPU対戦はEasy・Normal・Hardの3難易度です。">
   <meta property="og:url" content="https://soundtabletennis.com/">
   <!-- TODO: 品質を確認したPNG/JPEGのOGP画像を用意し、og:imageとtwitter:imageを追加する。 -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="ボールの動きや音を使って遊ぶ卓球ゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、CPU対戦はEasy・Normal・Hardから選べます。">
-  <script src="js/display-settings.js?v=3.31.46"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.46">
+  <script src="js/display-settings.js?v=3.31.48"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.48">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -54,10 +54,12 @@
           <p><strong>ハード：</strong>CPUが速球と遅球を打ち分け。素早い移動と返球のタイミングが勝負です。</p>
           <p class="description">どの難易度も、自分で移動・返球を操作します。</p>
         </section>
+        <h3 class="settings-heading">画面の見やすさ</h3>
         <fieldset class="display-settings-panel">
-          <legend>画面の見やすさ</legend>
+          <legend class="sr-only">画面の見やすさ</legend>
           <div class="display-setting">
-            <label for="select-contrast">配色・コントラスト</label>
+            <h4>配色・コントラスト</h4>
+            <label class="sr-only" for="select-contrast">配色・コントラスト</label>
             <div class="select-control">
               <select id="select-contrast" aria-describedby="display-settings-hint">
                 <option value="default">標準（ダークカラー）</option>
@@ -72,7 +74,8 @@
             </div>
           </div>
           <div class="display-setting">
-            <label for="select-text-size">文字の大きさ</label>
+            <h4>文字の大きさ</h4>
+            <label class="sr-only" for="select-text-size">文字の大きさ</label>
             <div class="select-control">
               <select id="select-text-size" aria-describedby="display-settings-hint">
                 <option value="standard">標準（100%）</option>
@@ -88,10 +91,12 @@
           </div>
           <p id="display-settings-hint">選ぶとすぐに反映され、次回も同じ設定で開きます。文字の大きさはメニュー・得点・案内に適用されます。</p>
         </fieldset>
+        <h3 class="settings-heading">音声案内</h3>
         <fieldset class="display-settings-panel">
-          <legend>音声案内</legend>
+          <legend class="sr-only">音声案内</legend>
           <div class="display-setting">
-            <label for="select-speech-mode">読み上げ方式</label>
+            <h4>読み上げ方式</h4>
+            <label class="sr-only" for="select-speech-mode">読み上げ方式</label>
             <div class="select-control">
               <select id="select-speech-mode" aria-describedby="speech-mode-hint">
                 <option value="builtin">ゲームの内蔵音声</option>
@@ -104,14 +109,16 @@
           </div>
           <p id="speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。案内は選んだ方式だけで読み上げます。球音や打球音はどちらでも鳴ります。中断メニューでも変更できます。</p>
           <button id="btn-test-speech" type="button" class="btn btn-secondary">読み上げをテスト</button>
+          <!-- 音声読み上げ速度設定 -->
+          <div class="speech-rate-panel">
+            <h4>内蔵音声の速さ</h4>
+            <label class="sr-only" for="range-speech-rate">内蔵音声の速さ</label>
+            <p id="speech-rate-value">現在の倍率: <span id="lbl-speech-rate-val">1.2</span>倍</p>
+            <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
+              aria-describedby="speech-rate-value speech-rate-hint">
+            <p id="speech-rate-hint" class="mobile-hint-text">「1.0」が標準速度です。2.0倍が最大速度、0.5倍が最小速度です。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
+          </div>
         </fieldset>
-        <!-- 音声読み上げ速度設定 -->
-        <div class="speech-rate-panel">
-          <label for="range-speech-rate">内蔵音声の速さ: <span id="lbl-speech-rate-val">1.2</span>倍</label>
-          <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
-            aria-label="音声読み上げの速さを調整します。2.0倍が最大速度、0.5倍が最小速度です。">
-          <p class="mobile-hint-text">「1.0」が標準速度です。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
-        </div>
         <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
           <span class="btn-text">ゲームを開始する</span>
           <span class="btn-subtext">音声・ゲーム音を有効にします</span>
@@ -120,12 +127,14 @@
 
         <!-- モバイル向け設定パネル (JavaScriptでタッチ端末検出時に表示) -->
         <div id="mobile-settings-panel" class="mobile-settings-panel hidden">
+          <h3>スマートフォンでのラケット操作</h3>
           <div class="checkbox-container">
-            <input type="checkbox" id="chk-use-tilt" checked>
-            <label for="chk-use-tilt">スマホを左右に傾けてラケットを操作する（加速度センサー）</label>
+            <input type="checkbox" id="chk-use-tilt" aria-describedby="tilt-operation-hint" checked>
+            <label for="chk-use-tilt">スマホを傾けてラケットを左右に動かす</label>
           </div>
+          <p id="tilt-operation-hint" class="mobile-hint-text">スマホの画面を上に向けて、水平に持ちます。左側を下げるとラケットが左へ、右側を下げると右へ動きます。水平に戻すとラケットが止まります。</p>
           <p class="mobile-hint-text">
-            ※スマホを画面が上になるように持ち、左側を下げると左へ、右側を下げると右へラケットが動きます。水平に戻すと止まります。自分のサービスでは「プレー」前にサーブ1～3ボタンから種類を選択し、その後のサービス実行や返球はゲーム画面のタップで行います。スクリーンリーダーでは各ボタンを選んでダブルタップできます。OFFの場合は外付けのBluetoothキーボードで操作できます。
+            傾き操作をオフにすると、外付けBluetoothキーボードで操作できます。自分のサービスでは「プレー」の前にサーブ1～3ボタンから種類を選び、その後のサービスや返球はゲーム画面をタップして行います。VoiceOver・TalkBackではサーブボタンを選び、ダブルタップして確定できます。
           </p>
         </div>
 
@@ -355,24 +364,24 @@
       </section>
     </main>
     <footer class="game-footer" id="game-footer">
-      <p>バージョン 3.31.46</p>
+      <p>バージョン 3.31.48</p>
       <p><a href="/support/">Sound Table Tennisを支援する</a><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
 
   <!-- WebAssembly とゲームのコアロジックスクリプトのインポート -->
-  <script src="wasm_exec.js?v=3.31.46"></script>
+  <script src="wasm_exec.js?v=3.31.48"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.46"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.48"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.46"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.46"></script>
+  <script type="module" src="app.js?v=3.31.48"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.48"></script>
 </body>
 </html>

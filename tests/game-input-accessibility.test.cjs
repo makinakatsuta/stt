@@ -37,6 +37,7 @@ function bind(start, end) {
   vm.runInContext('(function(){' + fragment + '\n})', context).call(game);
 }
 bind('    const screenPlay =', '    // 1. オーディオ有効化ボタン');
+assert.equal(play.style.touchAction, 'pan-y pinch-zoom', 'allow scrolling and pinch zoom in long game screens');
 bind("    document.addEventListener('keydown'", '    // ウィンドウ切り替え');
 function event(target = court, props = {}) {
   return { target, isPrimary: true, pointerId: 1, clientX: 20, clientY: 20,
@@ -89,6 +90,12 @@ documentListeners.get('click')(event(play, { detail: 1 }));
 assert.equal(actions, 4, 'ordinary click anywhere in game screen');
 actions--;
 // Movement gestures and paused-game activation remain ignored.
+const beforeScroll = actions;
+listeners.get('pointerdown')(event());
+listeners.get('pointercancel')(event());
+listeners.get('pointerup')(event());
+documentListeners.get('click')(event(court, { detail: 1 }));
+assert.equal(actions, beforeScroll, 'browser scrolling cancels a tap without a game action');
 listeners.get('pointerdown')(event());
 listeners.get('pointerup')(event(court, { clientX: 60 }));
 assert.equal(actions, 3);

@@ -15,6 +15,9 @@ Thumbs.db
 .gocache/
 .release-artifacts/
 
+# CSS・Playwright表示テストの一時成果物
+/artifacts/
+
 # ローカル認証情報・環境設定
 .env
 .env.*

@@ -47,7 +47,6 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  overflow-x: hidden;
 }
 
 /* スクリーンリーダー専用（非表示だが音声読み上げは有効） */
@@ -79,7 +78,9 @@ body {
 
 .game-header h1 {
   font-family: var(--font-title);
-  font-size: 2.8rem;
+  font-size: clamp(1.8rem, 4.5vw, 2.8rem);
+  line-height: 1.25;
+  text-wrap: balance;
   font-weight: 800;
   letter-spacing: 2px;
   text-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
@@ -126,8 +127,9 @@ body {
 .game-card .description {
   text-align: center;
   color: var(--text-muted);
-  max-width: 600px;
-  margin-bottom: 40px;
+  width: min(100%, 40em);
+  max-width: 40em;
+  margin-bottom: clamp(20px, 3vw, 32px);
   font-size: 1rem;
   line-height: 1.8;
 }
@@ -230,7 +232,7 @@ body {
 /* メニューのグリッド配置 */
 .menu-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   width: 100%;
   max-width: 700px;
@@ -269,7 +271,7 @@ body {
 
 .difficulty-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
   width: 100%;
   max-width: 850px;
@@ -533,16 +535,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: clamp(16px, 4dvh, 32px) 16px;
   background: rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(5px);
 }
 
 .quit-confirm-dialog {
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  width: min(100%, 420px);
-  padding: 28px;
+  max-height: min(84dvh, calc(100dvh - 2 * clamp(16px, 4dvh, 32px)));
+  overflow: hidden;
+  width: min(100%, 40rem);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border: 2px solid var(--color-danger);
   border-radius: 14px;
   background: var(--bg-secondary);
@@ -551,14 +556,54 @@ body {
 }
 
 .quit-confirm-dialog h2 {
-  margin: 0 0 12px;
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  line-height: 1.4;
+  flex-shrink: 0;
   color: var(--color-danger);
 }
 
 .quit-confirm-dialog p {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  line-height: 1.55;
 }
+
+/* Keep the primary action visible while secondary content scrolls.
+   DOM, keyboard and assistive-technology order all start with Resume. */
+/* backdrop-filter makes this card the containing block for fixed descendants.
+   Release it while the modal is open so the overlay fits the actual viewport. */
+#screen-play:has(> .quit-confirm-overlay:not(.hidden)) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* Lock the document only while the pause menu is visible. Help and resumed
+   gameplay retain their normal scrolling; the modal content scrolls itself. */
+html:has(#screen-play:not(.hidden) > .quit-confirm-overlay:not(.hidden)) {
+  overflow: hidden;
+  scrollbar-gutter: stable;
+}
+#btn-cancel-quit {
+  width: 100%;
+  min-height: 48px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 1rem;
+}
+.quit-confirm-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  margin-top: 12px;
+  padding: 4px;
+}
+.quit-confirm-content .display-setting { margin: 12px 0 8px; }
+.quit-confirm-dialog #paused-speech-mode-hint { text-align: left; }
+html[data-text-size="largest"] .quit-confirm-dialog h2 { font-size: 1.2rem; }
+html[data-text-size="largest"] .quit-confirm-dialog p { font-size: 0.875rem; }
+html[data-text-size="largest"] .quit-confirm-buttons { margin-top: 12px; gap: 10px; }
 
 .quit-confirm-stages {
   display: grid;
@@ -569,6 +614,11 @@ body {
 .quit-confirm-stages .btn {
   min-height: 52px;
   width: 100%;
+  padding: 10px 16px;
+  font-size: 1rem;
+  color: var(--text-main);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--text-muted);
 }
 
 .quit-confirm-buttons {
@@ -717,9 +767,8 @@ body {
     margin-bottom: 15px;
   }
 
-  .game-header h1 {
-    font-size: 1.8rem;
-  }
+  .game-header h1 { font-size: clamp(1.4rem, 5.5vw, 1.8rem); }
+  html[data-text-size="standard"] .game-header h1 { font-size: 1.8rem; }
 
   .game-header .subtitle {
     font-size: 0.8rem;
@@ -737,7 +786,7 @@ body {
   }
 
   .game-card .description {
-    font-size: 0.85rem;
+    font-size: 1rem;
     margin-bottom: 25px;
     line-height: 1.6;
   }
@@ -767,7 +816,8 @@ body {
   }
 
   .btn-menu {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     justify-content: flex-start;
     text-align: left;
@@ -781,6 +831,7 @@ body {
     font-size: 1.8rem;
     margin-right: 15px;
     margin-bottom: 0;
+    grid-row: 1 / 3;
   }
 
   .btn-menu .menu-title {
@@ -1197,7 +1248,7 @@ html[data-text-size="largest"] { font-size: 200%; }
 .display-settings-panel {
   width: 100%;
   min-width: 0;
-  max-width: 650px;
+  max-width: 40rem;
   padding: 16px;
   margin-bottom: 24px;
   border: 2px solid var(--text-muted);
@@ -1230,7 +1281,7 @@ html:not([data-text-size="standard"]) .match-result-difficulties {
   grid-template-columns: 1fr;
 }
 html[data-text-size] .game-header,
-html[data-text-size] .game-card { overflow-wrap: anywhere; }
+html[data-text-size] .game-card { overflow-wrap: break-word; line-break: strict; }
 html[data-text-size] .btn { max-width: 100%; white-space: normal; }
 html[data-text-size] .score-panel { min-width: 0; overflow-wrap: anywhere; }
 
@@ -1294,3 +1345,112 @@ html[data-contrast]:not([data-contrast="default"]) .btn-subtext { opacity: 1; }
 html[data-contrast]:not([data-contrast="default"]) a { text-decoration: underline; }
 html[data-contrast]:not([data-contrast="default"]) :is(.fade-in, .pulse-text) { animation: none; }
 /* Canvas draws the selected palette directly; do not recolour or invert it. */
+
+/* Reflow without reducing the user's chosen UI text size. */
+/* Text-relative measures keep enlarged prose and settings from becoming
+   unnecessarily narrow. Decorative headings use a smaller scale than prose. */
+.game-header h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); }
+#welcome-title {
+  font-size: 1.5rem;
+  line-height: 1.5;
+  margin-bottom: 0.6em;
+}
+html:not([data-text-size="standard"]) #welcome-title { font-size: 1.25rem; }
+.game-header { margin-bottom: clamp(16px, 2vw, 24px); }
+@media (max-width: 768px) {
+  .game-header h1,
+  html[data-text-size="standard"] .game-header h1 { font-size: 1.6rem; }
+  #welcome-title { font-size: 1.25rem; }
+  .game-card .description { margin-bottom: 20px; }
+}
+.title-ending { display: inline-block; }
+.app-container, .game-main, .game-card, .game-card > *,
+.btn > *, .display-setting, .input-group, .spec-info {
+  min-width: 0;
+  max-width: 100%;
+}
+.game-card > * { flex-shrink: 0; }
+.btn { white-space: normal; overflow-wrap: break-word; line-height: 1.5; }
+.btn > * { overflow-wrap: break-word; }
+.btn-text, .menu-title, .current-server, .referee-call,
+.game-card h2, .match-result-title, .match-result-winner,
+.game-footer a { text-wrap: balance; }
+.input-group input { width: 100%; min-width: 0; }
+#game-input-area, .help-content, .play-instructions { width: 100%; }
+.help-content { max-height: none; overflow: visible; }
+.mobile-settings-panel input[type="checkbox"] { flex-shrink: 0; }
+.mobile-settings-panel .checkbox-container { align-items: flex-start; }
+.match-result-overlay, .match-result-buttons { width: 100%; min-width: 0; }
+.match-result-difficulties { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#serve-selection:not([hidden]) { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 100%; }
+.score-panel { text-align: center; }
+.game-footer a { display: inline-block; margin-inline: 0.25em; }
+
+/* The real native select retains its label, focus and platform picker.
+   An aria-hidden mirror wraps the closed value instead of clipping it. */
+.select-control { position: relative; min-width: 0; }
+.select-control select { position: absolute; inset: 0; height: 100%; margin: 0; appearance: none; }
+html[data-contrast] .select-control select { color: transparent !important; }
+html[data-contrast] .select-control option { color: var(--text-main) !important; background: var(--bg-primary); }
+.select-value { position: relative; display: block; pointer-events: none; padding: 10px 36px 10px 10px; min-height: 48px; line-height: 1.6; }
+.select-value::after { content: '▾'; position: absolute; right: 10px; top: 10px; }
+.select-value > span { display: none; }
+.select-control:has(option:nth-child(1):checked) .select-value > span:nth-child(1),
+.select-control:has(option:nth-child(2):checked) .select-value > span:nth-child(2),
+.select-control:has(option:nth-child(3):checked) .select-value > span:nth-child(3),
+.select-control:has(option:nth-child(4):checked) .select-value > span:nth-child(4) { display: block; }
+@supports not selector(:has(option:checked)) {
+  .select-value { display: none; }
+  html[data-contrast] .select-control select { position: static; height: auto; appearance: auto; color: var(--text-main) !important; }
+}
+
+html:not([data-text-size="standard"]) .game-card { padding: clamp(12px, 3vw, 28px); }
+html:not([data-text-size="standard"]) .display-settings-panel,
+html:not([data-text-size="standard"]) .speech-rate-panel,
+html:not([data-text-size="standard"]) .mobile-settings-panel { padding: 12px; }
+html:not([data-text-size="standard"]) .btn-large { padding: 20px 24px; }
+html:not([data-text-size="standard"]) .game-play-layout { flex-direction: column; }
+html:not([data-text-size="standard"]) .dimension-guide-aside { width: 100%; }
+
+@media (max-width: 768px) {
+  .match-result-difficulties { grid-template-columns: minmax(0, 1fr); }
+  .btn-menu .menu-title, .btn-menu .menu-desc { width: 100%; }
+  .quit-confirm-dialog { padding: 16px 12px; }
+  .match-result-overlay { padding: 16px 12px; }
+}
+@media (max-width: 400px) {
+  body { padding: 0; }
+  .app-container { padding: 10px; }
+  .game-card { padding: 20px 12px; }
+  html:not([data-text-size="standard"]) .btn-menu { grid-template-columns: minmax(0, 1fr); text-align: center; justify-items: center; }
+  html:not([data-text-size="standard"]) .btn-menu .menu-icon { grid-row: auto; margin-right: 0; }
+  html:not([data-text-size="standard"]) .scoreboard { display: flex; flex-direction: column; gap: 8px; }
+  html:not([data-text-size="standard"]) .score-panel { width: 100%; }
+  .referee-call { padding: 12px; }
+}
+
+/* Decorative copy is omitted only while the existing gameplay chrome is inert. */
+.game-header[aria-hidden="true"] .subtitle { display: none; }
+.game-header[aria-hidden="true"] { margin-bottom: 12px; }
+
+@media (max-height: 260px) {
+  .quit-confirm-dialog { padding: 8px 12px; }
+  .quit-confirm-dialog h2,
+  html[data-text-size="largest"] .quit-confirm-dialog h2 {
+    font-size: 1rem;
+    line-height: 1.25;
+    margin-bottom: 4px;
+  }
+  #btn-cancel-quit { padding-block: 6px; }
+  .quit-confirm-content { margin-top: 8px; }
+}
+
+/* At extremely short viewport heights, preserve space for the scroll area.
+   Keep the text size and the full accessible dialog name. */
+@media (max-height: 200px) {
+  .quit-confirm-dialog h2 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

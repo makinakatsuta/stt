@@ -1,8 +1,8 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.45';
-import { sounds } from './sound-system.js?v=3.31.45';
-import { narrator } from './speech-system.js?v=3.31.45';
-import { NetworkSystem } from './network-system.js?v=3.31.45';
-import { readSetting, writeSetting } from './settings-storage.js?v=3.31.45';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.46';
+import { sounds } from './sound-system.js?v=3.31.46';
+import { narrator } from './speech-system.js?v=3.31.46';
+import { NetworkSystem } from './network-system.js?v=3.31.46';
+import { readSetting, writeSetting } from './settings-storage.js?v=3.31.46';
 
 // Each return uses the incoming ball speed, so the rally naturally accelerates.
 const EASY_RALLY_ACCELERATION = 1.01;
@@ -282,7 +282,9 @@ export class GameEngine {
     const pointerActiveStates = [STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON];
 
     if (screenPlay && canvasContainer) {
-      screenPlay.style.touchAction = 'none';
+      // Vertical swipes must reach controls below the court at large text sizes.
+      // A browser-owned scroll cancels the pointer, so it cannot become a swing.
+      screenPlay.style.touchAction = 'pan-y pinch-zoom';
       screenPlay.addEventListener('pointerdown', (e) => {
         if (this.isGameplayPaused || !e.isPrimary || isControl(e.target)) return;
         if (!pointerActiveStates.includes(this.state)) return;

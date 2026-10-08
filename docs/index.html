@@ -16,8 +16,8 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="ボールの動きや音を使って遊ぶ卓球ゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、CPU対戦はEasy・Normal・Hardから選べます。">
-  <script src="js/display-settings.js?v=3.31.45"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.45">
+  <script src="js/display-settings.js?v=3.31.46"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.46">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -31,7 +31,7 @@
 
   <div class="app-container">
     <header class="game-header" id="game-header">
-      <h1>SOUND TABLE TENNIS <span class="accent">STT</span></h1>
+      <h1>SOUND TABLE <span class="title-ending">TENNIS <span class="accent">STT</span></span></h1>
       <p class="subtitle">音で狙い、音で打ち返す。共生するバーチャルスポーツ。</p>
     </header>
 
@@ -58,21 +58,33 @@
           <legend>画面の見やすさ</legend>
           <div class="display-setting">
             <label for="select-contrast">配色・コントラスト</label>
-            <select id="select-contrast" aria-describedby="display-settings-hint">
-              <option value="default">標準（ダークカラー）</option>
-              <option value="white-on-black">黒背景・白文字</option>
-              <option value="black-on-white">白背景・黒文字（白黒反転）</option>
-              <option value="yellow-on-black">黒背景・黄色文字</option>
-            </select>
+            <div class="select-control">
+              <select id="select-contrast" aria-describedby="display-settings-hint">
+                <option value="default">標準（ダークカラー）</option>
+                <option value="white-on-black">黒背景・白文字</option>
+                <option value="black-on-white">白背景・黒文字（白黒反転）</option>
+                <option value="yellow-on-black">黒背景・黄色文字</option>
+              </select>
+              <span class="select-value" aria-hidden="true">
+                <span>標準（ダークカラー）</span><span>黒背景・白文字</span>
+                <span>白背景・黒文字（白黒反転）</span><span>黒背景・黄色文字</span>
+              </span>
+            </div>
           </div>
           <div class="display-setting">
             <label for="select-text-size">文字の大きさ</label>
-            <select id="select-text-size" aria-describedby="display-settings-hint">
-              <option value="standard">標準（100%）</option>
-              <option value="large">大（125%）</option>
-              <option value="extra-large">特大（150%）</option>
-              <option value="largest">最大（200%）</option>
-            </select>
+            <div class="select-control">
+              <select id="select-text-size" aria-describedby="display-settings-hint">
+                <option value="standard">標準（100%）</option>
+                <option value="large">大（125%）</option>
+                <option value="extra-large">特大（150%）</option>
+                <option value="largest">最大（200%）</option>
+              </select>
+              <span class="select-value" aria-hidden="true">
+                <span>標準（100%）</span><span>大（125%）</span>
+                <span>特大（150%）</span><span>最大（200%）</span>
+              </span>
+            </div>
           </div>
           <p id="display-settings-hint">選ぶとすぐに反映され、次回も同じ設定で開きます。文字の大きさはメニュー・得点・案内に適用されます。</p>
         </fieldset>
@@ -80,10 +92,15 @@
           <legend>音声案内</legend>
           <div class="display-setting">
             <label for="select-speech-mode">読み上げ方式</label>
-            <select id="select-speech-mode" aria-describedby="speech-mode-hint">
-              <option value="builtin">ゲームの内蔵音声</option>
-              <option value="screen-reader">スクリーンリーダー</option>
-            </select>
+            <div class="select-control">
+              <select id="select-speech-mode" aria-describedby="speech-mode-hint">
+                <option value="builtin">ゲームの内蔵音声</option>
+                <option value="screen-reader">スクリーンリーダー</option>
+              </select>
+              <span class="select-value" aria-hidden="true">
+                <span>ゲームの内蔵音声</span><span>スクリーンリーダー</span>
+              </span>
+            </div>
           </div>
           <p id="speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。案内は選んだ方式だけで読み上げます。球音や打球音はどちらでも鳴ります。中断メニューでも変更できます。</p>
           <button id="btn-test-speech" type="button" class="btn btn-secondary">読み上げをテスト</button>
@@ -270,28 +287,34 @@
         <div id="quit-confirm-overlay" class="quit-confirm-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="quit-confirm-title" aria-describedby="quit-confirm-message">
           <div class="quit-confirm-dialog">
             <h2 id="quit-confirm-title">プレイを停止しました</h2>
-            <p id="quit-confirm-message">再開、操作方法の確認、TOPへ戻ることができます。</p>
-            <div class="display-setting">
-              <label for="select-paused-speech-mode">読み上げ方式</label>
-              <select id="select-paused-speech-mode" aria-describedby="paused-speech-mode-hint">
-                <option value="builtin">ゲームの内蔵音声</option>
-                <option value="screen-reader">スクリーンリーダー</option>
-              </select>
+            <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
+            <div class="quit-confirm-content">
+              <p id="quit-confirm-message">再開、操作方法の確認、TOPへ戻ることができます。</p>
+              <div class="display-setting">
+                <label for="select-paused-speech-mode">読み上げ方式</label>
+                <div class="select-control">
+                  <select id="select-paused-speech-mode" aria-describedby="paused-speech-mode-hint">
+                    <option value="builtin">ゲームの内蔵音声</option>
+                    <option value="screen-reader">スクリーンリーダー</option>
+                  </select>
+                  <span class="select-value" aria-hidden="true">
+                    <span>ゲームの内蔵音声</span><span>スクリーンリーダー</span>
+                  </span>
+                </div>
+              </div>
+              <p id="paused-speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。</p>
+              <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small">ラケット位置をリセット（中央に戻す）</button>
+              <div class="quit-confirm-buttons">
+                <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
+                <button id="btn-quit-top" class="btn btn-danger">TOPに戻る</button>
+              </div>
+              <p>難易度を選んで最初からやり直す</p>
+              <div class="quit-confirm-stages" role="group" aria-label="戻るステージを選択">
+                <button id="btn-quit-easy" class="btn btn-diff result-difficulty-easy">🐣 簡単 (Easy)</button>
+                <button id="btn-quit-normal" class="btn btn-diff result-difficulty-normal">⚔️ 普通 (Normal)</button>
+                <button id="btn-quit-hard" class="btn btn-diff result-difficulty-hard">🔥 難しい (Hard)</button>
+              </div>
             </div>
-            <p id="paused-speech-mode-hint">VoiceOver・TalkBack・NVDAなどを使用している場合は「スクリーンリーダー」を選んでください。</p>
-            <button id="btn-calibrate-tilt" class="btn btn-secondary btn-small">ラケット位置をリセット（中央に戻す）</button>
-            <div class="quit-confirm-buttons">
-              <button id="btn-cancel-quit" class="btn btn-primary">再開</button>
-              <button id="btn-paused-help" class="btn btn-secondary">操作方法</button>
-              <button id="btn-quit-top" class="btn btn-danger">TOPに戻る</button>
-            </div>
-            <p>難易度を選んで最初からやり直す</p>
-            <div class="quit-confirm-stages" role="group" aria-label="戻るステージを選択">
-              <button id="btn-quit-easy" class="btn btn-diff result-difficulty-easy">🐣 簡単 (Easy)</button>
-              <button id="btn-quit-normal" class="btn btn-diff result-difficulty-normal">⚔️ 普通 (Normal)</button>
-              <button id="btn-quit-hard" class="btn btn-diff result-difficulty-hard">🔥 難しい (Hard)</button>
-            </div>
-
           </div>
         </div>
       </section>
@@ -332,24 +355,24 @@
       </section>
     </main>
     <footer class="game-footer" id="game-footer">
-      <p>バージョン 3.31.45</p>
+      <p>バージョン 3.31.46</p>
       <p><a href="/support/">Sound Table Tennisを支援する</a><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
 
   <!-- WebAssembly とゲームのコアロジックスクリプトのインポート -->
-  <script src="wasm_exec.js?v=3.31.45"></script>
+  <script src="wasm_exec.js?v=3.31.46"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.45"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.46"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.45"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.45"></script>
+  <script type="module" src="app.js?v=3.31.46"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.46"></script>
 </body>
 </html>

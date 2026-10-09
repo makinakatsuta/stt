@@ -16,8 +16,8 @@
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="ボールの動きや音を使って遊ぶ卓球ゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、CPU対戦はEasy・Normal・Hardから選べます。">
-  <script src="js/display-settings.js?v=3.31.48"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.48">
+  <script src="js/display-settings.js?v=3.31.49"></script>
+  <link rel="stylesheet" href="styles.css?v=3.31.49">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -40,8 +40,9 @@
       <section id="screen-welcome" class="game-card fade-in" aria-labelledby="welcome-title">
         <h2 id="welcome-title">ようこそ、サウンドテーブルテニスへ</h2>
         <section id="visitor-counter" class="visitor-counter" aria-label="訪問者情報" hidden>
-          <p>あなたは <strong id="visitor-number">---</strong> 人目の訪問者です。</p>
-          <p>現在の総訪問者数は <strong id="total-visitor-count">---</strong> 人です。</p>
+          <p id="visitor-counter-status">訪問者数を取得しています。</p>
+          <p id="visitor-number-row" hidden>あなたは <strong id="visitor-number">---</strong> 人目の訪問者です。</p>
+          <p id="total-visitor-row" hidden>現在の総訪問者数は <strong id="total-visitor-count">---</strong> 人です。</p>
         </section>
         <p class="description">
           ボールの動きや音を使って遊ぶ卓球ゲームです。晴眼者・ロービジョン者・全盲者が、それぞれ利用できる情報でCPU対戦を楽しめる設計です。<br>
@@ -364,24 +365,24 @@
       </section>
     </main>
     <footer class="game-footer" id="game-footer">
-      <p>バージョン 3.31.48</p>
+      <p>バージョン 3.31.49</p>
       <p><a href="/support/">Sound Table Tennisを支援する</a><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
   </div>
 
   <!-- WebAssembly とゲームのコアロジックスクリプトのインポート -->
-  <script src="wasm_exec.js?v=3.31.48"></script>
+  <script src="wasm_exec.js?v=3.31.49"></script>
   <script>
     const go = new Go();
-    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.48"), go.importObject).then((result) => {
+    WebAssembly.instantiateStreaming(fetch("main.wasm?v=3.31.49"), go.importObject).then((result) => {
       go.run(result.instance);
       console.log("Go WebAssembly Loaded Successfully!");
     }).catch((err) => {
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.48"></script>
-  <script type="module" src="js/visitor-counter.js?v=3.31.48"></script>
+  <script type="module" src="app.js?v=3.31.49"></script>
+  <script type="module" src="js/visitor-counter.js?v=3.31.49"></script>
 </body>
 </html>

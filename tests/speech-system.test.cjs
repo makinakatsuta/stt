@@ -54,7 +54,24 @@ assert.equal(stored.stt_speech_mode, 'builtin');
 assert.equal(vm.runInContext('new SpeechSystem().speechMode', context), 'builtin');
 assert.equal(timers.size, 0);
 s.setSpeechMode('invalid'); assert.equal(stored.stt_speech_mode, 'builtin');
-s.setSpeechRate(1.5); assert.equal(stored.stt_speech_rate, 1.5);
+s.setSpeechRate(1.5); assert.equal(stored.stt_speech_rate, '1.5');
+for (const [input, expected] of [[0.1, 0.5], [3, 2], [1.26, 1.3], [NaN, 1.2], [Infinity, 1.2]]) {
+  s.setSpeechRate(input);
+  assert.equal(s.speechRate, expected);
+  assert.equal(stored.stt_speech_rate, expected.toFixed(1));
+  assert.equal(vm.runInContext('new SpeechSystem().speechRate', context), expected);
+}
+s.setSpeechMode('screen-reader');
+s.setSpeechRate(1.7);
+assert.equal(stored.stt_speech_rate, '1.7');
+const spokenBefore = spoken.length;
+s.speak('速度設定後のスクリーンリーダー案内'); advance(50);
+assert.equal(spoken.length, spokenBefore);
+assert.equal(announcer.textContent, '速度設定後のスクリーンリーダー案内');
+s.setSpeechMode('builtin');
+s.speak('設定速度の内蔵音声');
+assert.equal(spoken.at(-1).rate, 1.7);
+
 s.speak('エラー時の通知'); spoken.at(-1).onerror({error:'not-allowed'}); advance(50);
 assert.equal(announcer.textContent, 'エラー時の通知');
 s.stop();

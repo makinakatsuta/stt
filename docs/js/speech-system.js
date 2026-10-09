@@ -13,7 +13,7 @@ export class SpeechSystem {
     this.announcementQueue = [];
     this.utterances = new Set();
     // Feature #8: 音声速度設定の初期読み込み
-    this.speechRate = parseFloat(readSetting('stt_speech_rate') || '1.2');
+    this.speechRate = this.normalizeSpeechRate(Number(readSetting('stt_speech_rate') || '1.2'));
 
     // 日本語の音声を検索してセットする
     if (this.synth) {
@@ -139,8 +139,12 @@ export class SpeechSystem {
    * 音声読み上げ速度を変更して保存します。(Feature #8)
    */
   setSpeechRate(rate) {
-    this.speechRate = rate;
-    writeSetting('stt_speech_rate', rate);
+    this.speechRate = this.normalizeSpeechRate(rate);
+    writeSetting('stt_speech_rate', this.speechRate.toFixed(1));
+  }
+
+  normalizeSpeechRate(rate) {
+    return Number.isFinite(rate) ? Math.max(0.5, Math.min(2.0, Math.round(rate * 10) / 10)) : 1.2;
   }
 }
 

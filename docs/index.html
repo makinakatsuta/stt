@@ -17,7 +17,7 @@
   <meta name="twitter:title" content="サウンドテーブルテニス（STT）">
   <meta name="twitter:description" content="ボールの動きや音を使って遊ぶ卓球ゲーム。配色設定・音声案内・スクリーンリーダー操作を備え、CPU対戦はEasy・Normal・Hardから選べます。">
   <script src="js/display-settings.js?v=3.31.49"></script>
-  <link rel="stylesheet" href="styles.css?v=3.31.49">
+  <link rel="stylesheet" href="styles.css?v=3.31.54">
   <!-- Google Fonts から視認性が高く美しい Outfit フォントを読み込む -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
@@ -31,7 +31,7 @@
 
   <div class="app-container">
     <header class="game-header" id="game-header">
-      <h1>SOUND TABLE <span class="title-ending">TENNIS <span class="accent">STT</span></span></h1>
+      <h1 id="page-title" tabindex="-1">SOUND TABLE <span class="title-ending">TENNIS <span class="accent">STT</span></span></h1>
       <p class="subtitle">音で狙い、音で打ち返す。共生するバーチャルスポーツ。</p>
     </header>
 
@@ -114,10 +114,14 @@
           <div class="speech-rate-panel">
             <h4>内蔵音声の速さ</h4>
             <label class="sr-only" for="range-speech-rate">内蔵音声の速さ</label>
-            <p id="speech-rate-value">現在の倍率: <span id="lbl-speech-rate-val">1.2</span>倍</p>
+            <p id="speech-rate-value" role="status" aria-live="polite" aria-atomic="true">現在の倍率: <span id="lbl-speech-rate-val">1.2</span>倍</p>
             <input type="range" id="range-speech-rate" min="0.5" max="2.0" step="0.1" value="1.2"
               aria-describedby="speech-rate-value speech-rate-hint">
-            <p id="speech-rate-hint" class="mobile-hint-text">「1.0」が標準速度です。2.0倍が最大速度、0.5倍が最小速度です。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
+            <div class="speech-rate-buttons">
+              <button type="button" id="btn-speech-rate-slower" class="btn btn-secondary" aria-label="内蔵音声を遅くする" aria-describedby="speech-rate-value">遅くする</button>
+              <button type="button" id="btn-speech-rate-faster" class="btn btn-secondary" aria-label="内蔵音声を速くする" aria-describedby="speech-rate-value">速くする</button>
+            </div>
+            <p id="speech-rate-hint" class="mobile-hint-text">1.0倍が標準速度です。スライダーまたは「遅くする」「速くする」で、0.5倍から2.0倍まで0.1倍ずつ調整できます。どの読み上げ方式でも内蔵音声の速度を保存できます。スクリーンリーダーの速さは、お使いのスクリーンリーダーで調整してください。</p>
           </div>
         </fieldset>
         <button id="btn-enable-audio" class="btn btn-primary btn-large" autofocus>
@@ -157,6 +161,7 @@
           </button>
         </div>
         <button id="btn-show-help" class="btn btn-secondary">操作方法とルール説明を見る</button>
+        <button id="btn-back-to-top" type="button" class="btn btn-secondary">トップページに戻る</button>
       </section>
 
       <!-- 2.5 難易度選択画面 (CPU対戦選択時に表示) -->
@@ -365,7 +370,7 @@
       </section>
     </main>
     <footer class="game-footer" id="game-footer">
-      <p>バージョン 3.31.49</p>
+      <p>バージョン 3.31.54</p>
       <p><a href="/support/">Sound Table Tennisを支援する</a><a href="https://github.com/makinakatsuta/stt">ソースコード・README</a> · <a href="https://github.com/makinakatsuta/stt/issues">不具合の報告</a></p>
       <p>© 2026 Maki Nakatsuta. <a href="https://github.com/makinakatsuta/stt/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT ライセンス</a> に基づいて公開されています。</p>
     </footer>
@@ -382,7 +387,7 @@
       console.error("Failed to load Go WebAssembly:", err);
     });
   </script>
-  <script type="module" src="app.js?v=3.31.49"></script>
+  <script type="module" src="app.js?v=3.31.54"></script>
   <script type="module" src="js/visitor-counter.js?v=3.31.49"></script>
 </body>
 </html>

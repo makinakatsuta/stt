@@ -1223,10 +1223,30 @@ html[data-text-size="largest"] .quit-confirm-buttons { margin-top: 12px; gap: 10
   align-items: center;
 }
 
+.speech-rate-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.speech-rate-buttons button {
+  min-height: 44px;
+  min-width: 44px;
+  flex: 1 1 8rem;
+}
+
 .speech-rate-panel label {
   font-size: 0.95rem;
   color: var(--text-main);
   font-weight: 600;
+}
+
+#btn-back-to-top {
+  width: 100%;
+  max-width: 40rem;
+  min-height: 44px;
+  margin-top: 12px;
+  transition: none;
 }
 
 .speech-rate-panel input[type="range"] {
@@ -1393,7 +1413,25 @@ html:not([data-text-size="standard"]) #welcome-title { font-size: 1.25rem; }
 .mobile-settings-panel .checkbox-container { align-items: flex-start; }
 .match-result-overlay, .match-result-buttons { width: 100%; min-width: 0; }
 .match-result-difficulties { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-#serve-selection:not([hidden]) { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; max-width: 100%; }
+/* Keep the three native serve choices in DOM order, independently of other buttons. */
+#serve-selection:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+#serve-selection > .btn {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 52px;
+  margin: 0;
+  padding: 12px 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .score-panel { text-align: center; }
 .game-footer a { display: inline-block; margin-inline: 0.25em; }
 

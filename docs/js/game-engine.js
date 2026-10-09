@@ -1,6 +1,6 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.47';
 import { sounds } from './sound-system.js?v=3.31.47';
-import { narrator } from './speech-system.js?v=3.31.47';
+import { narrator } from './speech-system.js?v=3.31.50';
 import { NetworkSystem } from './network-system.js?v=3.31.47';
 import { readSetting, writeSetting } from './settings-storage.js?v=3.31.47';
 
@@ -198,8 +198,6 @@ export class GameEngine {
       .map(id => document.getElementById(id)).filter(Boolean);
     const syncSpeechMode = () => {
       for (const select of speechModeSelects) select.value = narrator.speechMode || 'builtin';
-      const rate = document.getElementById('range-speech-rate');
-      if (rate) rate.disabled = narrator.speechMode === 'screen-reader';
     };
     syncSpeechMode();
     for (const select of speechModeSelects) {
@@ -217,17 +215,32 @@ export class GameEngine {
     });
     const rangeSpeechRate = document.getElementById('range-speech-rate');
     const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
+    const slowerSpeechRate = document.getElementById('btn-speech-rate-slower');
+    const fasterSpeechRate = document.getElementById('btn-speech-rate-faster');
     if (rangeSpeechRate && lblSpeechRateVal) {
-      const savedRate = readSetting('stt_speech_rate') || '1.2';
-      rangeSpeechRate.value = savedRate;
-      lblSpeechRateVal.textContent = savedRate;
-      narrator.speechRate = parseFloat(savedRate);
-
-      rangeSpeechRate.addEventListener('input', (e) => {
-        const rate = e.target.value;
-        lblSpeechRateVal.textContent = rate;
-        narrator.setSpeechRate(parseFloat(rate));
-      });
+      const updateSpeechRate = (value) => {
+        narrator.setSpeechRate(Number(value));
+        const rate = narrator.speechRate;
+        const formatted = rate.toFixed(1);
+        rangeSpeechRate.value = formatted;
+        rangeSpeechRate.setAttribute('aria-valuetext', `${formatted}倍`);
+        lblSpeechRateVal.textContent = formatted;
+        if (slowerSpeechRate) slowerSpeechRate.disabled = rate <= 0.5;
+        if (fasterSpeechRate) fasterSpeechRate.disabled = rate >= 2.0;
+      };
+      updateSpeechRate(narrator.speechRate);
+      rangeSpeechRate.addEventListener('input', () => updateSpeechRate(rangeSpeechRate.value));
+      for (const [button, step] of [[slowerSpeechRate, -0.1], [fasterSpeechRate, 0.1]]) {
+        if (!button) continue;
+        button.addEventListener('click', () => updateSpeechRate(narrator.speechRate + step));
+        // Support keyboard activation supplied by assistive technology as well as
+        // native click-only activation. Prevent the second native keyboard click.
+        button.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          if (!event.repeat && !button.disabled) button.click();
+        });
+      }
     }
 
     // 体移動操作切り替えチェックボックスの変更監視 (Feature #17: 保存)

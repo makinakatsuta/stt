@@ -47,6 +47,19 @@ const NORMAL_SIDE_OUT_CHANCE = 0.15;
 const HARD_SIDE_OUT_CHANCE = 0.20;
 const TABLE_LEFT = 10;
 const TABLE_RIGHT = CANVAS_WIDTH - 10;
+// Distance from the center line toward the receiving area's outer edge.
+// Keep the whole ball inside the table and on its intended side of the line.
+const PLAYER_SERVE_TARGET_RATIOS = Object.freeze([0.90, 0.50, 0.10]);
+
+function playerServeTargetX(type, serverCenterX) {
+  const centerX = CANVAS_WIDTH / 2;
+  const direction = serverCenterX >= centerX ? -1 : 1;
+  const outerDistance = centerX - TABLE_LEFT;
+  const distance = Math.max(BALL_RADIUS, Math.min(outerDistance - BALL_RADIUS,
+    outerDistance * PLAYER_SERVE_TARGET_RATIOS[type - 1]));
+  return centerX + direction * distance;
+}
+
 const PADDLE_MIN_X = TABLE_LEFT;
 const PADDLE_MAX_X = TABLE_RIGHT - PADDLE_WIDTH;
 // DeviceMotion input is smoothed and uses hysteresis so small hand tremors
@@ -1525,31 +1538,17 @@ export class GameEngine {
         this.updateActionButton();
         this.ball.active = true;
 
-        // サーブの初速度設定 (対角のレシーブエリアへ向けて発射)
-        if (this.serverRole === 1) {
-          // 自分から相手へ (Yをマイナス方向へ)
-          const startX = this.p1.x + PADDLE_WIDTH / 2;
-          const targetX = CANVAS_WIDTH - startX; // 対角を狙う
-          const dx = targetX - startX;
-          this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2); // 距離に応じて横成分を決定
-          this.ball.vy = -baseVy;
-        } else {
-          // 相手から自分へ (Yをプラス方向へ)
-          const startX = this.p2.x + PADDLE_WIDTH / 2;
-          const targetX = CANVAS_WIDTH - startX;
-          const dx = targetX - startX;
-          this.ball.vx = (dx / 150) + (Math.random() * 0.4 - 0.2);
-          this.ball.vy = baseVy;
-        }
-
-        // 通常ラリー用に、中央寄りへゆっくり出す。
-        if (this.difficulty === 'easy') {
-          this.ball.vx = (Math.random() < 0.5 ? -1 : 1) *
-            (EASY_SERVE_VX_MIN + Math.random() * (EASY_SERVE_VX_MAX - EASY_SERVE_VX_MIN)) *
-            EASY_SERVE_SPEED_FACTOR;
-        } else {
-          this.ball.vx = Math.random() * 1.2 - 0.6;
-        }
+        // Preserve the old diagonal area's direction, chosen by the server's
+        // paddle (the waiting ball stays fixed even when that paddle moves).
+        const serverPaddle = this.serverRole === 1 ? this.p1 : this.p2;
+        const targetX = playerServeTargetX(this.selectedServeType,
+          serverPaddle.x + PADDLE_WIDTH / 2);
+        const defenseY = this.serverRole === 1 ? Y_DEFENSE_P2 : Y_DEFENSE_P1;
+        this.ball.vy = this.serverRole === 1 ? -baseVy : baseVy;
+        // STT has no separate landing/bounce event. Aim at the receiver's
+        // defense line using the actual ball origin and final vertical speed.
+        const travelFrames = (defenseY - this.ball.y) / this.ball.vy;
+        this.ball.vx = (targetX - this.ball.x) / travelFrames;
         sounds.playHitSound(this.ball.x, this.ball.y);
         sounds.playServeSound(this.ball.x, this.difficulty, this.ball.y, false, this.selectedServeType);
         this.addRipple(this.ball.x, this.ball.y, 'serve');
@@ -2328,7 +2327,7 @@ export class GameEngine {
       // 稀に、または特定の条件でネットに引っかかる判定を追加
       const wasAboveNet = (this.ball.y - this.ball.vy) < Y_NET;
       const isBelowNet = this.ball.y >= Y_NET;
-      if (wasAboveNet !== isBelowNet && Math.abs(this.ball.vx) > 8) {
+      if (wasAboveNet === isBelowNet && Math.abs(this.ball.vx) > 8) {
         // 速度が速すぎて「ネットの下を通らず、浮き上がってネットに当たった」想定の処理
         if (Math.random() < 0.25) {
           sounds.playNetSound(this.ball.x);

@@ -120,6 +120,36 @@ for (const difficulty of ['easy', 'normal', 'hard']) {
   assert.equal(new Set(outcomes).size, 1);
 }
 assert.ok(!/isCharging|chargeStartTime|chargeRatio|chargeTime/.test(source));
+// Launch targets use the stationary ball origin, not the movable paddle.
+// Both diagonal areas mirror exactly; speed categories and power serves keep vy.
+for (const difficulty of ['easy', 'normal', 'hard']) for (const role of [1, 2])
+  for (const side of [-1, 1]) for (const type of [1, 2, 3]) for (const roll of [0, 0.5, 0.99]) {
+    const seeded = context.Math.random;
+    context.Math.random = () => roll;
+    const g = game(difficulty, role === 1 ? 'cpu' : 'online', role, role);
+    g.selectServeType(type);
+    g.state = 'SERVE_WAITING'; g.stateStartTime = now;
+    const paddle = role === 1 ? g.p1 : g.p2;
+    paddle.x = side === 1 ? 600 : 100;
+    g.ball.x = 400 + side * 20;
+    const origin = { x: g.ball.x, y: g.ball.y };
+    g.handleActionInput();
+    const base = difficulty === 'easy' ? (3.2 + roll * 1.3) * 1.03
+      : difficulty === 'normal' ? (roll < 0.15 ? 8.5 + roll : 4.05 * 1.10)
+      : roll < 0.15 ? 4.2 + roll * 0.8 : roll < 0.65 ? 5.8 + roll : 8.5 + roll * 1.5;
+    const power = role === 1 && roll < [0.1, 0.2, 0.3][type - 1];
+    assert.ok(Math.abs(Math.abs(g.ball.vy) - base * (power ? 1.08 : 1)) < 1e-10);
+    const defenseY = role === 1 ? 100 : 400;
+    const frames = (defenseY - origin.y) / g.ball.vy;
+    const arrival = origin.x + frames * g.ball.vx;
+    const expected = 400 - side * 390 * [0.9, 0.5, 0.1][type - 1];
+    assert.ok(frames > 0);
+    assert.ok(Math.abs(arrival - expected) < 1e-10);
+    assert.ok(arrival - 10 > 10 && arrival + 10 < 790);
+    assert.ok(side === 1 ? arrival + 10 < 400 : arrival - 10 > 400);
+    assert.equal(g.ball.x, origin.x); assert.equal(g.ball.y, origin.y);
+    context.Math.random = seeded;
+  }
 // CPU never shows selection; online receiver waits for the remote selection.
 const cpu = game('normal', 'cpu', 2);
 assert.equal(cpu.state, 'PRE_SERVE_READY'); assert.equal(elements.get('serve-selection').hidden, true);
@@ -139,7 +169,8 @@ for (const role of [1, 2]) {
   assert.equal(sender.state, 'RALLY'); assert.equal(receiver.state, 'RALLY');
   assert.equal(sender.ball.playerServePending, false); assert.equal(sender.ball.isPowerServe, false);
   assert.equal(sender.ball.serveReturnChance, null);
-  assert.equal(sender.ball.vy, receiver.ball.vy); assert.equal(serves.at(-1)[4], 3);
+  for (const key of ['x', 'y', 'vx', 'vy']) assert.equal(sender.ball[key], receiver.ball[key]);
+  assert.equal(serves.at(-1)[4], 3);
   const seeded = context.Math.random;
   context.Math.random = () => { throw Error('online CPU probability must not run'); };
   assert.equal(sender.preparePlayerServe(7), 7);
@@ -173,6 +204,42 @@ async function main() {
   const rows = [];
   for (const backend of ['js', 'wasm']) {
     context.window.updatePhysicsWasm = backend === 'wasm' ? globalThis.updatePhysicsWasm : undefined;
+    // High horizontal speeds must test the net only when crossing its line.
+    // Retain the existing 25% collision chance and bounce velocity.
+    for (const [y, vy, crosses] of [[150, 6, false], [350, -6, false],
+      [247, 6, true], [253, -6, true]]) {
+      const seeded = context.Math.random; context.Math.random = () => 0;
+      const g = game('hard', 'online', 1, 1);
+      g.state = 'RALLY'; Object.assign(g.ball, { x: 400, y, vx: 9, vy, active: true });
+      g.updatePhysics();
+      assert.equal(g.ball.vx, crosses ? 4.5 : 9, `${backend} net crossing`);
+      assert.equal(g.ball.vy, crosses ? -vy * 0.3 : vy);
+      context.Math.random = seeded;
+    }
+    // Actual physics crosses the defense line at the target, within one frame.
+    // Use online mode so a CPU return cannot replace the incoming trajectory.
+    for (const difficulty of ['easy', 'normal', 'hard']) for (const role of [1, 2])
+      for (const side of [-1, 1]) for (const type of [1, 2, 3]) {
+        const seeded = context.Math.random; context.Math.random = () => 0.99;
+        const g = game(difficulty, 'online', role, role);
+        g.selectServeType(type); g.state = 'SERVE_WAITING'; g.stateStartTime = now;
+        (role === 1 ? g.p1 : g.p2).x = side === 1 ? 600 : 100;
+        g.handleActionInput();
+        const vx = g.ball.vx, vy = g.ball.vy;
+        const defenseY = role === 1 ? 100 : 400;
+        const expected = 400 - side * 390 * [0.9, 0.5, 0.1][type - 1];
+        let frames = 0;
+        while ((role === 1 ? g.ball.y > defenseY : g.ball.y < defenseY) && frames++ < 150) {
+          g.updatePhysics();
+          assert.equal(g.state, 'RALLY');
+          assert.equal(g.ball.vx, vx); assert.equal(g.ball.vy, vy);
+          assert.ok(g.ball.x > 10 && g.ball.x < 790, 'no side-wall contact');
+        }
+        assert.ok(frames < 150);
+        const interpolated = g.ball.x - vx * ((g.ball.y - defenseY) / vy);
+        assert.ok(Math.abs(interpolated - expected) < 1e-8, `${backend} target mismatch`);
+        context.Math.random = seeded;
+      }
     // Force both return outcomes, verify one attempt and the existing score path.
     for (const difficulty of ['easy', 'normal', 'hard']) for (const success of [true, false]) {
       const g = game(difficulty); g.selectServeType(1); g.handleActionInput(); reply(g); g.handleActionInput();
@@ -191,20 +258,29 @@ async function main() {
     }
     for (const difficulty of ['easy', 'normal', 'hard']) for (const type of [1, 2, 3]) {
       seed = 20261007;
-      let power = 0, returns = 0, aces = 0;
+      let power = 0, returns = 0, aces = 0, faults = 0;
       const trials = 10000;
       for (let trial = 0; trial < trials; trial++) {
         const g = game(difficulty); g.selectServeType(type); g.handleActionInput(); reply(g); g.handleActionInput();
+        // These trials measure the configured first-return probability, apart
+        // from the new target's travel pressure. Start the CPU at that target.
+        const targetX = g.ball.x + g.ball.vx * ((100 - g.ball.y) / g.ball.vy);
+        g.p2.x = Math.max(10, Math.min(690, targetX - 50));
         if (g.ball.isPowerServe) power++;
         assert.equal(g.scores.p1 + g.scores.p2, 0);
         for (let frame = 0; frame < 250 && g.state === 'RALLY' && g.ball.playerServePending; frame++) g.updatePhysics();
         if (!g.ball.playerServePending) { returns++; assert.equal(g.state, 'RALLY'); }
-        else { assert.equal(g.state, 'POINT_WON'); assert.equal(g.scores.p1, 1); aces++; }
+        else {
+          assert.equal(g.state, 'POINT_WON');
+          assert.equal(g.scores.p1 + g.scores.p2, 1);
+          if (g.scores.p1 === 1) aces++; else faults++;
+        }
       }
-      const row = { backend, difficulty, type, trials, power: power / trials, returns: returns / trials, aces: aces / trials };
+      const row = { backend, difficulty, type, trials, power: power / trials, returns: returns / trials,
+        aces: aces / trials, faults: faults / trials };
+      console.log(JSON.stringify(row));
       rows.push(row); assert.ok(row.aces > 0 && row.aces < 0.30);
       assert.ok(Math.abs(row.power - [0.1, 0.2, 0.3][type - 1]) < 0.02);
-      console.log(JSON.stringify(row));
     }
     const subset = rows.filter(row => row.backend === backend);
     for (const difficulty of ['easy', 'normal', 'hard']) {

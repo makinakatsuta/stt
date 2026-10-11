@@ -311,7 +311,7 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 		// --- Net collision (chance-based bounce) ---
 		wasAboveNet := oldBallY < YNet
 		isBelowNet := ballY >= YNet
-		if !sideOut && wasAboveNet != isBelowNet && math.Abs(ballVx) > 8 {
+		if !sideOut && wasAboveNet == isBelowNet && math.Abs(ballVx) > 8 {
 			if randomFloat() < 0.25 {
 				ballVy = -ballVy * 0.3
 				ballVx *= 0.5

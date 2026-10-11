@@ -29,7 +29,7 @@ async function verifyRateControls(page) {
     assert.equal(await slower.isDisabled(), rate === 0.5);
     assert.equal(await faster.isDisabled(), rate === 2.0);
     const settings = await page.evaluate(async () => {
-      const { narrator } = await import(document.querySelector('script[src*="app.js"]').src.replace(/app\.js.*$/, 'js/speech-system.js?v=3.31.50'));
+      const { narrator } = await import(document.querySelector('script[src*="app.js"]').src.replace(/app\.js.*$/, 'js/speech-system.js?v=3.31.56'));
       return { rate: narrator.speechRate, saved: localStorage.getItem('stt_speech_rate') };
     });
     assert.equal(settings.rate, rate);
@@ -96,6 +96,121 @@ async function verifyRateControls(page) {
   }
 }
 
+// 実際の音声出力はモック。DOMのクリック経路、モジュール共有、方式切替を検証。
+async function verifySpeechRepeatedTests(page) {
+  await page.selectOption('#select-speech-mode', 'builtin');
+  const button = page.getByRole('button', { name: '読み上げをテスト', exact: true });
+  await page.evaluate(async () => {
+    const { narrator } = await import('./js/speech-system.js?v=3.31.56');
+    narrator.stop('repeat-test-setup');
+    const fixture = { narrator, originalSynth: narrator.synth, originalAndroid: narrator.isAndroid,
+      spoken: [], cancels: 0, saved: localStorage.getItem('stt_speech_rate') };
+    window.sttRepeatedSpeech = fixture;
+    narrator.isAndroid = true;
+    narrator.synth = { speaking: false, pending: false, paused: false, getVoices: () => [],
+      speak(u) { fixture.spoken.push(u); this.pending = true; },
+      cancel() { fixture.cancels++; this.speaking = this.pending = false; } };
+    narrator.setDiagnosticsEnabled(true);
+  });
+  try {
+    for (let i = 1; i <= 5; i++) {
+      if (i === 2) { await button.focus(); await button.press('Enter'); }
+      else if (await page.evaluate(() => navigator.maxTouchPoints > 0)) await button.tap();
+      else await button.click();
+      assert.equal(await page.evaluate(() => window.sttRepeatedSpeech.spoken.length), i);
+      await page.evaluate(() => {
+        const f = window.sttRepeatedSpeech, u = f.spoken.at(-1);
+        f.narrator.synth.pending = false; f.narrator.synth.speaking = true;
+        u.onstart({ charIndex: 0 });
+        f.narrator.synth.speaking = false; u.onend({ charIndex: 13, elapsedTime: 2 });
+      });
+      assert.equal(await page.evaluate(() => window.sttRepeatedSpeech.narrator.testUtterance), null);
+    }
+    // 開始・終了通知を返さず、最初の500ms監視より前にbusyが終了する。
+    await button.click();
+    await page.waitForTimeout(100);
+    await page.evaluate(() => { window.sttRepeatedSpeech.narrator.synth.pending = false; });
+    await page.waitForFunction(() => window.sttRepeatedSpeech.narrator.testUtterance === null, null, { timeout: 4000 });
+    await button.click(); await button.click();
+    const result = await page.evaluate(() => {
+      const f = window.sttRepeatedSpeech;
+      const calls = f.spoken.length, old = f.spoken[5], current = f.spoken.at(-1);
+      old.onstart({}); old.onerror({ error: 'interrupted' });
+      const sameTest = f.narrator.testUtterance === current;
+      f.narrator.synth.pending = false; current.onend({});
+      f.narrator.speak('プレー。あなたのサーブです。');
+      const referee = f.spoken.at(-1); referee.onstart({}); referee.onend({});
+      return { calls, sameTest, cancels: f.cancels, text: referee.text,
+        mode: f.narrator.speechMode, saved: localStorage.getItem('stt_speech_rate') === f.saved,
+        requests: f.narrator.getDiagnostics().filter(e => e.type === 'test-request').length,
+        recovered: f.narrator.getDiagnostics().some(e => e.type === 'speech-idle-recovered'),
+        released: f.narrator.testUtterance === null && f.narrator.watchdogs.size === 0 };
+    });
+    assert.equal(result.calls, 7); assert.equal(result.requests, 8);
+    assert.equal(result.cancels, 0); assert.equal(result.sameTest, true);
+    assert.equal(result.recovered, true); assert.equal(result.released, true);
+    assert.equal(result.mode, 'builtin'); assert.equal(result.saved, true);
+    assert.equal(result.text, 'プレー。あなたのサーブです。');
+    console.log('Passed actual speech-button five repeats, keyboard/touch, missing start/end recovery, duplicate guard, late-event isolation and subsequent referee call (mock audio).');
+  } finally {
+    await page.evaluate(() => {
+      const f = window.sttRepeatedSpeech;
+      f.narrator.stop('repeat-test-cleanup'); f.narrator.synth = f.originalSynth;
+      f.narrator.isAndroid = f.originalAndroid; f.narrator.setDiagnosticsEnabled(false);
+      f.narrator.loadVoice(); delete window.sttRepeatedSpeech;
+    });
+  }
+}
+
+async function verifySpeechLifecycle(page) {
+  await page.selectOption('#select-speech-mode', 'builtin');
+  const result = await page.evaluate(async () => {
+    const { narrator } = await import('./js/speech-system.js?v=3.31.56');
+    narrator.stop('browser-test-setup');
+    const original = narrator.synth;
+    const android = narrator.isAndroid;
+    const spoken = [];
+    let cancels = 0;
+    const before = document.getElementById('sr-announcer').textContent;
+    try {
+      narrator.synth = { getVoices: () => [], speak: u => spoken.push(u),
+        cancel: () => cancels++, speaking: false, pending: false, paused: false };
+      narrator.isAndroid = true;
+      narrator.setDiagnosticsEnabled(true);
+      const button = document.getElementById('btn-test-speech');
+      button.click(); button.click();
+      const deduplicated = spoken.length === 1 && cancels === 0;
+      const u = spoken[0]; u.onstart({ charIndex: 0, elapsedTime: 0 });
+      u.onend({ charIndex: 0, elapsedTime: 0.01 });
+      button.click();
+      spoken[1].onerror({ error: 'synthesis-failed' });
+      const noFallback = document.getElementById('sr-announcer').textContent === before
+        && narrator.speechMode === 'builtin';
+      button.click();
+      const select = document.getElementById('select-speech-mode');
+      select.value = 'screen-reader'; select.dispatchEvent(new Event('change', { bubbles: true }));
+      spoken[2].onerror({ error: 'interrupted' });
+      return { deduplicated, noFallback, calls: spoken.length,
+        cleared: narrator.utterances.size === 0 && narrator.testUtterance === null,
+        mode: narrator.speechMode, events: narrator.getDiagnostics().map(e => e.type),
+        reasons: narrator.getDiagnostics().filter(e => e.type === 'stop').map(e => e.reason) };
+    } finally {
+      narrator.stop('browser-test-cleanup'); narrator.synth = original;
+      narrator.isAndroid = android; narrator.setDiagnosticsEnabled(false); narrator.loadVoice();
+    }
+  });
+  assert.equal(result.deduplicated, true);
+  assert.equal(result.noFallback, true);
+  assert.equal(result.calls, 3);
+  assert.equal(result.cleared, true);
+  assert.equal(result.mode, 'screen-reader');
+  for (const event of ['queued', 'start', 'end', 'error', 'test-already-active']) assert.ok(result.events.includes(event));
+  assert.ok(result.reasons.includes('speech-mode-change'));
+  await page.selectOption('#select-speech-mode', 'builtin');
+  await verifySpeechRepeatedTests(page);
+  console.log('Passed speech button lifecycle, duplicate suppression, diagnostics, error isolation and mode stop (mock engine; no audible-device verification).');
+}
+
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.STT_BROWSER || 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
@@ -152,6 +267,7 @@ async function verifyRateControls(page) {
     await page.reload();
     await page.waitForFunction(() => window.gameEngine);
     await verifyRateControls(page);
+    await verifySpeechLifecycle(page);
     const desktop = await browser.newPage({ hasTouch: false, viewport: { width: 1280, height: 720 } });
     // Chrome exposes DeviceMotionEvent even on some desktops; explicitly model
     // the existing non-touch/non-sensor branch without changing production code.

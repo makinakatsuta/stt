@@ -9,7 +9,7 @@ const document = { getElementById(id) {
 } };
 const context = vm.createContext({ document, window: {}, Date, Math,
   sounds: new Proxy({}, { get: () => () => {} }),
-  narrator: { speak: (...args) => calls.push(args), stop() {} }, console });
+  narrator: { speak: (...args) => calls.push(args), testSpeech: () => calls.push(['testSpeech']), stop() {} }, console });
 vm.runInContext(fs.readFileSync('docs/js/constants.js', 'utf8').replace(/export \{[^}]+\};/, '') + '\n' +
   fs.readFileSync('docs/js/game-engine.js', 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class', 'class') +
   '\nglobalThis.Engine = GameEngine;', context);
@@ -96,7 +96,7 @@ const end = source.indexOf('    const rangeSpeechRate', start);
 vm.runInContext(source.slice(start, end), context);
 calls.length = 0; click();
 assert.equal(calls.length, 1);
-assert.equal(calls[0][0], '音声案内のテストです。');
+assert.equal(calls[0][0], 'testSpeech');
 console.log('Passed speech test button without gameplay or settings side effects.');
 
 assert.ok(!html.includes("btn-game-action"));

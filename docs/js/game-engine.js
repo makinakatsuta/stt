@@ -1,6 +1,6 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_RADIUS, TABLE_FRICTION, Y_NET, Y_DEFENSE_P1, Y_DEFENSE_P2, STATE_MENU, STATE_WAITING_OPPONENT, STATE_SERVE_SELECT, STATE_PRE_SERVE_READY, STATE_PRE_SERVE_HEARD, STATE_SERVE_WAITING, STATE_RALLY, STATE_POINT_WON } from './constants.js?v=3.31.47';
 import { sounds } from './sound-system.js?v=3.31.47';
-import { narrator } from './speech-system.js?v=3.31.50';
+import { narrator } from './speech-system.js?v=3.31.56';
 import { NetworkSystem } from './network-system.js?v=3.31.47';
 import { readSetting, writeSetting } from './settings-storage.js?v=3.31.47';
 
@@ -224,7 +224,7 @@ export class GameEngine {
     this.setupServeSelection();
     const speechTestButton = document.getElementById('btn-test-speech');
     if (speechTestButton) speechTestButton.addEventListener('click', () => {
-      narrator.speak('音声案内のテストです。');
+      narrator.testSpeech();
     });
     const rangeSpeechRate = document.getElementById('range-speech-rate');
     const lblSpeechRateVal = document.getElementById('lbl-speech-rate-val');
@@ -677,7 +677,7 @@ export class GameEngine {
   }
 
   closeHelp() {
-    narrator.stop();
+    narrator.stop('close-help');
     this.changeScreen(this.isGameplayPaused ? 'play' : 'menu');
     document.getElementById(this.isGameplayPaused ? 'btn-paused-help' : 'btn-show-help').focus();
   }
@@ -696,7 +696,7 @@ export class GameEngine {
     sounds.updateBallSound(400, 250, 0, 0); // 音を止める
     sounds.stopRallyMusic();
     sounds.stopGymAmbience();
-    narrator.stop();
+    narrator.stop('return-to-menu');
     this.changeScreen('menu');
 
     // チルト調整ボタンを非表示化、キーのクリア
@@ -1749,7 +1749,7 @@ export class GameEngine {
    */
   finishMatch(matchWinner) {
     this.setGameplayChromeHidden(false);
-    narrator.stop();
+    narrator.stop('finish-match');
     this.clearGameplayTasks();
     // ゲームループを停止（リザルト表示中に物理計算・描画が走り続けるのを防ぐ）
     this.stopLoop();

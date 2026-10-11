@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STT 開発者用音声診断</title>
+  <style>
+    body { font: 1.1rem/1.6 system-ui, sans-serif; margin: 0 auto; padding: 1rem; max-width: 48rem; color: #171717; background: #fff; }
+    button, select, textarea { font: inherit; max-width: 100%; box-sizing: border-box; }
+    button { min-height: 48px; padding: .5rem .8rem; margin: .3rem .2rem .3rem 0; }
+    label { display: block; margin-top: .8rem; }
+    textarea { width: 100%; }
+    :focus-visible { outline: 3px solid #064cb5; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>STT 開発者用音声診断</h1>
+  <p>ゲームを終了し、他のSTTタブを閉じてから使用してください。このページはゲームを起動せず、設定を保存しません。診断記録はこのページを閉じると消えます。</p>
+  <h2>1. 診断を開始</h2>
+  <label for="environment">実機の情報（任意）：Android／Chromeのバージョン、TTS設定、TalkBackのオン・オフ</label>
+  <textarea id="environment" rows="3"></textarea>
+  <button id="start" type="button">診断を開始する</button>
+  <p id="state" aria-live="off">診断は開始していません。</p>
+  <h2>2. 発声を比較</h2>
+  <p>AとBは同じ日本語文・音声選択・保存済み速度で比較します。Aは現在のSTTの監視処理を使用します。BはAPIを直接1回呼び、監視タイマー・自動再試行・自動再開を使用しません。</p>
+  <p>Aの繰り返しは通常のテストボタンと同じ経路で、発声中の連打を拒否します。AとBの切り替えやBの再実行では前の発声を停止します。文章の終了を待って繰り返してください。発声イベントだけでは実際に聞こえたかは分かりません。</p>
+  <button id="test-a" type="button" disabled>A：STT経由でテスト音声を発声</button>
+  <button id="test-b" type="button" disabled>B：Web Speech API直接でテスト音声を発声</button>
+  <button id="stop" type="button" disabled>実行中のテスト音声を停止</button>
+  <button id="snapshot" type="button" disabled>現在の音声状態を記録</button>
+  <h2>3. 聞こえた結果を記録</h2>
+  <label for="test-result-id">結果を記録するテスト</label>
+  <select id="test-result-id" disabled></select>
+  <label for="heard">実際に聞こえた音声</label>
+  <select id="heard">
+    <option value="not-recorded">未記録</option>
+    <option value="complete">最後まで聞こえた</option>
+    <option value="silent">無音だった</option>
+    <option value="partial">途中まで聞こえた</option>
+  </select>
+  <label for="observation">補足（任意）：聞こえた範囲、待った秒数など</label>
+  <textarea id="observation" rows="2"></textarea>
+  <button id="save-observation" type="button" disabled>選択したテストの聴取結果を記録</button>
+  <h2>4. 診断結果をコピー</h2>
+  <p>コピーした全文をChatGPTに貼り付けてください。コピーできない場合は下のテキスト欄を長押しし、すべて選択してコピーできます。</p>
+  <button id="copy" type="button" disabled>診断結果をテキストとしてコピー</button>
+  <p id="copy-status" role="status"></p>
+  <label for="report">診断結果（テキスト）</label>
+  <textarea id="report" rows="16" readonly spellcheck="false"></textarea>
+</main>
+<script type="module" src="./js/speech-diagnostics.js?v=diagnostics-1"></script>
+</body>
+</html>

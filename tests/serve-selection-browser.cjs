@@ -6,6 +6,9 @@ const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
 const originalCSS = require('node:child_process').execFileSync('git', ['show', 'HEAD:docs/styles.css'], { encoding: 'utf8' });
+// This historical layout comparison only applies while the former layout is
+// still HEAD. After it lands, use HEAD equality plus the geometry assertions.
+const baselineHasCompactPause = originalCSS.includes('#screen-play #current-server {');
 const previousMobileCSS = originalCSS + `
 @media (max-width:768px) {
   #screen-play #game-input-area {display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
@@ -71,7 +74,7 @@ const server = http.createServer((req, res) => {
         assert.equal(metrics.lines, 1, label + ': one-line pause name');
         assert.ok(metrics.font < metrics.root && metrics.position !== 'fixed', label + ': compact scalable text without fixed positioning');
         assert.ok((await page.getByRole('application', {name:'プレイ操作'}).ariaSnapshot()).includes('button "中断メニュー"'), label + ': application and native button remain in accessibility tree');
-        if (label.endsWith('/standard/default')) {
+        if (!baselineHasCompactPause && label.endsWith('/standard/default')) {
           const top = () => page.locator('#game-canvas').evaluate(el => el.getBoundingClientRect().top + scrollY);
           const currentTop = await top();
           await page.evaluate(css => {

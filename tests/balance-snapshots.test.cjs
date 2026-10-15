@@ -22,12 +22,14 @@ function game(difficulty, role, count, x) {
 }
 function capture(difficulty) {
   const constants = {};
-  const names = difficulty === 'easy'
+  const names = difficulty === 'normal'
+    ? ['NORMAL_PADDLE_SPEED','NORMAL_CPU_SPEED','NORMAL_HIT_ZONE','NORMAL_PADDLE_MARGIN','NORMAL_RETURN_MAX_SPEED','NORMAL_OUT_SPEED','NORMAL_SERVE_SPEED_FACTOR','NORMAL_FAST_SERVE_CHANCE','NORMAL_FAST_SERVE_VY_MIN','NORMAL_FAST_SERVE_VY_MAX','STANDARD_RALLY_ACCELERATION','STANDARD_RALLY_MAX_SPEED','NORMAL_SIDE_OUT_CHANCE']
+    : difficulty === 'easy'
     ? ['EASY_RALLY_ACCELERATION', 'EASY_RALLY_MAX_SPEED', 'EASY_CPU_DIFFICULTY_FACTOR', 'EASY_CPU_RETURN_CHANCE',
       'EASY_RALLY_RETURN_LIMIT', 'EASY_SERVE_VY_MIN', 'EASY_SERVE_VY_MAX', 'EASY_SERVE_VX_MIN',
       'EASY_SERVE_VX_MAX', 'EASY_SERVE_SPEED_FACTOR', 'EASY_SIDE_OUT_CHANCE']
     : ['HARD_RALLY_ACCELERATION', 'HARD_RALLY_MAX_SPEED', 'HARD_DIFFICULTY_FACTOR', 'HARD_HIT_ZONE',
-      'HARD_PADDLE_MARGIN', 'HARD_FAST_SERVE_CHANCE', 'HARD_SIDE_OUT_CHANCE'];
+      'HARD_PADDLE_MARGIN', 'HARD_CPU_SPEED', 'HARD_FAST_SERVE_CHANCE', 'HARD_SIDE_OUT_CHANCE'];
   for (const name of names) constants[name] = vm.runInContext(name, context);
   const plans = [], contacts = [], velocities = [];
   for (const role of [1, 2]) for (const count of [0, 2, 4, 6, 7, 12]) for (const x of [30, 400, 770]) {
@@ -51,12 +53,20 @@ function capture(difficulty) {
   }
   return JSON.parse(JSON.stringify({ constants, plans, contacts, velocities }));
 }
-for (const difficulty of ['easy', 'hard']) {
-  const path = `tests/fixtures/${difficulty}-balance.json`;
+for (const difficulty of ['easy', 'normal', 'hard']) {
+  // Preserve historical fixtures for the authorized tuning.
+  const path = `tests/fixtures/${difficulty}-balance${difficulty === "easy" ? "" : "-3.31.58"}.json`;
   const actual = capture(difficulty);
-  if (process.argv.includes('--capture-baseline')) {
+  if (process.argv.includes('--capture-baseline') && difficulty !== 'easy') {
     // Initial baseline only: never overwrite an existing expectation.
     fs.writeFileSync(path, JSON.stringify(actual, null, 2) + '\n', { flag: 'wx' });
   } else assert.deepEqual(actual, JSON.parse(fs.readFileSync(path, 'utf8')), `${difficulty} balance changed`);
+  if (difficulty === 'hard') {
+    const original = JSON.parse(fs.readFileSync('tests/fixtures/hard-balance.json', 'utf8'));
+    assert.deepEqual(actual.velocities, original.velocities, 'Hard player return velocity unchanged');
+    for (const [name, value] of Object.entries(original.constants)) {
+      if (!['HARD_HIT_ZONE', 'HARD_PADDLE_MARGIN'].includes(name)) assert.equal(actual.constants[name], value, name);
+    }
+  }
 }
-console.log('Easy/Hard fixed balance snapshots passed.');
+console.log('Easy unchanged; versioned Normal/Hard balance snapshots passed.');

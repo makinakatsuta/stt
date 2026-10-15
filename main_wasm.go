@@ -21,7 +21,8 @@ const (
 	YDefenseP1                = 400.0
 	YDefenseP2                = 100.0
 	NormalPaddleSpeed         = 11.0
-	NormalCPUSpeed            = 5.2
+	NormalCPUSpeed            = 4.4
+	HardCPUSpeed              = 6.2
 	HardDifficultyFactor      = 0.9
 	NormalOutSpeed            = 13.0
 	EasyCPUDifficultyFactor   = 1.07
@@ -221,14 +222,14 @@ func updatePhysicsWasm(this js.Value, args []js.Value) interface{} {
 			cpuSpeed = NormalCPUSpeed
 			targetOffset = math.Sin(timeMs/600.0) * 6.0
 		case "hard":
-			cpuSpeed = 7.65
+			cpuSpeed = HardCPUSpeed
 			targetOffset = 0.0
 		}
 
 		// CPU も現在位置ではなく、ラケット到達時の玉の位置を追う。
 		predictedX := predictedBallX(ballX, ballY, ballVx, ballVy, defenseY)
 		cpuTarget := predictedX - PaddleWidth/2.0 + targetOffset
-		if difficulty == "normal" {
+		if difficulty != "easy" {
 			cpuSpeed = math.Min(cpuSpeed, math.Abs(cpuTarget-*cpuX))
 		}
 

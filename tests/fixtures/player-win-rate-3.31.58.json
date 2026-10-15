@@ -1,0 +1,561 @@
+{
+  "version": "3.31.58",
+  "date": "2026-10-16",
+  "beforeSourceCommit": "5ed67b2dac1c4695859d8fff9394a34fb6396327",
+  "commands": [
+    "node tests/player-win-rate.cjs --baseline --js-only",
+    "node tests/player-win-rate.cjs",
+    "node tests/player-win-rate.cjs --sensitivity-only"
+  ],
+  "before": {
+    "baseline": true,
+    "policy": {
+      "delayMs": 300,
+      "observationMs": 200,
+      "executionLapse": 0.08,
+      "tiltRatio": 0.5
+    },
+    "results": {
+      "js": {
+        "easy": {
+          "wins": 200,
+          "matches": 200,
+          "rate": 1,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 50,
+              "matches": 50,
+              "points": 1473,
+              "returns": 3826,
+              "serveCounts": [
+                243,
+                254,
+                246
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 50,
+              "matches": 50,
+              "points": 1514,
+              "returns": 3981,
+              "serveCounts": [
+                252,
+                249,
+                258
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 50,
+              "matches": 50,
+              "points": 1515,
+              "returns": 3920,
+              "serveCounts": [
+                256,
+                249,
+                250
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 50,
+              "matches": 50,
+              "points": 1489,
+              "returns": 3889,
+              "serveCounts": [
+                245,
+                251,
+                251
+              ]
+            }
+          ]
+        },
+        "normal": {
+          "wins": 21,
+          "matches": 200,
+          "rate": 0.105,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 5,
+              "matches": 50,
+              "points": 2128,
+              "returns": 10934,
+              "serveCounts": [
+                359,
+                346,
+                362
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 4,
+              "matches": 50,
+              "points": 2103,
+              "returns": 10933,
+              "serveCounts": [
+                351,
+                354,
+                351
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 4,
+              "matches": 50,
+              "points": 2350,
+              "returns": 12295,
+              "serveCounts": [
+                399,
+                393,
+                397
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 8,
+              "matches": 50,
+              "points": 2099,
+              "returns": 11355,
+              "serveCounts": [
+                350,
+                351,
+                359
+              ]
+            }
+          ]
+        },
+        "hard": {
+          "wins": 0,
+          "matches": 200,
+          "rate": 0,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 0,
+              "matches": 50,
+              "points": 1385,
+              "returns": 1603,
+              "serveCounts": [
+                226,
+                229,
+                229
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 0,
+              "matches": 50,
+              "points": 1367,
+              "returns": 1594,
+              "serveCounts": [
+                228,
+                230,
+                224
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 0,
+              "matches": 50,
+              "points": 1378,
+              "returns": 1696,
+              "serveCounts": [
+                231,
+                221,
+                230
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 0,
+              "matches": 50,
+              "points": 1355,
+              "returns": 1648,
+              "serveCounts": [
+                222,
+                227,
+                229
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "after": {
+    "baseline": false,
+    "policy": {
+      "delayMs": 300,
+      "observationMs": 200,
+      "executionLapse": 0.08,
+      "tiltRatio": 0.5
+    },
+    "results": {
+      "js": {
+        "easy": {
+          "wins": 200,
+          "matches": 200,
+          "rate": 1,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 50,
+              "matches": 50,
+              "points": 1473,
+              "returns": 3826,
+              "serveCounts": [
+                243,
+                254,
+                246
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 50,
+              "matches": 50,
+              "points": 1514,
+              "returns": 3981,
+              "serveCounts": [
+                252,
+                249,
+                258
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 50,
+              "matches": 50,
+              "points": 1515,
+              "returns": 3920,
+              "serveCounts": [
+                256,
+                249,
+                250
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 50,
+              "matches": 50,
+              "points": 1489,
+              "returns": 3889,
+              "serveCounts": [
+                245,
+                251,
+                251
+              ]
+            }
+          ]
+        },
+        "normal": {
+          "wins": 199,
+          "matches": 200,
+          "rate": 0.995,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 50,
+              "matches": 50,
+              "points": 1608,
+              "returns": 4736,
+              "serveCounts": [
+                270,
+                264,
+                271
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 49,
+              "matches": 50,
+              "points": 1699,
+              "returns": 5090,
+              "serveCounts": [
+                289,
+                282,
+                271
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 50,
+              "matches": 50,
+              "points": 1700,
+              "returns": 5115,
+              "serveCounts": [
+                282,
+                288,
+                292
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 50,
+              "matches": 50,
+              "points": 1607,
+              "returns": 4872,
+              "serveCounts": [
+                265,
+                270,
+                266
+              ]
+            }
+          ]
+        },
+        "hard": {
+          "wins": 181,
+          "matches": 200,
+          "rate": 0.905,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 45,
+              "matches": 50,
+              "points": 2031,
+              "returns": 5899,
+              "serveCounts": [
+                338,
+                346,
+                345
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 43,
+              "matches": 50,
+              "points": 1996,
+              "returns": 6011,
+              "serveCounts": [
+                331,
+                336,
+                336
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 46,
+              "matches": 50,
+              "points": 2073,
+              "returns": 6312,
+              "serveCounts": [
+                351,
+                343,
+                350
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 47,
+              "matches": 50,
+              "points": 2046,
+              "returns": 6384,
+              "serveCounts": [
+                346,
+                346,
+                339
+              ]
+            }
+          ]
+        },
+        "sensitivity": {
+          "slow": {
+            "wins": 0,
+            "matches": 40,
+            "points": 1039,
+            "returns": 63
+          },
+          "skilled": {
+            "wins": 39,
+            "matches": 40,
+            "points": 1584,
+            "returns": 5087
+          }
+        }
+      },
+      "wasm": {
+        "easy": {
+          "wins": 200,
+          "matches": 200,
+          "rate": 1,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 50,
+              "matches": 50,
+              "points": 1473,
+              "returns": 3826,
+              "serveCounts": [
+                243,
+                254,
+                246
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 50,
+              "matches": 50,
+              "points": 1514,
+              "returns": 3981,
+              "serveCounts": [
+                252,
+                249,
+                258
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 50,
+              "matches": 50,
+              "points": 1515,
+              "returns": 3920,
+              "serveCounts": [
+                256,
+                249,
+                250
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 50,
+              "matches": 50,
+              "points": 1489,
+              "returns": 3889,
+              "serveCounts": [
+                245,
+                251,
+                251
+              ]
+            }
+          ]
+        },
+        "normal": {
+          "wins": 199,
+          "matches": 200,
+          "rate": 0.995,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 50,
+              "matches": 50,
+              "points": 1608,
+              "returns": 4736,
+              "serveCounts": [
+                270,
+                264,
+                271
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 49,
+              "matches": 50,
+              "points": 1699,
+              "returns": 5090,
+              "serveCounts": [
+                289,
+                282,
+                271
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 50,
+              "matches": 50,
+              "points": 1700,
+              "returns": 5115,
+              "serveCounts": [
+                282,
+                288,
+                292
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 50,
+              "matches": 50,
+              "points": 1607,
+              "returns": 4872,
+              "serveCounts": [
+                265,
+                270,
+                266
+              ]
+            }
+          ]
+        },
+        "hard": {
+          "wins": 181,
+          "matches": 200,
+          "rate": 0.905,
+          "groups": [
+            {
+              "seed": 456,
+              "wins": 45,
+              "matches": 50,
+              "points": 2031,
+              "returns": 5899,
+              "serveCounts": [
+                338,
+                346,
+                345
+              ]
+            },
+            {
+              "seed": 20261016,
+              "wins": 43,
+              "matches": 50,
+              "points": 1996,
+              "returns": 6011,
+              "serveCounts": [
+                331,
+                336,
+                336
+              ]
+            },
+            {
+              "seed": 1729,
+              "wins": 46,
+              "matches": 50,
+              "points": 2073,
+              "returns": 6312,
+              "serveCounts": [
+                351,
+                343,
+                350
+              ]
+            },
+            {
+              "seed": 8675309,
+              "wins": 47,
+              "matches": 50,
+              "points": 2046,
+              "returns": 6384,
+              "serveCounts": [
+                346,
+                346,
+                339
+              ]
+            }
+          ]
+        },
+        "sensitivity": {
+          "slow": {
+            "wins": 0,
+            "matches": 40,
+            "points": 1039,
+            "returns": 63
+          },
+          "skilled": {
+            "wins": 39,
+            "matches": 40,
+            "points": 1584,
+            "returns": 5087
+          }
+        }
+      }
+    }
+  }
+}

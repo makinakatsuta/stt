@@ -4,6 +4,8 @@
 
 [ブラウザで遊ぶ](https://soundtabletennis.com/)
 
+v3.31.59では、プレイヤー側のラケット打球音量を従来比5％減少しました。その他のゲーム仕様は維持しています。
+
 ## Android内蔵音声の診断（v3.31.56、実機確認待ち）
 
 開発者ツール不要の専用診断ページを追加しました。同じ配信先の `/speech-diagnostics.html` をAndroid Chromeで開き、「診断を開始する」からA（STT経由）とB（Web Speech API直接）を繰り返し比較できます。各テストの聴取結果を記録し、「診断結果をテキストとしてコピー」でChatGPTに貼り付けてください。通常のゲーム画面には表示しません。Android実機での発声成功・原因特定は未検証です。詳しくは[実機診断手順](tests/android-speech-checklist.md)を参照してください。
